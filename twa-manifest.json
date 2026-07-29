@@ -36,7 +36,7 @@
   "fullScopeUrl": "https://sosyalmedyadeneme.onrender.com/",
   "minSdkVersion": 21,
   "orientation": "portrait-primary",
-  "fingerprints": [],
+  "fingerprints": [{"name": "release", "value": "11:50:D0:F6:4F:50:20:30:5D:F3:89:E3:C7:86:EF:9C:03:1E:63:65:77:09:52:18:02:6B:B6:09:2B:77:BB:9B"}],
   "additionalTrustedOrigins": [],
   "retainedBundles": [],
   "protocolHandlers": [],
