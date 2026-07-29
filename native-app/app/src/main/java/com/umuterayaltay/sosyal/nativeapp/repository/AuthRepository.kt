@@ -47,6 +47,18 @@ class AuthRepository(
             }
         }
 
+    /** ProfileViewModel'in username=null (kendi profilim) durumunda kullaniciyi
+     * cozmesi icin - AuthApi.me()'yi sarar, hata/401 durumunda null doner
+     * (cagiran taraf null'i "oturum gecersiz" olarak yorumlar). */
+    suspend fun getCurrentUser(): UserDto? = withContext(Dispatchers.IO) {
+        try {
+            val response = authApi.me()
+            if (response.isSuccessful) response.body()?.user else null
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     /** Sadece bu cihazın token'ını iptal eder — API çağrısı başarısız olsa bile
      * yerel token her zaman temizlenir (kullanıcı cihazda "çıkış yapmış" görünmeli). */
     suspend fun logout() {

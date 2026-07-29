@@ -14,12 +14,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkAdd
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Tag
 import androidx.compose.material3.AssistChip
@@ -49,11 +47,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import coil.compose.AsyncImage
 import com.umuterayaltay.sosyal.nativeapp.network.HashtagSearchDto
 import com.umuterayaltay.sosyal.nativeapp.network.SavedSearchItemDto
 import com.umuterayaltay.sosyal.nativeapp.network.SearchHistoryItemDto
@@ -75,6 +70,7 @@ import java.time.ZoneOffset
 @Composable
 fun DiscoverScreen(
     onSessionExpired: () -> Unit,
+    onUserClick: (String) -> Unit,
     viewModel: DiscoverViewModel = viewModel(),
 ) {
     val query by viewModel.searchQuery.collectAsState()
@@ -172,7 +168,9 @@ fun DiscoverScreen(
                         if (searchType == SearchType.All || searchType == SearchType.Users) {
                             if (searchUsers.isNotEmpty()) {
                                 item { SectionHeader("Kullanıcılar") }
-                                items(searchUsers, key = { "user_${it.id}" }) { user -> UserResultRow(user) }
+                                items(searchUsers, key = { "user_${it.id}" }) { user ->
+                                    UserResultRow(user, onClick = { user.username?.let(onUserClick) })
+                                }
                             }
                         }
                         if (searchType == SearchType.All || searchType == SearchType.Hashtags) {
@@ -460,38 +458,16 @@ private fun SavedSearchRow(
     }
 }
 
-/** Profil ekranı henüz yok — tıklanınca kasıtlı olarak hiçbir şey yapmaz. */
+/** Profil ekranina navigasyon simdi gercek - UserRow (ui/screens/UserRow.kt)
+ * paylasilan composable'i sarmalar. */
 @Composable
-private fun UserResultRow(user: UserSearchDto) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        if (!user.avatarUrl.isNullOrBlank()) {
-            AsyncImage(
-                model = user.avatarUrl,
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(CircleShape),
-            )
-        } else {
-            Icon(imageVector = Icons.Filled.Person, contentDescription = null, modifier = Modifier.size(40.dp))
-        }
-        Column(modifier = Modifier.padding(start = 12.dp)) {
-            Text(text = user.username ?: "bilinmeyen", style = MaterialTheme.typography.titleSmall)
-            if (!user.fullName.isNullOrBlank()) {
-                Text(
-                    text = user.fullName,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-    }
+private fun UserResultRow(user: UserSearchDto, onClick: () -> Unit) {
+    UserRow(
+        avatarUrl = user.avatarUrl,
+        username = user.username,
+        fullName = user.fullName,
+        onClick = onClick,
+    )
 }
 
 /** Hashtag detay ekranı henüz yok — tıklanınca kasıtlı olarak hiçbir şey yapmaz. */

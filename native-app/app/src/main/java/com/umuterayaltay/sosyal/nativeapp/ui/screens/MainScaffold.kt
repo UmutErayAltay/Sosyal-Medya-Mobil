@@ -19,6 +19,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.navigation.NavHostController
 
 private enum class MainTab(val label: String, val icon: androidx.compose.ui.graphics.vector.ImageVector) {
     Feed("Ana Sayfa", Icons.Filled.Home),
@@ -29,12 +30,19 @@ private enum class MainTab(val label: String, val icon: androidx.compose.ui.grap
 }
 
 /**
- * Alt navigasyon barlı ana ekran — 5 sekmeden "Ana Sayfa" (Feed) ve "Keşfet"
- * gerçekten çalışıyor, kalan 3'ü dürüstçe "Yakında" placeholder'ı gösteriyor
- * (bkz. PlaceholderScreen — sahte/yarım bir uygulama izlenimi verilmesin diye).
+ * Alt navigasyon barlı ana ekran — "Ana Sayfa" (Feed), "Keşfet" ve artık
+ * "Profil" (Faz 4, native Android profil ekrani) gerçekten çalışıyor, kalan 2'si
+ * dürüstçe "Yakında" placeholder'ı gösteriyor (bkz. PlaceholderScreen — sahte/
+ * yarım bir uygulama izlenimi verilmesin diye).
+ *
+ * navController AppNavHost'tan geliyor - Profil/Kesfet sekmelerindeki
+ * kullanici satirlarindan "profile/{username}", stats satirindan
+ * "followers/{username}"/"following/{username}", TopAppBar aksiyonlarindan
+ * "insights"/"followRequests" route'larina PUSH yapmak icin (bottom bar'in
+ * bu push'larda gizlenmesi standart/beklenen davranis).
  */
 @Composable
-fun MainScaffold(onSessionExpired: () -> Unit) {
+fun MainScaffold(navController: NavHostController, onSessionExpired: () -> Unit) {
     var selectedTab by remember { mutableStateOf(MainTab.Feed) }
 
     Scaffold(
@@ -54,10 +62,23 @@ fun MainScaffold(onSessionExpired: () -> Unit) {
         Box(modifier = Modifier.padding(padding)) {
             when (selectedTab) {
                 MainTab.Feed -> FeedScreen(onSessionExpired = onSessionExpired)
-                MainTab.Discover -> DiscoverScreen(onSessionExpired = onSessionExpired)
+                MainTab.Discover -> DiscoverScreen(
+                    onSessionExpired = onSessionExpired,
+                    onUserClick = { username -> navController.navigate("profile/$username") },
+                )
                 MainTab.Reels -> PlaceholderScreen("Reels")
                 MainTab.Messages -> PlaceholderScreen("Mesajlar")
-                MainTab.Profile -> PlaceholderScreen("Profil")
+                MainTab.Profile -> ProfileScreen(
+                    username = null,
+                    onNavigateToProfile = { username -> navController.navigate("profile/$username") },
+                    onNavigateToFollowers = { username -> navController.navigate("followers/$username") },
+                    onNavigateToFollowing = { username -> navController.navigate("following/$username") },
+                    onNavigateToInsights = { navController.navigate("insights") },
+                    onNavigateToFollowRequests = { navController.navigate("followRequests") },
+                    onSessionExpired = onSessionExpired,
+                    // onNavigateBack YOK: bu, alt navigasyondaki KOK "Profil" sekmesi
+                    // - geri tusu YOK (push edilmis bir route degil).
+                )
             }
         }
     }

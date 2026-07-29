@@ -6,10 +6,12 @@ import com.umuterayaltay.sosyal.nativeapp.data.local.AppDatabase
 import com.umuterayaltay.sosyal.nativeapp.network.AuthApi
 import com.umuterayaltay.sosyal.nativeapp.network.DiscoverApi
 import com.umuterayaltay.sosyal.nativeapp.network.FeedApi
+import com.umuterayaltay.sosyal.nativeapp.network.ProfileApi
 import com.umuterayaltay.sosyal.nativeapp.network.RetrofitClient
 import com.umuterayaltay.sosyal.nativeapp.repository.AuthRepository
 import com.umuterayaltay.sosyal.nativeapp.repository.DiscoverRepository
 import com.umuterayaltay.sosyal.nativeapp.repository.FeedRepository
+import com.umuterayaltay.sosyal.nativeapp.repository.ProfileRepository
 
 /**
  * Bu MVP fazında Hilt/Dagger yerine elle (manual) DI — kotlinx.serialization'ı
@@ -26,6 +28,8 @@ object ServiceLocator {
         private set
     lateinit var discoverRepository: DiscoverRepository
         private set
+    lateinit var profileRepository: ProfileRepository
+        private set
 
     private var initialized = false
 
@@ -38,11 +42,13 @@ object ServiceLocator {
         val authApi = retrofit.create(AuthApi::class.java)
         val feedApi = retrofit.create(FeedApi::class.java)
         val discoverApi = retrofit.create(DiscoverApi::class.java)
+        val profileApi = retrofit.create(ProfileApi::class.java)
         val database = AppDatabase.getInstance(appContext)
 
         authRepository = AuthRepository(authApi, tokenStore)
         feedRepository = FeedRepository(feedApi, database.postDao())
         discoverRepository = DiscoverRepository(discoverApi)
+        profileRepository = ProfileRepository(profileApi)
 
         initialized = true
     }

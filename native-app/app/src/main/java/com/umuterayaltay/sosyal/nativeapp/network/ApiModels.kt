@@ -151,3 +151,123 @@ data class SimpleOkResponse(
     val ok: Boolean? = null,
     val error: String? = null,
 )
+
+// ---- Profil (app/api_v1.py satir ~607-1221: _serialize_profile_for_api,
+// api_profile, _api_follow_list, api_insights, api_toggle_follow,
+// api_list_follow_requests/accept/reject okunarak dogrulandi) ----
+
+// Deaktif hesap yanitinda (deactivated=true) SADECE username/avatar_url dolu
+// gelir - id/bio/created_at/is_private/is_deactivated/pinned_post_id hic yok.
+// Bu yuzden id dahil cogu alan NULLABLE: Gson, Kotlin'in non-null tip
+// garantisini reflection ile atlayip eksik alana null yazabilir (bilinen
+// Gson+Kotlin tuzagi) - burada bilincli olarak nullable tutuldu.
+data class ProfileDto(
+    val id: String?,
+    val username: String?,
+    @SerializedName("full_name") val fullName: String?,
+    val bio: String?,
+    @SerializedName("avatar_url") val avatarUrl: String?,
+    @SerializedName("created_at") val createdAt: String?,
+    @SerializedName("is_private") val isPrivate: Boolean = false,
+    @SerializedName("is_deactivated") val isDeactivated: Boolean = false,
+    @SerializedName("pinned_post_id") val pinnedPostId: String? = null,
+    // SADECE is_self=true iken dolu gelir (_serialize_profile_for_api).
+    val email: String? = null,
+    @SerializedName("is_admin") val isAdmin: Boolean = false,
+    @SerializedName("hide_last_seen") val hideLastSeen: Boolean = false,
+)
+
+data class ProfileStatsDto(
+    val posts: Int = 0,
+    val followers: Int = 0,
+    val following: Int = 0,
+    val likes: Int = 0,
+)
+
+data class ProfileResponse(
+    val profile: ProfileDto?,
+    val posts: List<PostDto>? = null,
+    @SerializedName("liked_posts") val likedPosts: List<PostDto>? = null,
+    @SerializedName("bookmarked_posts") val bookmarkedPosts: List<PostDto>? = null,
+    @SerializedName("archived_posts") val archivedPosts: List<PostDto>? = null,
+    @SerializedName("is_self") val isSelf: Boolean = false,
+    @SerializedName("is_following") val isFollowing: Boolean = false,
+    @SerializedName("is_pending_request") val isPendingRequest: Boolean = false,
+    @SerializedName("is_private") val isPrivate: Boolean = false,
+    @SerializedName("is_blocked_by_me") val isBlockedByMe: Boolean = false,
+    @SerializedName("is_close_friend") val isCloseFriend: Boolean = false,
+    @SerializedName("is_online") val isOnline: Boolean = false,
+    @SerializedName("is_muted") val isMuted: Boolean = false,
+    val deactivated: Boolean = false,
+    val stats: ProfileStatsDto? = null,
+    val error: String? = null,
+)
+
+// _api_follow_list()'in profiles satiri + is_following/is_self eklentisi;
+// api_list_follow_requests() da AYNI sekli doner ama is_following alanini hic
+// SET'lemez - bu yuzden isFollowing burada varsayilan false ile guvenli.
+data class FollowUserDto(
+    val id: String,
+    val username: String?,
+    @SerializedName("avatar_url") val avatarUrl: String?,
+    @SerializedName("full_name") val fullName: String?,
+    @SerializedName("is_following") val isFollowing: Boolean = false,
+    @SerializedName("is_self") val isSelf: Boolean = false,
+)
+
+data class FollowListResponse(
+    val users: List<FollowUserDto>? = null,
+    val title: String? = null,
+    val error: String? = null,
+)
+
+data class DailyCountDto(
+    val date: String,
+    val count: Int = 0,
+)
+
+data class DayOfWeekCountDto(
+    val day: String,
+    val count: Int = 0,
+)
+
+// api_insights()'taki top_posts - TAM PostDto sekli DEGIL (sadece
+// "id, content, created_at, likes(count), comments(count)" + turetilen
+// like_count/comment_count/engagement) - bu yuzden ayri, daha dar bir DTO.
+data class TopPostDto(
+    val id: String,
+    val content: String?,
+    @SerializedName("created_at") val createdAt: String?,
+    @SerializedName("like_count") val likeCount: Int = 0,
+    @SerializedName("comment_count") val commentCount: Int = 0,
+    val engagement: Int = 0,
+)
+
+data class InsightsResponse(
+    val days: Int = 14,
+    @SerializedName("total_posts") val totalPosts: Int = 0,
+    @SerializedName("total_likes") val totalLikes: Int = 0,
+    @SerializedName("total_comments") val totalComments: Int = 0,
+    @SerializedName("likes_by_day") val likesByDay: List<DailyCountDto>? = null,
+    @SerializedName("comments_by_day") val commentsByDay: List<DailyCountDto>? = null,
+    @SerializedName("followers_by_day") val followersByDay: List<DailyCountDto>? = null,
+    @SerializedName("top_posts") val topPosts: List<TopPostDto>? = null,
+    @SerializedName("total_followers") val totalFollowers: Int = 0,
+    @SerializedName("total_following") val totalFollowing: Int = 0,
+    @SerializedName("avg_engagement") val avgEngagement: Double = 0.0,
+    @SerializedName("day_of_week_stats") val dayOfWeekStats: List<DayOfWeekCountDto>? = null,
+    @SerializedName("most_active_day") val mostActiveDay: String? = null,
+    val error: String? = null,
+)
+
+data class ToggleFollowResponse(
+    val following: Boolean = false,
+    @SerializedName("followers_count") val followersCount: Int = 0,
+    @SerializedName("is_pending") val isPending: Boolean = false,
+    val error: String? = null,
+)
+
+data class FollowRequestsResponse(
+    val users: List<FollowUserDto>? = null,
+    val error: String? = null,
+)
