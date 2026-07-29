@@ -4,6 +4,7 @@ import retrofit2.Response
 import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.POST
+import retrofit2.http.Path
 import retrofit2.http.Query
 
 interface AuthApi {
@@ -23,4 +24,29 @@ interface FeedApi {
         @Query("cursor") cursor: Int,
         @Query("limit") limit: Int,
     ): Response<FeedResponse>
+}
+
+interface DiscoverApi {
+    @GET("discover")
+    suspend fun getDiscover(@Query("page") page: Int): Response<DiscoverResponse>
+
+    @GET("search")
+    suspend fun search(
+        @Query("q") q: String,
+        @Query("type") type: String,
+        @Query("date_from") dateFrom: String?,
+        @Query("date_to") dateTo: String?,
+    ): Response<SearchResponse>
+
+    @POST("search/save")
+    suspend fun saveSearch(@Body request: SaveSearchRequest): Response<SimpleOkResponse>
+
+    @POST("search/history/clear")
+    suspend fun clearSearchHistory(): Response<SimpleOkResponse>
+
+    @POST("search/history/{id}/delete")
+    suspend fun deleteSearchHistoryItem(@Path("id") id: String): Response<SimpleOkResponse>
+
+    @POST("search/saved/{id}/delete")
+    suspend fun deleteSavedSearchItem(@Path("id") id: String): Response<SimpleOkResponse>
 }

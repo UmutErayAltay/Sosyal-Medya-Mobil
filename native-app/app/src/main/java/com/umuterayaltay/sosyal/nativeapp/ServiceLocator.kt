@@ -4,9 +4,11 @@ import android.content.Context
 import com.umuterayaltay.sosyal.nativeapp.data.TokenStore
 import com.umuterayaltay.sosyal.nativeapp.data.local.AppDatabase
 import com.umuterayaltay.sosyal.nativeapp.network.AuthApi
+import com.umuterayaltay.sosyal.nativeapp.network.DiscoverApi
 import com.umuterayaltay.sosyal.nativeapp.network.FeedApi
 import com.umuterayaltay.sosyal.nativeapp.network.RetrofitClient
 import com.umuterayaltay.sosyal.nativeapp.repository.AuthRepository
+import com.umuterayaltay.sosyal.nativeapp.repository.DiscoverRepository
 import com.umuterayaltay.sosyal.nativeapp.repository.FeedRepository
 
 /**
@@ -22,6 +24,8 @@ object ServiceLocator {
         private set
     lateinit var feedRepository: FeedRepository
         private set
+    lateinit var discoverRepository: DiscoverRepository
+        private set
 
     private var initialized = false
 
@@ -33,10 +37,12 @@ object ServiceLocator {
         val retrofit = RetrofitClient.create(tokenStore)
         val authApi = retrofit.create(AuthApi::class.java)
         val feedApi = retrofit.create(FeedApi::class.java)
+        val discoverApi = retrofit.create(DiscoverApi::class.java)
         val database = AppDatabase.getInstance(appContext)
 
         authRepository = AuthRepository(authApi, tokenStore)
         feedRepository = FeedRepository(feedApi, database.postDao())
+        discoverRepository = DiscoverRepository(discoverApi)
 
         initialized = true
     }

@@ -92,3 +92,62 @@ data class FeedResponse(
     @SerializedName("next_cursor") val nextCursor: Int? = null,
     val error: String?,
 )
+
+// ---- Discover / Search (app/api_v1.py discover()/search()) ----
+
+data class DiscoverResponse(
+    val posts: List<PostDto>?,
+    @SerializedName("has_more") val hasMore: Boolean = false,
+    val page: Int = 1,
+    val error: String? = null,
+)
+
+/** profiles satırı — search()'teki "id, username, full_name, avatar_url, is_deactivated" select'i. */
+data class UserSearchDto(
+    val id: String,
+    val username: String?,
+    @SerializedName("full_name") val fullName: String?,
+    @SerializedName("avatar_url") val avatarUrl: String?,
+    @SerializedName("is_deactivated") val isDeactivated: Boolean = false,
+)
+
+/** hashtags + post_hashtags'ten türetilen {tag, count} özeti. */
+data class HashtagSearchDto(
+    val tag: String,
+    val count: Int = 0,
+)
+
+data class SearchHistoryItemDto(
+    val id: String,
+    @SerializedName("user_id") val userId: String?,
+    val query: String,
+    @SerializedName("created_at") val createdAt: String?,
+)
+
+data class SavedSearchItemDto(
+    val id: String,
+    @SerializedName("user_id") val userId: String?,
+    val query: String,
+    val label: String?,
+    @SerializedName("created_at") val createdAt: String?,
+)
+
+data class SearchResponse(
+    val users: List<UserSearchDto>?,
+    val posts: List<PostDto>?,
+    val hashtags: List<HashtagSearchDto>?,
+    @SerializedName("recent_searches") val recentSearches: List<SearchHistoryItemDto>?,
+    @SerializedName("saved_searches") val savedSearches: List<SavedSearchItemDto>?,
+    val error: String? = null,
+)
+
+data class SaveSearchRequest(
+    val q: String,
+    val label: String?,
+)
+
+/** search/save, search/history/clear, search/history/{id}/delete, search/saved/{id}/delete — hepsi AYNI {ok}/{error} şekli. */
+data class SimpleOkResponse(
+    val ok: Boolean? = null,
+    val error: String? = null,
+)

@@ -29,8 +29,8 @@ private enum class MainTab(val label: String, val icon: androidx.compose.ui.grap
 }
 
 /**
- * Alt navigasyon barlı ana ekran — 5 sekmeden sadece "Ana Sayfa" (Feed)
- * gerçekten çalışıyor, diğer 4'ü dürüstçe "Yakında" placeholder'ı gösteriyor
+ * Alt navigasyon barlı ana ekran — 5 sekmeden "Ana Sayfa" (Feed) ve "Keşfet"
+ * gerçekten çalışıyor, kalan 3'ü dürüstçe "Yakında" placeholder'ı gösteriyor
  * (bkz. PlaceholderScreen — sahte/yarım bir uygulama izlenimi verilmesin diye).
  */
 @Composable
@@ -54,7 +54,7 @@ fun MainScaffold(onSessionExpired: () -> Unit) {
         Box(modifier = Modifier.padding(padding)) {
             when (selectedTab) {
                 MainTab.Feed -> FeedScreen(onSessionExpired = onSessionExpired)
-                MainTab.Discover -> PlaceholderScreen("Keşfet")
+                MainTab.Discover -> DiscoverScreen(onSessionExpired = onSessionExpired)
                 MainTab.Reels -> PlaceholderScreen("Reels")
                 MainTab.Messages -> PlaceholderScreen("Mesajlar")
                 MainTab.Profile -> PlaceholderScreen("Profil")
