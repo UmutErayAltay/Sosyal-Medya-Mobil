@@ -1,7 +1,8 @@
-# İmzalama anahtarı — ASLA commit edilmez (uygulamayı güncellemenin tek yolu bu dosya + şifresi, sızarsa/kaybolursa geri dönüşü yok)
+# İmzalama anahtarı + şifresi — ASLA commit edilmez (uygulamayı güncellemenin tek yolu bu dosya + şifresi, sızarsa/kaybolursa geri dönüşü yok)
 android.keystore
 *.jks
 *.keystore
+KEYSTORE_INFO.txt
 
 # Gradle / Android build çıktıları
 .gradle/
@@ -10,6 +11,10 @@ app/build/
 local.properties
 *.apk
 *.aab
+
+*.idsig
+*.log
+manifest-checksum.txt
 
 # IDE
 .idea/
