@@ -10,6 +10,7 @@ data class PostEntity(
     val userId: String,
     val content: String?,
     val imageUrl: String?,
+    val videoUrl: String?,
     val username: String?,
     val avatarUrl: String?,
     val likeCount: Int,

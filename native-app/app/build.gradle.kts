@@ -99,6 +99,12 @@ dependencies {
     implementation("androidx.room:room-ktx:2.6.1")
     kapt("androidx.room:room-compiler:2.6.1")
 
+    // Video oynatma (Reels) — ExoPlayer + PlayerView, Compose BOM 2024.12.01 ile
+    // uyumlu stabil sürüm (1.5.1). VerticalPager için ek bağımlılık GEREKMEZ,
+    // androidx.compose.foundation.pager zaten Compose foundation'ın parçası.
+    implementation("androidx.media3:media3-exoplayer:1.5.1")
+    implementation("androidx.media3:media3-ui:1.5.1")
+
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")

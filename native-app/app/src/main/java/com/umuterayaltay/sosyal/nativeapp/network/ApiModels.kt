@@ -271,3 +271,12 @@ data class FollowRequestsResponse(
     val users: List<FollowUserDto>? = null,
     val error: String? = null,
 )
+
+// ---- Reels (app/api_v1.py api_reels() — DiscoverResponse ile AYNI şekil) ----
+
+data class ReelsResponse(
+    val posts: List<PostDto>?,
+    @SerializedName("has_more") val hasMore: Boolean = false,
+    val page: Int = 1,
+    val error: String? = null,
+)

@@ -30,10 +30,11 @@ private enum class MainTab(val label: String, val icon: androidx.compose.ui.grap
 }
 
 /**
- * Alt navigasyon barlı ana ekran — "Ana Sayfa" (Feed), "Keşfet" ve artık
- * "Profil" (Faz 4, native Android profil ekrani) gerçekten çalışıyor, kalan 2'si
- * dürüstçe "Yakında" placeholder'ı gösteriyor (bkz. PlaceholderScreen — sahte/
- * yarım bir uygulama izlenimi verilmesin diye).
+ * Alt navigasyon barlı ana ekran — "Ana Sayfa" (Feed), "Keşfet", "Reels" (Faz 5,
+ * dikey video akışı) ve "Profil" (Faz 4, native Android profil ekrani) gerçekten
+ * çalışıyor, kalan 1 sekme ("Mesajlar") dürüstçe "Yakında" placeholder'ı
+ * gösteriyor (bkz. PlaceholderScreen — sahte/yarım bir uygulama izlenimi
+ * verilmesin diye).
  *
  * navController AppNavHost'tan geliyor - Profil/Kesfet sekmelerindeki
  * kullanici satirlarindan "profile/{username}", stats satirindan
@@ -66,7 +67,7 @@ fun MainScaffold(navController: NavHostController, onSessionExpired: () -> Unit)
                     onSessionExpired = onSessionExpired,
                     onUserClick = { username -> navController.navigate("profile/$username") },
                 )
-                MainTab.Reels -> PlaceholderScreen("Reels")
+                MainTab.Reels -> ReelsScreen(onSessionExpired = onSessionExpired)
                 MainTab.Messages -> PlaceholderScreen("Mesajlar")
                 MainTab.Profile -> ProfileScreen(
                     username = null,

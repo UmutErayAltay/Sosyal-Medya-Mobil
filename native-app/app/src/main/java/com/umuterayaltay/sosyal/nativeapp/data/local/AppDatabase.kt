@@ -5,7 +5,13 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 
-@Database(entities = [PostEntity::class], version = 1, exportSchema = false)
+// version 1 -> 2: PostEntity'ye videoUrl kolonu eklendi (Reels ekranı için,
+// bkz. repository/Post.kt). Bu tablo SADECE bir cache (FeedRepository'nin
+// "önce cache göster, sonra ağdan tazele" deseni) - gerçek kullanıcı verisi
+// değil, bu yüzden migration yazmak yerine fallbackToDestructiveMigration()
+// tercih edildi: şema uyuşmazlığında tablo silinip network'ten yeniden
+// doldurulur, kalıcı veri kaybı riski yok.
+@Database(entities = [PostEntity::class], version = 2, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun postDao(): PostDao
 
@@ -19,7 +25,9 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "sosyal_native.db",
-                ).build().also { INSTANCE = it }
+                )
+                    .fallbackToDestructiveMigration()
+                    .build().also { INSTANCE = it }
             }
         }
     }

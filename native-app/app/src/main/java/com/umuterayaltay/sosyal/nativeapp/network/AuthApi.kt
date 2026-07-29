@@ -50,3 +50,8 @@ interface DiscoverApi {
     @POST("search/saved/{id}/delete")
     suspend fun deleteSavedSearchItem(@Path("id") id: String): Response<SimpleOkResponse>
 }
+
+interface ReelsApi {
+    @GET("reels")
+    suspend fun getReels(@Query("page") page: Int): Response<ReelsResponse>
+}
