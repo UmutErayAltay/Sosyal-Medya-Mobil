@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Gerçek tema Compose tarafında (ui/theme/Theme.kt, Material3) uygulanır;
+         bu sadece Activity başlarken/Compose devreye girmeden önceki platform
+         penceresi için minimal bir varsayılan (ekstra Material Components
+         kütüphanesi bağımlılığı gerektirmesin diye android: platform teması
+         temel alındı). -->
+    <style name="Theme.SosyalNative" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:statusBarColor">@color/brand_theme</item>
+        <item name="android:windowBackground">@color/brand_background</item>
+    </style>
+</resources>

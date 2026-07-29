@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- TWA (twa-manifest.json) ile marka tutarlılığı için referans renkler —
+         sadece manifest/splash teması burada kullanılır, gerçek Compose
+         renk şeması ui/theme/Color.kt'de tanımlı. -->
+    <color name="brand_theme">#2D2D2D</color>
+    <color name="brand_background">#FAFAFA</color>
+</resources>
