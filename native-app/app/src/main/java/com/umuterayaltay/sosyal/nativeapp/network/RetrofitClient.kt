@@ -17,9 +17,13 @@ object RetrofitClient {
     private val gson = Gson()
 
     fun create(tokenStore: TokenStore): Retrofit {
+        // Level.BODY DEĞİL: login isteğinin gövdesi şifreyi düz metin içeriyor
+        // (bir test sırasında gerçek bir şifrenin Logcat'e yazılıp oradan
+        // kopyalandığı görüldü) — HEADERS, gövdeyi hiç loglamadan yöntem/URL/
+        // header/durum kodu gibi hata ayıklama için yeterli bilgiyi verir.
         val loggingInterceptor = HttpLoggingInterceptor().apply {
             level = if (BuildConfig.DEBUG) {
-                HttpLoggingInterceptor.Level.BODY
+                HttpLoggingInterceptor.Level.HEADERS
             } else {
                 HttpLoggingInterceptor.Level.NONE
             }
