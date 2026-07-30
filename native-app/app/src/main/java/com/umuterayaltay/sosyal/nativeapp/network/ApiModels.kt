@@ -280,3 +280,104 @@ data class ReelsResponse(
     val page: Int = 1,
     val error: String? = null,
 )
+
+// ---- Mesajlaşma (app/api_v1.py satır ~1289-1577: _serialize_conversation_summary,
+// api_message_conversations, api_message_conversation_detail, api_send_message,
+// api_start_conversation, api_mark_conversation_read okunarak doğrulandı).
+// BİLİNÇLİ SINIR: grup yönetimi/mesaj düzenleme-silme-sabitleme-iletme/tepki
+// VERME/görsel-ses-sticker-GIF gönderme/WebRTC yok — sadece inbox + geçmiş
+// (sayfalı) + metin gönder(+reply) + start + mark-read. Gerçek Supabase
+// Realtime YOK, native taraf basit polling yapar (bkz. ConversationViewModel).
+
+/** _serialize_conversation_summary() çıktısı — inbox satırı. */
+data class ConversationSummaryDto(
+    val id: String,
+    @SerializedName("is_group") val isGroup: Boolean = false,
+    // 1:1'de karşı tarafın username'i, grupta grup adı.
+    val name: String?,
+    // 1:1'de karşı tarafın avatarı, grupta HER ZAMAN null.
+    @SerializedName("avatar_url") val avatarUrl: String?,
+    @SerializedName("last_message_preview") val lastMessagePreview: String?,
+    @SerializedName("last_message_at") val lastMessageAt: String?,
+    // "unread" alanı SOHBET bazlı bool'dur (mesaj sayısı değil), gruplarda hep false.
+    @SerializedName("has_unread") val hasUnread: Boolean = false,
+)
+
+data class ConversationsResponse(
+    val conversations: List<ConversationSummaryDto>? = null,
+    val error: String? = null,
+)
+
+/** messages tablosundaki profiles!messages_sender_id_fkey(username, avatar_url) embed'i. */
+data class MessageSenderDto(
+    val username: String?,
+    @SerializedName("avatar_url") val avatarUrl: String? = null,
+)
+
+/** reply_to — TEK toplu IN sorgusuyla çözülen alıntılanan mesaj özeti
+ * (id, content, image_url, sender_id, profiles(username)) — mevcutsa dolu,
+ * yoksa (silinmiş/başka konuşmadan) backend zaten null döner. */
+data class ReplyToDto(
+    val id: String,
+    val content: String?,
+    @SerializedName("image_url") val imageUrl: String?,
+    @SerializedName("sender_id") val senderId: String?,
+    val profiles: MessageSenderDto? = null,
+)
+
+/** message_reactions'tan {reaction, count, mine} özetine indirgenmiş satır —
+ * bu turda RENDER edilmiyor (kapsam dışı: tepki VERME), ama gelen veri
+ * modellenmeden bırakılmıyor. */
+data class MessageReactionDto(
+    val reaction: String,
+    val count: Int = 0,
+    val mine: Boolean = false,
+)
+
+/** Tek mesaj satırı. `sticker` bu turda hiç render edilmiyor (kapsam dışı:
+ * sticker GÖNDERME) — bu yüzden bilinçli olarak dar tipli (Any?), sadece
+ * null/dolu ayrımı JSON'dan bozulmadan geçsin diye. */
+data class MessageDto(
+    val id: String,
+    @SerializedName("sender_id") val senderId: String,
+    val content: String?,
+    @SerializedName("reply_to_id") val replyToId: String? = null,
+    @SerializedName("read_at") val readAt: String? = null,
+    @SerializedName("created_at") val createdAt: String? = null,
+    val profiles: MessageSenderDto? = null,
+    @SerializedName("reply_to") val replyTo: ReplyToDto? = null,
+    val reactions: List<MessageReactionDto>? = null,
+    val sticker: Any? = null,
+    @SerializedName("image_url") val imageUrl: String? = null,
+)
+
+/** api_message_conversation_detail()'in "conversation" alanı — özet DTO'dan
+ * (ConversationSummaryDto) FARKLI: last_message_preview/at ve has_unread yok. */
+data class ConversationInfoDto(
+    val id: String,
+    @SerializedName("is_group") val isGroup: Boolean = false,
+    val name: String?,
+    @SerializedName("avatar_url") val avatarUrl: String?,
+)
+
+data class ConversationDetailResponse(
+    val messages: List<MessageDto>? = null,
+    @SerializedName("has_more") val hasMore: Boolean = false,
+    val conversation: ConversationInfoDto? = null,
+    val error: String? = null,
+)
+
+data class SendMessageRequest(
+    val content: String,
+    @SerializedName("reply_to_id") val replyToId: String? = null,
+)
+
+data class SendMessageResponse(
+    val message: MessageDto? = null,
+    val error: String? = null,
+)
+
+data class StartConversationResponse(
+    @SerializedName("conversation_id") val conversationId: String? = null,
+    val error: String? = null,
+)

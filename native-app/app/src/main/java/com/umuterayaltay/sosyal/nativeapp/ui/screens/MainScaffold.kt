@@ -30,17 +30,18 @@ private enum class MainTab(val label: String, val icon: androidx.compose.ui.grap
 }
 
 /**
- * Alt navigasyon barlı ana ekran — "Ana Sayfa" (Feed), "Keşfet", "Reels" (Faz 5,
- * dikey video akışı) ve "Profil" (Faz 4, native Android profil ekrani) gerçekten
- * çalışıyor, kalan 1 sekme ("Mesajlar") dürüstçe "Yakında" placeholder'ı
- * gösteriyor (bkz. PlaceholderScreen — sahte/yarım bir uygulama izlenimi
- * verilmesin diye).
+ * Alt navigasyon barlı ana ekran — Faz 3'ün 5 sekmesi de artık gerçekten
+ * çalışıyor: "Ana Sayfa" (Feed), "Keşfet", "Reels" (dikey video akışı),
+ * "Mesajlar" (gelen kutusu + konuşma + yeni mesaj — bu fazın SON parçasıydı)
+ * ve "Profil". Hiç placeholder KALMADI (bkz. PlaceholderScreen — artık başka
+ * hiçbir sekmede kullanılmıyor).
  *
  * navController AppNavHost'tan geliyor - Profil/Kesfet sekmelerindeki
  * kullanici satirlarindan "profile/{username}", stats satirindan
  * "followers/{username}"/"following/{username}", TopAppBar aksiyonlarindan
- * "insights"/"followRequests" route'larina PUSH yapmak icin (bottom bar'in
- * bu push'larda gizlenmesi standart/beklenen davranis).
+ * "insights"/"followRequests", Mesajlar sekmesinden "conversation/{id}"/
+ * "newMessage" route'larina PUSH yapmak icin (bottom bar'in bu push'larda
+ * gizlenmesi standart/beklenen davranis).
  */
 @Composable
 fun MainScaffold(navController: NavHostController, onSessionExpired: () -> Unit) {
@@ -68,7 +69,11 @@ fun MainScaffold(navController: NavHostController, onSessionExpired: () -> Unit)
                     onUserClick = { username -> navController.navigate("profile/$username") },
                 )
                 MainTab.Reels -> ReelsScreen(onSessionExpired = onSessionExpired)
-                MainTab.Messages -> PlaceholderScreen("Mesajlar")
+                MainTab.Messages -> InboxScreen(
+                    onConversationClick = { conversationId -> navController.navigate("conversation/$conversationId") },
+                    onNewMessageClick = { navController.navigate("newMessage") },
+                    onSessionExpired = onSessionExpired,
+                )
                 MainTab.Profile -> ProfileScreen(
                     username = null,
                     onNavigateToProfile = { username -> navController.navigate("profile/$username") },

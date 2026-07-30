@@ -1,0 +1,222 @@
+package com.umuterayaltay.sosyal.nativeapp.viewmodel
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewModelScope
+import com.umuterayaltay.sosyal.nativeapp.ServiceLocator
+import com.umuterayaltay.sosyal.nativeapp.network.ConversationInfoDto
+import com.umuterayaltay.sosyal.nativeapp.network.MessageDto
+import com.umuterayaltay.sosyal.nativeapp.repository.ConversationDetailResult
+import com.umuterayaltay.sosyal.nativeapp.repository.SendMessageResult
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+
+sealed class ConversationEvent {
+    data object SessionExpired : ConversationEvent()
+}
+
+private const val POLL_INTERVAL_MS = 5000L
+
+/**
+ * Tek bir konuşma ekranı için ViewModel — ProfileViewModel'deki gibi constructor
+ * parametreli (conversationId), bu yüzden [ConversationViewModelFactory] gerekir.
+ *
+ * Sayfalama: page=1 en yeni MESSAGE_PAGE mesaj (backend zaten eskiden-yeniye
+ * çevirip döner), loadOlder() page++ ile bir önceki (daha eski) sayfayı çekip
+ * listenin BAŞINA ekler — [messages] her zaman artan (eskiden yeniye) sırada
+ * kalır, scroll pozisyonu bu yüzden loadOlder() sonrası bozulmaz.
+ *
+ * Basit polling: gerçek Supabase Realtime YOK (bilinçli sınır) — bunun yerine
+ * viewModelScope içinde 5 saniyede bir page=1 tekrar çekilir, o anda listede
+ * OLMAYAN id'ler (yeni gelen mesajlar) listenin SONUNA eklenir; var olan
+ * mesajlara/eski sayfalara dokunulmaz. viewModelScope, ViewModel onCleared()
+ * olduğunda OTOMATİK iptal edilir — döngü ayrıca elle durdurulmuyor.
+ */
+class ConversationViewModel(private val conversationId: String) : ViewModel() {
+
+    private val messagingRepository = ServiceLocator.messagingRepository
+    private val authRepository = ServiceLocator.authRepository
+    private val tokenStore = ServiceLocator.tokenStore
+
+    private var page = 1
+
+    private val _messages = MutableStateFlow<List<MessageDto>>(emptyList())
+    val messages: StateFlow<List<MessageDto>> = _messages.asStateFlow()
+
+    private val _hasMore = MutableStateFlow(false)
+    val hasMore: StateFlow<Boolean> = _hasMore.asStateFlow()
+
+    private val _loading = MutableStateFlow(true)
+    val loading: StateFlow<Boolean> = _loading.asStateFlow()
+
+    private val _loadingOlder = MutableStateFlow(false)
+    val loadingOlder: StateFlow<Boolean> = _loadingOlder.asStateFlow()
+
+    private val _error = MutableStateFlow<String?>(null)
+    val error: StateFlow<String?> = _error.asStateFlow()
+
+    private val _conversationInfo = MutableStateFlow<ConversationInfoDto?>(null)
+    val conversationInfo: StateFlow<ConversationInfoDto?> = _conversationInfo.asStateFlow()
+
+    private val _sendText = MutableStateFlow("")
+    val sendText: StateFlow<String> = _sendText.asStateFlow()
+
+    private val _replyingTo = MutableStateFlow<MessageDto?>(null)
+    val replyingTo: StateFlow<MessageDto?> = _replyingTo.asStateFlow()
+
+    // Mesaj balonunu ben/karşı taraf olarak hizalamak için — AuthRepository.
+    // getCurrentUser() (Faz 3 Profil'de eklendi) ile BİR KEZ çözülüp burada
+    // cache'lenir. Kıyaslama username DEĞİL id ile yapılır: messages.sender_id
+    // zaten user id'si — profiles embed'i her mesajda dolu gelmeyebileceği
+    // (ör. profil silinmiş) için id kıyası username'e göre daha güvenilir
+    // (spesifikasyondan BİLİNÇLİ küçük bir sapma, gerekçesi budur).
+    private val _myUserId = MutableStateFlow<String?>(null)
+    val myUserId: StateFlow<String?> = _myUserId.asStateFlow()
+
+    private val _events = MutableSharedFlow<ConversationEvent>()
+    val events: SharedFlow<ConversationEvent> = _events
+
+    init {
+        resolveMyUserId()
+        loadInitial()
+        startPolling()
+    }
+
+    private fun resolveMyUserId() {
+        viewModelScope.launch {
+            _myUserId.value = authRepository.getCurrentUser()?.id
+        }
+    }
+
+    fun loadInitial() {
+        viewModelScope.launch {
+            _loading.value = true
+            _error.value = null
+            page = 1
+            when (val result = messagingRepository.getConversationDetail(conversationId, page)) {
+                is ConversationDetailResult.Success -> {
+                    _messages.value = result.messages
+                    _hasMore.value = result.hasMore
+                    _conversationInfo.value = result.conversation
+                    // Sunucu zaten page=1 çekilince arka planda okundu isaretliyor
+                    // (bkz. app/api_v1.py docstring'i) - burada AYRICA mark-read
+                    // cagirmak zararsiz/tutarlilik icin (ekran acildiginda kesin
+                    // okundu isaretlensin diye), sonucu beklenmiyor.
+                    markRead()
+                }
+                is ConversationDetailResult.Error -> handleError(result.code)
+            }
+            _loading.value = false
+        }
+    }
+
+    fun loadOlder() {
+        if (_loadingOlder.value || _loading.value || !_hasMore.value) return
+        viewModelScope.launch {
+            _loadingOlder.value = true
+            val nextPage = page + 1
+            when (val result = messagingRepository.getConversationDetail(conversationId, nextPage)) {
+                is ConversationDetailResult.Success -> {
+                    page = nextPage
+                    _hasMore.value = result.hasMore
+                    _messages.value = result.messages + _messages.value
+                }
+                is ConversationDetailResult.Error -> handleError(result.code, silent = true)
+            }
+            _loadingOlder.value = false
+        }
+    }
+
+    private fun startPolling() {
+        viewModelScope.launch {
+            while (true) {
+                delay(POLL_INTERVAL_MS)
+                pollNewest()
+            }
+        }
+    }
+
+    private suspend fun pollNewest() {
+        when (val result = messagingRepository.getConversationDetail(conversationId, 1)) {
+            is ConversationDetailResult.Success -> {
+                val existingIds = _messages.value.mapTo(HashSet()) { it.id }
+                val freshOnes = result.messages.filter { it.id !in existingIds }
+                if (freshOnes.isNotEmpty()) {
+                    _messages.value = _messages.value + freshOnes
+                }
+            }
+            is ConversationDetailResult.Error -> {
+                // Polling hatası kullanıcıyı rahatsız etmesin (arka planda sessizce
+                // yeniden dener) — SADECE 401'de oturum sonlandırılır.
+                if (result.code == "unauthorized") {
+                    tokenStore.clearToken()
+                    _events.emit(ConversationEvent.SessionExpired)
+                }
+            }
+        }
+    }
+
+    fun onSendTextChange(text: String) {
+        _sendText.value = text
+    }
+
+    fun send() {
+        val content = _sendText.value.trim()
+        if (content.isEmpty()) return
+        val replyId = _replyingTo.value?.id
+        viewModelScope.launch {
+            when (val result = messagingRepository.sendMessage(conversationId, content, replyId)) {
+                is SendMessageResult.Success -> {
+                    // Optimistic DEĞİL — sunucu yanıtındaki mesajı kullanıyoruz
+                    // (basit ve güvenilir, spesifikasyon gereği).
+                    _messages.value = _messages.value + result.message
+                    _sendText.value = ""
+                    _replyingTo.value = null
+                }
+                is SendMessageResult.Error -> handleError(result.code, silent = true)
+            }
+        }
+    }
+
+    fun setReplyingTo(message: MessageDto) {
+        _replyingTo.value = message
+    }
+
+    fun clearReplyingTo() {
+        _replyingTo.value = null
+    }
+
+    private fun markRead() {
+        viewModelScope.launch {
+            messagingRepository.markRead(conversationId)
+        }
+    }
+
+    private suspend fun handleError(code: String?, silent: Boolean = false) {
+        if (code == "unauthorized") {
+            tokenStore.clearToken()
+            _events.emit(ConversationEvent.SessionExpired)
+            return
+        }
+        if (silent) return
+        _error.value = when (code) {
+            "forbidden" -> "Bu konuşmaya erişiminiz yok"
+            "network_error" -> "Bağlantı hatası — internet bağlantınızı kontrol edin"
+            else -> "Mesajlar yüklenemedi, lütfen tekrar deneyin"
+        }
+    }
+}
+
+/** ConversationViewModel constructor'ı conversationId parametresi aldığı için
+ * ProfileViewModelFactory/FollowListViewModelFactory ile AYNI desen. */
+class ConversationViewModelFactory(private val conversationId: String) : ViewModelProvider.Factory {
+    @Suppress("UNCHECKED_CAST")
+    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+        return ConversationViewModel(conversationId) as T
+    }
+}
