@@ -31,6 +31,7 @@ import com.umuterayaltay.sosyal.nativeapp.viewmodel.FeedViewModel
 @Composable
 fun FeedScreen(
     onSessionExpired: () -> Unit,
+    onNavigateToPostDetail: (String) -> Unit,
     viewModel: FeedViewModel = viewModel(),
 ) {
     val posts by viewModel.posts.collectAsState()
@@ -76,7 +77,11 @@ fun FeedScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     items(posts, key = { it.id }) { post ->
-                        PostCard(post)
+                        PostCard(
+                            post = post,
+                            onLikeClick = { viewModel.toggleLike(it.id) },
+                            onCommentClick = { onNavigateToPostDetail(it.id) },
+                        )
                     }
                 }
             }

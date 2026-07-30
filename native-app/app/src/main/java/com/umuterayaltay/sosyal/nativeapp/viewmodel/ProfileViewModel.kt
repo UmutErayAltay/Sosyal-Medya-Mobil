@@ -9,6 +9,7 @@ import com.umuterayaltay.sosyal.nativeapp.network.ProfileStatsDto
 import com.umuterayaltay.sosyal.nativeapp.repository.Post
 import com.umuterayaltay.sosyal.nativeapp.repository.ProfileResult
 import com.umuterayaltay.sosyal.nativeapp.repository.ToggleFollowResult
+import com.umuterayaltay.sosyal.nativeapp.repository.ToggleLikeResult
 import com.umuterayaltay.sosyal.nativeapp.repository.toDomain
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -32,6 +33,7 @@ class ProfileViewModel(private val requestedUsername: String?) : ViewModel() {
 
     private val profileRepository = ServiceLocator.profileRepository
     private val authRepository = ServiceLocator.authRepository
+    private val interactionsRepository = ServiceLocator.interactionsRepository
     private val tokenStore = ServiceLocator.tokenStore
 
     private var resolvedUsername: String? = requestedUsername
@@ -151,6 +153,31 @@ class ProfileViewModel(private val requestedUsername: String?) : ViewModel() {
                         _events.emit(ProfileEvent.SessionExpired)
                     } else {
                         _error.value = mapErrorMessage(result.code)
+                    }
+                }
+            }
+        }
+    }
+
+    /** Kalp ikonuna tıklanınca çağrılır — aynı post birden fazla sekmede/listede
+     * görünebilir (ör. hem "Gönderiler" hem "Beğenilenler"de), bu yüzden
+     * posts/likedPosts/archivedPosts'ın HEPSİ güncellenir (bookmarkedPosts'un
+     * ProfileScreen'de gösterildiği bir sekme yok, bu yüzden dokunulmadı). */
+    fun toggleLike(postId: String) {
+        viewModelScope.launch {
+            when (val result = interactionsRepository.toggleLike(postId)) {
+                is ToggleLikeResult.Success -> {
+                    fun apply(list: List<Post>): List<Post> = list.map { post ->
+                        if (post.id == postId) post.copy(likeCount = result.count, likedByMe = result.liked) else post
+                    }
+                    _posts.value = apply(_posts.value)
+                    _likedPosts.value = apply(_likedPosts.value)
+                    _archivedPosts.value = apply(_archivedPosts.value)
+                }
+                is ToggleLikeResult.Error -> {
+                    if (result.code == "unauthorized") {
+                        tokenStore.clearToken()
+                        _events.emit(ProfileEvent.SessionExpired)
                     }
                 }
             }

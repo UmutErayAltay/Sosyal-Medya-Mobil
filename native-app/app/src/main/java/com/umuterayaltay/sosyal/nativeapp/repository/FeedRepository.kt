@@ -30,6 +30,12 @@ class FeedRepository(
     fun observePosts(): Flow<List<Post>> =
         postDao.getAll().map { entities -> entities.map { it.toDomain() } }
 
+    /** InteractionsRepository.toggleLike() sunucu yanıtı geldikten SONRA
+     * çağrılır (optimistic DEĞİL) — Room cache'i güncelleyip observePosts()'un
+     * otomatik yeniden emit etmesini tetikler. */
+    suspend fun updateLikeState(postId: String, likeCount: Int, likedByMe: Boolean) =
+        withContext(Dispatchers.IO) { postDao.updateLikeState(postId, likeCount, likedByMe) }
+
     suspend fun refresh(): FeedRefreshResult = withContext(Dispatchers.IO) {
         try {
             val response = feedApi.getFeed(cursor = 0, limit = FIRST_PAGE_LIMIT)

@@ -14,6 +14,7 @@ import com.umuterayaltay.sosyal.nativeapp.ui.screens.InsightsScreen
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.LoginScreen
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.MainScaffold
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.NewMessageScreen
+import com.umuterayaltay.sosyal.nativeapp.ui.screens.PostDetailScreen
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.ProfileScreen
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.FollowListKind
 
@@ -37,6 +38,10 @@ private const val ROUTE_MAIN = "main"
  * kullanıcı seçilip konuşma get-or-create edilince "conversation/{id}"ye
  * GEÇER (navigate + popUpTo("newMessage") ile kendini yığından çıkarır - geri
  * tuşu "Yeni Mesaj"a değil doğrudan Mesajlar listesine dönsün diye).
+ *
+ * Faz 4 (native Android beğeni+yorum): "postDetail/{postId}" - Feed/Discover/
+ * Reels/Profil'deki PostCard'ın yorum ikonuna veya ReelOverlay'in yorum
+ * ikonuna tıklanınca ROUTE_MAIN üstüne PUSH edilir (AYNI desen).
  */
 @Composable
 fun AppNavHost() {
@@ -75,6 +80,7 @@ fun AppNavHost() {
                 onNavigateToFollowing = { u -> navController.navigate("following/$u") },
                 onNavigateToInsights = { navController.navigate("insights") },
                 onNavigateToFollowRequests = { navController.navigate("followRequests") },
+                onNavigateToPostDetail = { postId -> navController.navigate("postDetail/$postId") },
                 onNavigateBack = { navController.navigateUp() },
                 onSessionExpired = {
                     navController.navigate(ROUTE_LOGIN) {
@@ -161,6 +167,21 @@ fun AppNavHost() {
                         popUpTo("newMessage") { inclusive = true }
                     }
                 },
+                onNavigateBack = { navController.navigateUp() },
+                onSessionExpired = {
+                    navController.navigate(ROUTE_LOGIN) {
+                        popUpTo(ROUTE_MAIN) { inclusive = true }
+                    }
+                },
+            )
+        }
+        composable(
+            route = "postDetail/{postId}",
+            arguments = listOf(navArgument("postId") { type = NavType.StringType }),
+        ) { backStackEntry ->
+            val postId = backStackEntry.arguments?.getString("postId") ?: return@composable
+            PostDetailScreen(
+                postId = postId,
                 onNavigateBack = { navController.navigateUp() },
                 onSessionExpired = {
                     navController.navigate(ROUTE_LOGIN) {

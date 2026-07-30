@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.umuterayaltay.sosyal.nativeapp.ServiceLocator
 import com.umuterayaltay.sosyal.nativeapp.repository.FeedRefreshResult
 import com.umuterayaltay.sosyal.nativeapp.repository.Post
+import com.umuterayaltay.sosyal.nativeapp.repository.ToggleLikeResult
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -28,6 +29,7 @@ sealed class FeedEvent {
 class FeedViewModel : ViewModel() {
 
     private val feedRepository = ServiceLocator.feedRepository
+    private val interactionsRepository = ServiceLocator.interactionsRepository
     private val tokenStore = ServiceLocator.tokenStore
 
     val posts: StateFlow<List<Post>> = feedRepository.observePosts()
@@ -63,6 +65,26 @@ class FeedViewModel : ViewModel() {
                 }
             }
             _isRefreshing.value = false
+        }
+    }
+
+    /** Kalp ikonuna tıklanınca çağrılır — sunucu yanıtı geldikten SONRA (optimistic
+     * DEĞİL) Room cache'i güncellenir, observePosts() otomatik yeniden emit eder. */
+    fun toggleLike(postId: String) {
+        viewModelScope.launch {
+            when (val result = interactionsRepository.toggleLike(postId)) {
+                is ToggleLikeResult.Success -> {
+                    feedRepository.updateLikeState(postId, result.count, result.liked)
+                }
+                is ToggleLikeResult.Error -> {
+                    if (result.code == "unauthorized") {
+                        tokenStore.clearToken()
+                        _events.emit(FeedEvent.SessionExpired)
+                    }
+                    // Diğer hatalar sessizce yutulur - tek bir post beğenisi
+                    // başarısız olursa tüm akışı bir hata state'ine düşürmek istenmiyor.
+                }
+            }
         }
     }
 

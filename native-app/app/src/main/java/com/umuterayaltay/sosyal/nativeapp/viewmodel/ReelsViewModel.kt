@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.umuterayaltay.sosyal.nativeapp.ServiceLocator
 import com.umuterayaltay.sosyal.nativeapp.repository.Post
 import com.umuterayaltay.sosyal.nativeapp.repository.ReelsPageResult
+import com.umuterayaltay.sosyal.nativeapp.repository.ToggleLikeResult
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -24,6 +25,7 @@ sealed class ReelsEvent {
 class ReelsViewModel : ViewModel() {
 
     private val reelsRepository = ServiceLocator.reelsRepository
+    private val interactionsRepository = ServiceLocator.interactionsRepository
     private val tokenStore = ServiceLocator.tokenStore
 
     private val _posts = MutableStateFlow<List<Post>>(emptyList())
@@ -82,6 +84,26 @@ class ReelsViewModel : ViewModel() {
     fun loadMore() {
         if (!_hasMore.value || _loading.value) return
         loadPage(_page.value + 1)
+    }
+
+    /** ReelOverlay'deki kalp ikonuna tıklanınca çağrılır — Feed/Discover/Profil'deki
+     * AYNI desen (sunucu yanıtındaki GERÇEK count/liked ile listeyi güncelle). */
+    fun toggleLike(postId: String) {
+        viewModelScope.launch {
+            when (val result = interactionsRepository.toggleLike(postId)) {
+                is ToggleLikeResult.Success -> {
+                    _posts.value = _posts.value.map { post ->
+                        if (post.id == postId) post.copy(likeCount = result.count, likedByMe = result.liked) else post
+                    }
+                }
+                is ToggleLikeResult.Error -> {
+                    if (result.code == "unauthorized") {
+                        tokenStore.clearToken()
+                        _events.emit(ReelsEvent.SessionExpired)
+                    }
+                }
+            }
+        }
     }
 
     private fun mapErrorMessage(code: String?): String = when (code) {

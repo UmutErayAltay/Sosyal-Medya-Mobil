@@ -14,6 +14,7 @@ data class Post(
     val avatarUrl: String?,
     val likeCount: Int,
     val commentCount: Int,
+    val likedByMe: Boolean,
     val createdAt: String?,
 )
 
@@ -27,6 +28,7 @@ fun PostDto.toDomain(): Post = Post(
     avatarUrl = profiles?.avatarUrl,
     likeCount = likeCount,
     commentCount = commentCount,
+    likedByMe = likedByMe,
     createdAt = createdAt,
 )
 
@@ -40,6 +42,7 @@ fun PostDto.toEntity(cachedAt: Long): PostEntity = PostEntity(
     avatarUrl = profiles?.avatarUrl,
     likeCount = likeCount,
     commentCount = commentCount,
+    likedByMe = likedByMe,
     createdAt = createdAt,
     cachedAt = cachedAt,
 )
@@ -54,5 +57,6 @@ fun PostEntity.toDomain(): Post = Post(
     avatarUrl = avatarUrl,
     likeCount = likeCount,
     commentCount = commentCount,
+    likedByMe = likedByMe,
     createdAt = createdAt,
 )

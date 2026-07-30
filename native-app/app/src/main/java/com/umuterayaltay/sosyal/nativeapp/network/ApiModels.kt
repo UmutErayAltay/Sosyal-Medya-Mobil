@@ -381,3 +381,70 @@ data class StartConversationResponse(
     @SerializedName("conversation_id") val conversationId: String? = null,
     val error: String? = null,
 )
+
+// ---- Etkileşimler: beğeni + yorum (app/api_v1.py satır ~1582-1801:
+// api_toggle_like/api_post_detail/api_add_comment okunarak doğrulandı — Faz 4,
+// native Android). BİLİNÇLİ SINIR: sticker/GIF yorum GÖNDERME, yorum düzenleme/
+// silme, yorum TEPKİSİ (comment_reactions) ve yorum BEĞENME (comment_likes)'e
+// aksiyon yok — bunlar VAR OLAN veri olarak modellenir (sticker/reactions
+// alanları) ama bu turda render edilmez.
+
+data class LikeRequest(
+    val reaction: String? = null,
+)
+
+data class ToggleLikeResponse(
+    val liked: Boolean = false,
+    val reaction: String? = null,
+    val count: Int = 0,
+    val error: String? = null,
+)
+
+/** stickers tablosundan {id, image_url} özeti — bu turda render edilmiyor. */
+data class CommentStickerDto(
+    val id: String?,
+    @SerializedName("image_url") val imageUrl: String?,
+)
+
+/** comment_reactions'tan {reaction, count, mine} özetine indirgenmiş satır —
+ * MessageReactionDto ile AYNI şekil, bu turda RENDER edilmiyor (kapsam dışı:
+ * yorum tepkisi VERME). */
+data class CommentReactionDto(
+    val reaction: String,
+    val count: Int = 0,
+    val mine: Boolean = false,
+)
+
+/** api_post_detail()'in yorum satırı — `replies` kendi kendine referans verir
+ * (Gson bunu native destekler), ama yanıtların KENDİ replies'ı yok (backend
+ * sadece TEK seviye iç içe geçirir — bkz. top_comments/tc["replies"] mantığı). */
+data class CommentDto(
+    val id: String,
+    @SerializedName("post_id") val postId: String? = null,
+    @SerializedName("user_id") val userId: String? = null,
+    val content: String?,
+    @SerializedName("parent_comment_id") val parentCommentId: String? = null,
+    @SerializedName("created_at") val createdAt: String? = null,
+    val profiles: MessageSenderDto? = null,
+    @SerializedName("like_count") val likeCount: Int = 0,
+    @SerializedName("liked_by_me") val likedByMe: Boolean = false,
+    val sticker: CommentStickerDto? = null,
+    val reactions: List<CommentReactionDto>? = null,
+    val replies: List<CommentDto>? = null,
+)
+
+data class PostDetailResponse(
+    val post: PostDto? = null,
+    val comments: List<CommentDto>? = null,
+    val error: String? = null,
+)
+
+data class AddCommentRequest(
+    val content: String,
+    @SerializedName("parent_comment_id") val parentCommentId: String? = null,
+)
+
+data class AddCommentResponse(
+    val comment: CommentDto? = null,
+    val error: String? = null,
+)

@@ -15,6 +15,7 @@ data class PostEntity(
     val avatarUrl: String?,
     val likeCount: Int,
     val commentCount: Int,
+    val likedByMe: Boolean,
     val createdAt: String?,
     val cachedAt: Long,
 )

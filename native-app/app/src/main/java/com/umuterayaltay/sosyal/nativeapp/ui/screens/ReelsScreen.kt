@@ -1,6 +1,7 @@
 package com.umuterayaltay.sosyal.nativeapp.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -50,13 +51,16 @@ import com.umuterayaltay.sosyal.nativeapp.viewmodel.ReelsViewModel
  * tam ekran kaydırma). Backend sözleşmesi: app/api_v1.py api_reels()
  * (DiscoverResponse ile AYNI şekil: posts/has_more/page).
  *
- * Bu turun BİLİNÇLİ SINIRI: video OLUŞTURMA yok (sadece izleme/kaydırma),
- * beğeni/yorum aksiyonları yok (Feed/Discover/Profil'deki gibi sadece sayı
- * gösterimi, tıklanabilir değil).
+ * Bu turun BİLİNÇLİ SINIRI: video OLUŞTURMA yok (sadece izleme/kaydırma).
+ * Faz 4: beğeni/yorum artık gerçek aksiyon — ReelOverlay'deki kalp ikonu
+ * [ReelsViewModel.toggleLike] çağırır, yorum ikonu [onNavigateToPostDetail]
+ * ile post-detay ekranına gider (Feed/Discover/Profil'deki PostCard ile AYNI
+ * felsefe, sadece burada paylaşılan PostCard yerine kendi overlay'i var).
  */
 @Composable
 fun ReelsScreen(
     onSessionExpired: () -> Unit,
+    onNavigateToPostDetail: (String) -> Unit,
     viewModel: ReelsViewModel = viewModel(),
 ) {
     val posts by viewModel.posts.collectAsState()
@@ -112,6 +116,8 @@ fun ReelsScreen(
                     ReelPage(
                         post = posts[page],
                         isActive = pagerState.currentPage == page,
+                        onLikeClick = { viewModel.toggleLike(it.id) },
+                        onCommentClick = { onNavigateToPostDetail(it.id) },
                     )
                 }
             }
@@ -126,7 +132,7 @@ fun ReelsScreen(
  * release edilir (bellek sızıntısı/arka planda çalan video olmaması için).
  */
 @Composable
-private fun ReelPage(post: Post, isActive: Boolean) {
+private fun ReelPage(post: Post, isActive: Boolean, onLikeClick: (Post) -> Unit, onCommentClick: (Post) -> Unit) {
     val videoUrl = post.videoUrl
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -171,21 +177,23 @@ private fun ReelPage(post: Post, isActive: Boolean) {
             )
         }
 
-        ReelOverlay(post = post)
+        ReelOverlay(post = post, onLikeClick = onLikeClick, onCommentClick = onCommentClick)
     }
 }
 
 /**
  * Video üzerine bindirilmiş bilgi katmanı — altta kullanıcı adı/avatar/caption,
- * sağda dikey beğeni/yorum sayacı sütunu. İkisi de SADECE gösterim, tıklanabilir
- * DEĞİL (bu turun bilinçli sınırı). Arkaplan olarak sabit siyah/beyaz yerine
- * colorScheme.surface (yarı saydam) + colorScheme.onSurface metin/ikon rengi
- * kullanılıyor — tasarım kısıtı gereği ("SADECE colorScheme.* renkleri") HEM
- * light HEM dark temada okunabilirlik garanti ediliyor (onSurface tanım gereği
- * surface'e karşı kontrastlı).
+ * sağda dikey beğeni/yorum sayacı sütunu. Faz 4: ikisi de artık tıklanabilir —
+ * beğeni ikonu [onLikeClick] ile toggle eder ([Post.likedByMe] true iken
+ * colorScheme.error, değilse colorScheme.secondary — PostCard ile AYNI renk
+ * kuralı), yorum ikonu [onCommentClick] ile post-detay ekranına gider.
+ * Arkaplan olarak sabit siyah/beyaz yerine colorScheme.surface (yarı saydam) +
+ * colorScheme.onSurface metin/ikon rengi kullanılıyor — tasarım kısıtı gereği
+ * ("SADECE colorScheme.* renkleri") HEM light HEM dark temada okunabilirlik
+ * garanti ediliyor (onSurface tanım gereği surface'e karşı kontrastlı).
  */
 @Composable
-private fun ReelOverlay(post: Post) {
+private fun ReelOverlay(post: Post, onLikeClick: (Post) -> Unit, onCommentClick: (Post) -> Unit) {
     val scrim = MaterialTheme.colorScheme.surface.copy(alpha = 0.55f)
 
     Row(
@@ -243,11 +251,14 @@ private fun ReelOverlay(post: Post) {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.clickable { onLikeClick(post) },
+            ) {
                 Icon(
                     imageVector = Icons.Filled.Favorite,
-                    contentDescription = "Beğeni",
-                    tint = MaterialTheme.colorScheme.secondary,
+                    contentDescription = if (post.likedByMe) "Beğenmekten vazgeç" else "Beğen",
+                    tint = if (post.likedByMe) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.secondary,
                     modifier = Modifier.size(26.dp),
                 )
                 Text(
@@ -256,7 +267,10 @@ private fun ReelOverlay(post: Post) {
                     color = MaterialTheme.colorScheme.onSurface,
                 )
             }
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.clickable { onCommentClick(post) },
+            ) {
                 Icon(
                     imageVector = Icons.Filled.ChatBubbleOutline,
                     contentDescription = "Yorum",

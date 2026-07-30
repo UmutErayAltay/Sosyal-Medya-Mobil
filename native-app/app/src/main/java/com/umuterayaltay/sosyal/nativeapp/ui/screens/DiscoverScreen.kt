@@ -71,6 +71,7 @@ import java.time.ZoneOffset
 fun DiscoverScreen(
     onSessionExpired: () -> Unit,
     onUserClick: (String) -> Unit,
+    onNavigateToPostDetail: (String) -> Unit,
     viewModel: DiscoverViewModel = viewModel(),
 ) {
     val query by viewModel.searchQuery.collectAsState()
@@ -182,7 +183,13 @@ fun DiscoverScreen(
                         if (searchType == SearchType.All || searchType == SearchType.Posts) {
                             if (searchPosts.isNotEmpty()) {
                                 item { SectionHeader("Postlar") }
-                                items(searchPosts, key = { "post_${it.id}" }) { post -> PostCard(post) }
+                                items(searchPosts, key = { "post_${it.id}" }) { post ->
+                                    PostCard(
+                                        post = post,
+                                        onLikeClick = { viewModel.toggleLike(it.id) },
+                                        onCommentClick = { onNavigateToPostDetail(it.id) },
+                                    )
+                                }
                             }
                         }
                     }
@@ -233,7 +240,13 @@ fun DiscoverScreen(
                         CenteredBox { Text("Şu an gösterilecek bir şey yok.") }
                     }
                     else -> {
-                        items(discoverPosts, key = { "discover_${it.id}" }) { post -> PostCard(post) }
+                        items(discoverPosts, key = { "discover_${it.id}" }) { post ->
+                            PostCard(
+                                post = post,
+                                onLikeClick = { viewModel.toggleLike(it.id) },
+                                onCommentClick = { onNavigateToPostDetail(it.id) },
+                            )
+                        }
                         item {
                             when {
                                 discoverLoading -> CenteredBox { CircularProgressIndicator() }

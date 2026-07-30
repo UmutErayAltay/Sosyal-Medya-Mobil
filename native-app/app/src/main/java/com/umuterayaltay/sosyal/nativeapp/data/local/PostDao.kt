@@ -18,4 +18,11 @@ interface PostDao {
 
     @Query("DELETE FROM posts")
     suspend fun clearAll()
+
+    // Faz 4 — beğeni aksiyonu: FeedViewModel.posts, Room'dan gelen bir Flow
+    // (stateIn) olduğu için doğrudan .value= ile güncellenemez; sunucudan
+    // dönen GERÇEK count/liked burada cache'e yazılır, observeAll() otomatik
+    // yeniden emit eder (Discover/Profil/Reels'teki .map{} deseninin Room karşılığı).
+    @Query("UPDATE posts SET likeCount = :likeCount, likedByMe = :likedByMe WHERE id = :postId")
+    suspend fun updateLikeState(postId: String, likeCount: Int, likedByMe: Boolean)
 }

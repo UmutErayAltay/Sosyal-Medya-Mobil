@@ -1,5 +1,6 @@
 package com.umuterayaltay.sosyal.nativeapp.ui.screens
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -27,12 +28,17 @@ import com.umuterayaltay.sosyal.nativeapp.repository.Post
 
 /**
  * Paylaşılan gönderi kartı — FeedScreen.kt'den ÇIKARILDI (Faz 3, Keşfet ekranı),
- * kopyalanmadı: hem Ana Sayfa hem Keşfet AYNI composable'ı kullanır. Girdi tipi
- * repository.Post (FeedRepository/DiscoverRepository'nin ikisi de PostDto'yu
- * PostDto.toDomain() ile bu tipe eşler) — iki farklı Post modeli YARATILMADI.
+ * kopyalanmadı: hem Ana Sayfa hem Keşfet hem Profil AYNI composable'ı kullanır.
+ * Girdi tipi repository.Post (FeedRepository/DiscoverRepository/ProfileRepository'nin
+ * hepsi PostDto'yu PostDto.toDomain() ile bu tipe eşler) — iki farklı Post
+ * modeli YARATILMADI.
+ *
+ * Faz 4: [onLikeClick]/[onCommentClick] ile artık gerçek aksiyona bağlı —
+ * kalp ikonu [Post.likedByMe] true iken dolu/kırmızı (colorScheme.error),
+ * değilse mevcut colorScheme.secondary rengiyle gösterilir.
  */
 @Composable
-fun PostCard(post: Post) {
+fun PostCard(post: Post, onLikeClick: (Post) -> Unit, onCommentClick: (Post) -> Unit) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -91,11 +97,14 @@ fun PostCard(post: Post) {
                 horizontalArrangement = Arrangement.spacedBy(20.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.clickable { onLikeClick(post) },
+                ) {
                     Icon(
                         imageVector = Icons.Filled.Favorite,
-                        contentDescription = "Beğeni",
-                        tint = MaterialTheme.colorScheme.secondary,
+                        contentDescription = if (post.likedByMe) "Beğenmekten vazgeç" else "Beğen",
+                        tint = if (post.likedByMe) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.secondary,
                         modifier = Modifier.size(18.dp),
                     )
                     Text(
@@ -103,7 +112,10 @@ fun PostCard(post: Post) {
                         style = MaterialTheme.typography.labelMedium,
                     )
                 }
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.clickable { onCommentClick(post) },
+                ) {
                     Icon(
                         imageVector = Icons.Filled.ChatBubbleOutline,
                         contentDescription = "Yorum",

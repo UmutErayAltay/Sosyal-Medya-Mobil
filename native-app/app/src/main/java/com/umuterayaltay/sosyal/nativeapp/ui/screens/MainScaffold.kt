@@ -63,12 +63,19 @@ fun MainScaffold(navController: NavHostController, onSessionExpired: () -> Unit)
     ) { padding ->
         Box(modifier = Modifier.padding(padding)) {
             when (selectedTab) {
-                MainTab.Feed -> FeedScreen(onSessionExpired = onSessionExpired)
+                MainTab.Feed -> FeedScreen(
+                    onSessionExpired = onSessionExpired,
+                    onNavigateToPostDetail = { postId -> navController.navigate("postDetail/$postId") },
+                )
                 MainTab.Discover -> DiscoverScreen(
                     onSessionExpired = onSessionExpired,
                     onUserClick = { username -> navController.navigate("profile/$username") },
+                    onNavigateToPostDetail = { postId -> navController.navigate("postDetail/$postId") },
                 )
-                MainTab.Reels -> ReelsScreen(onSessionExpired = onSessionExpired)
+                MainTab.Reels -> ReelsScreen(
+                    onSessionExpired = onSessionExpired,
+                    onNavigateToPostDetail = { postId -> navController.navigate("postDetail/$postId") },
+                )
                 MainTab.Messages -> InboxScreen(
                     onConversationClick = { conversationId -> navController.navigate("conversation/$conversationId") },
                     onNewMessageClick = { navController.navigate("newMessage") },
@@ -81,6 +88,7 @@ fun MainScaffold(navController: NavHostController, onSessionExpired: () -> Unit)
                     onNavigateToFollowing = { username -> navController.navigate("following/$username") },
                     onNavigateToInsights = { navController.navigate("insights") },
                     onNavigateToFollowRequests = { navController.navigate("followRequests") },
+                    onNavigateToPostDetail = { postId -> navController.navigate("postDetail/$postId") },
                     onSessionExpired = onSessionExpired,
                     // onNavigateBack YOK: bu, alt navigasyondaki KOK "Profil" sekmesi
                     // - geri tusu YOK (push edilmis bir route degil).

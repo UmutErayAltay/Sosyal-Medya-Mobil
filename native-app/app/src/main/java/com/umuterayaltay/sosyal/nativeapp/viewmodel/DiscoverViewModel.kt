@@ -11,6 +11,7 @@ import com.umuterayaltay.sosyal.nativeapp.repository.DiscoverPageResult
 import com.umuterayaltay.sosyal.nativeapp.repository.Post
 import com.umuterayaltay.sosyal.nativeapp.repository.SearchActionResult
 import com.umuterayaltay.sosyal.nativeapp.repository.SearchResult
+import com.umuterayaltay.sosyal.nativeapp.repository.ToggleLikeResult
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -46,6 +47,7 @@ enum class SearchType(val apiValue: String, val label: String) {
 class DiscoverViewModel : ViewModel() {
 
     private val discoverRepository = ServiceLocator.discoverRepository
+    private val interactionsRepository = ServiceLocator.interactionsRepository
     private val tokenStore = ServiceLocator.tokenStore
 
     // ---- Keşfet akışı ----
@@ -250,6 +252,31 @@ class DiscoverViewModel : ViewModel() {
         viewModelScope.launch {
             discoverRepository.clearHistory()
             search(_searchQuery.value)
+        }
+    }
+
+    /** Kalp ikonuna tıklanınca çağrılır — hem keşfet akışı hem arama sonuçları
+     * listesinde aynı post görünebileceği için ikisi de güncellenir (postId
+     * pratikte genelde sadece birinde olur, ama teorik olarak ikisinde de
+     * bulunabilir — spesifikasyon gereği). */
+    fun toggleLike(postId: String) {
+        viewModelScope.launch {
+            when (val result = interactionsRepository.toggleLike(postId)) {
+                is ToggleLikeResult.Success -> {
+                    _discoverPosts.value = _discoverPosts.value.map { post ->
+                        if (post.id == postId) post.copy(likeCount = result.count, likedByMe = result.liked) else post
+                    }
+                    _searchPosts.value = _searchPosts.value.map { post ->
+                        if (post.id == postId) post.copy(likeCount = result.count, likedByMe = result.liked) else post
+                    }
+                }
+                is ToggleLikeResult.Error -> {
+                    if (result.code == "unauthorized") {
+                        tokenStore.clearToken()
+                        _events.emit(DiscoverEvent.SessionExpired)
+                    }
+                }
+            }
         }
     }
 
