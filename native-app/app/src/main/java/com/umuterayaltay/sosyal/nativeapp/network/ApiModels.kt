@@ -324,6 +324,8 @@ data class ConversationSummaryDto(
     @SerializedName("last_message_at") val lastMessageAt: String?,
     // "unread" alanı SOHBET bazlı bool'dur (mesaj sayısı değil), gruplarda hep false.
     @SerializedName("has_unread") val hasUnread: Boolean = false,
+    // SADECE gruplarda dolu (üye sayısı) — Faz 4 grup yönetimi, 1:1'de null.
+    @SerializedName("member_count") val memberCount: Int? = null,
 )
 
 data class ConversationsResponse(
@@ -402,6 +404,67 @@ data class SendMessageResponse(
 
 data class StartConversationResponse(
     @SerializedName("conversation_id") val conversationId: String? = null,
+    val error: String? = null,
+)
+
+// ---- Grup yönetimi (app/api_v1.py messages/group/* — Faz 4, native Android.
+// Oluşturma/rename/üye listeleme-ekleme-çıkarma/admin-toggle/ayrılma. Grup
+// KEŞFİ/oluşturmadan ÖNCEKİ arama kısmı YENİ bir endpoint İCAT ETMEZ, mevcut
+// DiscoverRepository.search(type="users") reuse edilir — bkz. GroupCreateViewModel/
+// GroupManageViewModel.) BİLİNÇLİ SINIR: grup avatarı/fotoğrafı, sistem mesajları
+// ("X gruba eklendi"), grup sesli/görüntülü arama bu turun kapsamı DIŞI.
+
+/** GET .../group/{id}/members satırı — admin önce, sonra username sıralı (backend). */
+data class GroupMemberDto(
+    val id: String,
+    val username: String?,
+    @SerializedName("avatar_url") val avatarUrl: String?,
+    @SerializedName("is_admin") val isAdmin: Boolean = false,
+)
+
+data class GroupMembersResponse(
+    val members: List<GroupMemberDto>? = null,
+    val error: String? = null,
+)
+
+data class CreateGroupRequest(
+    val name: String,
+    @SerializedName("user_ids") val userIds: List<String>,
+)
+
+data class CreateGroupResponse(
+    @SerializedName("conversation_id") val conversationId: String? = null,
+    val error: String? = null,
+)
+
+data class RenameGroupRequest(
+    val name: String,
+)
+
+data class RenameGroupResponse(
+    val ok: Boolean? = null,
+    val name: String? = null,
+    val error: String? = null,
+)
+
+data class AddGroupMembersRequest(
+    @SerializedName("user_ids") val userIds: List<String>,
+)
+
+data class AddGroupMembersResponse(
+    val ok: Boolean? = null,
+    val added: List<GroupMemberDto>? = null,
+    val error: String? = null,
+)
+
+// NOT: remove/leave {"ok":true}/{"error":"..."} şekli döner — SimpleOkResponse
+// (yukarıda tanımlı) reuse edilir, ayrı bir yanıt DTO'su İCAT EDİLMEDİ.
+
+/** toggle-admin, SimpleOkResponse'tan FARKLI olarak güncel is_admin durumunu da
+ * döner (native taraf local state'i sunucudan gelen değerle senkron tutar). */
+data class ToggleAdminResponse(
+    val ok: Boolean? = null,
+    @SerializedName("is_admin") val isAdmin: Boolean? = null,
     val error: String? = null,
 )
 

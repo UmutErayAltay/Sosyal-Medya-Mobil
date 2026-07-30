@@ -13,6 +13,8 @@ import com.umuterayaltay.sosyal.nativeapp.ui.screens.CreatePostScreen
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.EditProfileScreen
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.FollowListScreen
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.FollowRequestsScreen
+import com.umuterayaltay.sosyal.nativeapp.ui.screens.GroupCreateScreen
+import com.umuterayaltay.sosyal.nativeapp.ui.screens.GroupManageScreen
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.InsightsScreen
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.LoginScreen
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.MainScaffold
@@ -45,6 +47,17 @@ private const val ROUTE_MAIN = "main"
  * kullanıcı seçilip konuşma get-or-create edilince "conversation/{id}"ye
  * GEÇER (navigate + popUpTo("newMessage") ile kendini yığından çıkarır - geri
  * tuşu "Yeni Mesaj"a değil doğrudan Mesajlar listesine dönsün diye).
+ *
+ * Faz 4 (native Android grup sohbeti): "groupCreate" ("newMessage" ile AYNI
+ * PUSH+popUpTo(inclusive) deseni, InboxScreen'in "Yeni Grup" ikonundan) ve
+ * "groupManage/{conversationId}" (ConversationScreen'in SADECE grup
+ * konuşmalarında görünen "Grubu Yönet" ikonundan - conversationId burada
+ * composable'ın KENDİ backStackEntry'sinden, ConversationScreen'in kendi
+ * ViewModel state'inden DEĞİL, bu yüzden onManageGroupClick parametresiz
+ * kalabiliyor). Gruptan ayrılma BAŞARILI olunca Inbox'a döner - conversation
+ * VE groupManage ekranları da yığından TEMİZLENİR (artık erişilemez bir
+ * konuşma), onDeactivated/onSessionExpired'daki AYNI popUpTo(ROUTE_MAIN,
+ * inclusive) deseni.
  *
  * Faz 4 (native Android beğeni+yorum): "postDetail/{postId}" - Feed/Discover/
  * Reels/Profil'deki PostCard'ın yorum ikonuna veya ReelOverlay'in yorum
@@ -199,6 +212,7 @@ fun AppNavHost() {
             ConversationScreen(
                 conversationId = conversationId,
                 onNavigateBack = { navController.navigateUp() },
+                onManageGroupClick = { navController.navigate("groupManage/$conversationId") },
                 onSessionExpired = {
                     navController.navigate(ROUTE_LOGIN) {
                         popUpTo(ROUTE_MAIN) { inclusive = true }
@@ -216,6 +230,47 @@ fun AppNavHost() {
                     }
                 },
                 onNavigateBack = { navController.navigateUp() },
+                onSessionExpired = {
+                    navController.navigate(ROUTE_LOGIN) {
+                        popUpTo(ROUTE_MAIN) { inclusive = true }
+                    }
+                },
+            )
+        }
+        composable("groupCreate") {
+            GroupCreateScreen(
+                onGroupCreated = { conversationId ->
+                    // "newMessage"in AYNI deseni - "Yeni Grup" ekranı geri
+                    // yığında KALMASIN, geri tuşu doğrudan Mesajlar'a dönsün.
+                    navController.navigate("conversation/$conversationId") {
+                        popUpTo("groupCreate") { inclusive = true }
+                    }
+                },
+                onNavigateBack = { navController.navigateUp() },
+                onSessionExpired = {
+                    navController.navigate(ROUTE_LOGIN) {
+                        popUpTo(ROUTE_MAIN) { inclusive = true }
+                    }
+                },
+            )
+        }
+        composable(
+            route = "groupManage/{conversationId}",
+            arguments = listOf(navArgument("conversationId") { type = NavType.StringType }),
+        ) { backStackEntry ->
+            val conversationId = backStackEntry.arguments?.getString("conversationId") ?: return@composable
+            GroupManageScreen(
+                conversationId = conversationId,
+                onNavigateBack = { navController.navigateUp() },
+                onLeftGroup = {
+                    // Gruptan ayrılınca hem "groupManage" hem altındaki
+                    // "conversation/{id}" artık erişilemez - ikisi de ROUTE_MAIN
+                    // popUpTo(inclusive) ile temizlenir, onDeactivated/
+                    // onSessionExpired ile AYNI navigasyon davranışı.
+                    navController.navigate(ROUTE_MAIN) {
+                        popUpTo(ROUTE_MAIN) { inclusive = true }
+                    }
+                },
                 onSessionExpired = {
                     navController.navigate(ROUTE_LOGIN) {
                         popUpTo(ROUTE_MAIN) { inclusive = true }

@@ -1,8 +1,12 @@
 package com.umuterayaltay.sosyal.nativeapp.repository
 
+import com.umuterayaltay.sosyal.nativeapp.network.AddGroupMembersRequest
 import com.umuterayaltay.sosyal.nativeapp.network.ConversationInfoDto
+import com.umuterayaltay.sosyal.nativeapp.network.CreateGroupRequest
+import com.umuterayaltay.sosyal.nativeapp.network.GroupMemberDto
 import com.umuterayaltay.sosyal.nativeapp.network.MessageDto
 import com.umuterayaltay.sosyal.nativeapp.network.MessagingApi
+import com.umuterayaltay.sosyal.nativeapp.network.RenameGroupRequest
 import com.umuterayaltay.sosyal.nativeapp.network.RetrofitClient
 import com.umuterayaltay.sosyal.nativeapp.network.SendMessageRequest
 import com.umuterayaltay.sosyal.nativeapp.network.ConversationSummaryDto
@@ -39,6 +43,46 @@ sealed class StartConversationResult {
 sealed class MarkReadResult {
     data object Success : MarkReadResult()
     data class Error(val code: String?) : MarkReadResult()
+}
+
+// ---- Grup yönetimi (Faz 4) — her endpoint için AYRI, dar bir sonuç tipi
+// (ConversationsResult/SendMessageResult/StartConversationResult ile AYNI
+// granülerlik geleneği; MarkReadResult'ın ok/error şekli REUSE edilmedi çünkü
+// isim anlam taşımıyor olurdu, her endpoint kendi adıyla tanımlandı).
+
+sealed class CreateGroupResult {
+    data class Success(val conversationId: String) : CreateGroupResult()
+    data class Error(val code: String?) : CreateGroupResult()
+}
+
+sealed class RenameGroupResult {
+    data class Success(val name: String) : RenameGroupResult()
+    data class Error(val code: String?) : RenameGroupResult()
+}
+
+sealed class GroupMembersResult {
+    data class Success(val members: List<GroupMemberDto>) : GroupMembersResult()
+    data class Error(val code: String?) : GroupMembersResult()
+}
+
+sealed class AddGroupMembersResult {
+    data class Success(val added: List<GroupMemberDto>) : AddGroupMembersResult()
+    data class Error(val code: String?) : AddGroupMembersResult()
+}
+
+sealed class RemoveGroupMemberResult {
+    data object Success : RemoveGroupMemberResult()
+    data class Error(val code: String?) : RemoveGroupMemberResult()
+}
+
+sealed class ToggleAdminResult {
+    data class Success(val isAdmin: Boolean) : ToggleAdminResult()
+    data class Error(val code: String?) : ToggleAdminResult()
+}
+
+sealed class LeaveGroupResult {
+    data object Success : LeaveGroupResult()
+    data class Error(val code: String?) : LeaveGroupResult()
 }
 
 /**
@@ -138,6 +182,123 @@ class MessagingRepository(
             MarkReadResult.Error("network_error")
         } catch (e: Exception) {
             MarkReadResult.Error("unknown_error")
+        }
+    }
+
+    // ---- Grup yönetimi (Faz 4) ----
+
+    suspend fun createGroup(name: String, userIds: List<String>): CreateGroupResult = withContext(Dispatchers.IO) {
+        try {
+            val response = messagingApi.createGroup(CreateGroupRequest(name = name, userIds = userIds))
+            val body = response.body()
+            if (response.isSuccessful && body?.conversationId != null) {
+                CreateGroupResult.Success(body.conversationId)
+            } else {
+                CreateGroupResult.Error(body?.error ?: RetrofitClient.parseErrorCode(response))
+            }
+        } catch (e: IOException) {
+            CreateGroupResult.Error("network_error")
+        } catch (e: Exception) {
+            CreateGroupResult.Error("unknown_error")
+        }
+    }
+
+    suspend fun renameGroup(conversationId: String, name: String): RenameGroupResult = withContext(Dispatchers.IO) {
+        try {
+            val response = messagingApi.renameGroup(conversationId, RenameGroupRequest(name = name))
+            val body = response.body()
+            if (response.isSuccessful && body?.ok == true) {
+                RenameGroupResult.Success(body.name ?: name)
+            } else {
+                RenameGroupResult.Error(body?.error ?: RetrofitClient.parseErrorCode(response))
+            }
+        } catch (e: IOException) {
+            RenameGroupResult.Error("network_error")
+        } catch (e: Exception) {
+            RenameGroupResult.Error("unknown_error")
+        }
+    }
+
+    suspend fun getGroupMembers(conversationId: String): GroupMembersResult = withContext(Dispatchers.IO) {
+        try {
+            val response = messagingApi.getGroupMembers(conversationId)
+            val body = response.body()
+            if (response.isSuccessful && body != null && body.error == null) {
+                GroupMembersResult.Success(body.members ?: emptyList())
+            } else {
+                GroupMembersResult.Error(body?.error ?: RetrofitClient.parseErrorCode(response))
+            }
+        } catch (e: IOException) {
+            GroupMembersResult.Error("network_error")
+        } catch (e: Exception) {
+            GroupMembersResult.Error("unknown_error")
+        }
+    }
+
+    suspend fun addGroupMembers(conversationId: String, userIds: List<String>): AddGroupMembersResult =
+        withContext(Dispatchers.IO) {
+            try {
+                val response = messagingApi.addGroupMembers(conversationId, AddGroupMembersRequest(userIds = userIds))
+                val body = response.body()
+                if (response.isSuccessful && body?.ok == true) {
+                    AddGroupMembersResult.Success(body.added ?: emptyList())
+                } else {
+                    AddGroupMembersResult.Error(body?.error ?: RetrofitClient.parseErrorCode(response))
+                }
+            } catch (e: IOException) {
+                AddGroupMembersResult.Error("network_error")
+            } catch (e: Exception) {
+                AddGroupMembersResult.Error("unknown_error")
+            }
+        }
+
+    suspend fun removeGroupMember(conversationId: String, userId: String): RemoveGroupMemberResult =
+        withContext(Dispatchers.IO) {
+            try {
+                val response = messagingApi.removeGroupMember(conversationId, userId)
+                val body = response.body()
+                if (response.isSuccessful && body?.ok == true) {
+                    RemoveGroupMemberResult.Success
+                } else {
+                    RemoveGroupMemberResult.Error(body?.error ?: RetrofitClient.parseErrorCode(response))
+                }
+            } catch (e: IOException) {
+                RemoveGroupMemberResult.Error("network_error")
+            } catch (e: Exception) {
+                RemoveGroupMemberResult.Error("unknown_error")
+            }
+        }
+
+    suspend fun toggleGroupAdmin(conversationId: String, userId: String): ToggleAdminResult =
+        withContext(Dispatchers.IO) {
+            try {
+                val response = messagingApi.toggleGroupAdmin(conversationId, userId)
+                val body = response.body()
+                if (response.isSuccessful && body?.ok == true && body.isAdmin != null) {
+                    ToggleAdminResult.Success(body.isAdmin)
+                } else {
+                    ToggleAdminResult.Error(body?.error ?: RetrofitClient.parseErrorCode(response))
+                }
+            } catch (e: IOException) {
+                ToggleAdminResult.Error("network_error")
+            } catch (e: Exception) {
+                ToggleAdminResult.Error("unknown_error")
+            }
+        }
+
+    suspend fun leaveGroup(conversationId: String): LeaveGroupResult = withContext(Dispatchers.IO) {
+        try {
+            val response = messagingApi.leaveGroup(conversationId)
+            val body = response.body()
+            if (response.isSuccessful && body?.ok == true) {
+                LeaveGroupResult.Success
+            } else {
+                LeaveGroupResult.Error(body?.error ?: RetrofitClient.parseErrorCode(response))
+            }
+        } catch (e: IOException) {
+            LeaveGroupResult.Error("network_error")
+        } catch (e: Exception) {
+            LeaveGroupResult.Error("unknown_error")
         }
     }
 }

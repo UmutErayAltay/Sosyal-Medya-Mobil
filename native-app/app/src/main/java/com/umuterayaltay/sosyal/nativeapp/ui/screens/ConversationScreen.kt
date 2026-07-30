@@ -64,6 +64,7 @@ import com.umuterayaltay.sosyal.nativeapp.viewmodel.ConversationViewModelFactory
 fun ConversationScreen(
     conversationId: String,
     onNavigateBack: () -> Unit,
+    onManageGroupClick: () -> Unit,
     onSessionExpired: () -> Unit,
     viewModel: ConversationViewModel = viewModel(
         factory = ConversationViewModelFactory(conversationId),
@@ -139,6 +140,13 @@ fun ConversationScreen(
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Geri")
+                    }
+                },
+                actions = {
+                    if (conversationInfo?.isGroup == true) {
+                        IconButton(onClick = onManageGroupClick) {
+                            Icon(Icons.Filled.Groups, contentDescription = "Grubu Yönet")
+                        }
                     }
                 },
             )

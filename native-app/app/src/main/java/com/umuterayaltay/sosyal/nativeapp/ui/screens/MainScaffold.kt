@@ -80,6 +80,7 @@ fun MainScaffold(navController: NavHostController, onSessionExpired: () -> Unit)
                 MainTab.Messages -> InboxScreen(
                     onConversationClick = { conversationId -> navController.navigate("conversation/$conversationId") },
                     onNewMessageClick = { navController.navigate("newMessage") },
+                    onNewGroupClick = { navController.navigate("groupCreate") },
                     onSessionExpired = onSessionExpired,
                 )
                 MainTab.Profile -> ProfileScreen(

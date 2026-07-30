@@ -15,6 +15,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.GroupAdd
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.Button
@@ -56,6 +57,7 @@ import com.umuterayaltay.sosyal.nativeapp.viewmodel.InboxViewModel
 fun InboxScreen(
     onConversationClick: (String) -> Unit,
     onNewMessageClick: () -> Unit,
+    onNewGroupClick: () -> Unit,
     onSessionExpired: () -> Unit,
     viewModel: InboxViewModel = viewModel(),
 ) {
@@ -76,6 +78,9 @@ fun InboxScreen(
             TopAppBar(
                 title = { Text("Mesajlar") },
                 actions = {
+                    IconButton(onClick = onNewGroupClick) {
+                        Icon(Icons.Filled.GroupAdd, contentDescription = "Yeni Grup")
+                    }
                     IconButton(onClick = onNewMessageClick) {
                         Icon(Icons.Filled.Add, contentDescription = "Yeni Mesaj")
                     }
