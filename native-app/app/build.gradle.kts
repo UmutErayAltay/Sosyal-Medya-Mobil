@@ -94,6 +94,14 @@ dependencies {
     // Token saklama — EncryptedSharedPreferences
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
 
+    // Google ile giriş — Android Credential Manager ("Sign in with Google" native
+    // akışı, tarayıcı/WebView YOK). GoogleIdTokenCredential googleid kütüphanesinden
+    // gelir, credentials-play-services-auth Credential Manager'ın Play Services
+    // implementasyonunu sağlar (bkz. GoogleSignInHelper.kt).
+    implementation("androidx.credentials:credentials:1.3.0")
+    implementation("androidx.credentials:credentials-play-services-auth:1.3.0")
+    implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")
+
     // Yerel cache — Room
     implementation("androidx.room:room-runtime:2.6.1")
     implementation("androidx.room:room-ktx:2.6.1")

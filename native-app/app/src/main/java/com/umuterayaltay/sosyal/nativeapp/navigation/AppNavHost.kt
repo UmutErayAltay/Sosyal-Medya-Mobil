@@ -20,6 +20,7 @@ import com.umuterayaltay.sosyal.nativeapp.ui.screens.NewMessageScreen
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.NotificationPreferencesScreen
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.PostDetailScreen
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.ProfileScreen
+import com.umuterayaltay.sosyal.nativeapp.ui.screens.RegisterScreen
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.SettingsScreen
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.FollowListKind
 
@@ -62,6 +63,15 @@ private const val ROUTE_MAIN = "main"
  * ile AYNI hedefe (ROUTE_LOGIN, ROUTE_MAIN'i yığından temizleyerek) gider -
  * kavramsal olarak farklı (kullanıcı BİLEREK çıktı) ama navigasyon davranışı
  * özdeş olduğu için AYNI lambda gövdesi kullanılır.
+ *
+ * Faz 4 (native Android auth genişletme: kayıt ol + Google ile giriş + 2FA):
+ * "register" - ROUTE_LOGIN'in YANINDA, AYNI seviyede (ROUTE_MAIN üstüne PUSH
+ * DEĞİL, henüz oturum yok). LoginScreen'deki "Kayıt ol" linkinden erişilir,
+ * başarılı kayıt onLoginSuccess ile AYNI davranışı (ROUTE_MAIN'e navigate +
+ * ROUTE_LOGIN'i popUpTo(inclusive) ile temizleme) çağırır. 2FA (mfa_required)
+ * ve Google Sign-In (Credential Manager) akışları AYRI bir route GEREKTİRMEZ -
+ * LoginScreen kendi içinde (AuthViewModel.LoginUiState.NeedsCode) bir alt-ekran
+ * olarak render eder.
  */
 @Composable
 fun AppNavHost() {
@@ -72,6 +82,17 @@ fun AppNavHost() {
         composable(ROUTE_LOGIN) {
             LoginScreen(
                 onLoginSuccess = {
+                    navController.navigate(ROUTE_MAIN) {
+                        popUpTo(ROUTE_LOGIN) { inclusive = true }
+                    }
+                },
+                onNavigateToRegister = { navController.navigate("register") },
+            )
+        }
+        composable("register") {
+            RegisterScreen(
+                onNavigateBack = { navController.navigateUp() },
+                onRegisterSuccess = {
                     navController.navigate(ROUTE_MAIN) {
                         popUpTo(ROUTE_LOGIN) { inclusive = true }
                     }

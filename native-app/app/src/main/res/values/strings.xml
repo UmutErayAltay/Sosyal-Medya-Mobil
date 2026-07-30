@@ -1,4 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Sosyal Native</string>
+    <!-- Supabase Google provider'ıyla AYNI Client ID (native için ayrı bir Google
+         Cloud client YOK) — SECRET DEĞİL, public/client-side kodda bulunması
+         güvenlik sorunu değil. Credential Manager (GoogleSignInHelper.kt) bunu
+         GetSignInWithGoogleOption'a serverClientId olarak geçirir. -->
+    <string name="google_web_client_id" translatable="false">982859722610-525n7ebbavn0dubrmgm0ksnvkgs52j8u.apps.googleusercontent.com</string>
 </resources>

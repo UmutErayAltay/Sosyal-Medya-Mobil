@@ -11,6 +11,12 @@ interface AuthApi {
     @POST("auth/login")
     suspend fun login(@Body request: LoginRequest): Response<LoginResponse>
 
+    @POST("auth/register")
+    suspend fun register(@Body request: RegisterRequest): Response<LoginResponse>
+
+    @POST("auth/google")
+    suspend fun googleLogin(@Body request: GoogleLoginRequest): Response<LoginResponse>
+
     @POST("auth/logout")
     suspend fun logout(): Response<LogoutResponse>
 

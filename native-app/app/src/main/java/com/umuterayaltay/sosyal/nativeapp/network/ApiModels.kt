@@ -15,6 +15,29 @@ data class LoginRequest(
     val email: String,
     val password: String,
     @SerializedName("device_name") val deviceName: String?,
+    // 2FA aktif hesapta ilk deneme code'suz 403 mfa_required döner; client AYNI
+    // email+password'ü code ekleyerek TEKRAR gönderir. Varsayılan null — mevcut
+    // çağrı yerlerini BOZMAZ.
+    val code: String? = null,
+)
+
+/** POST /api/v1/auth/register gövdesi. */
+data class RegisterRequest(
+    val email: String,
+    val password: String,
+    val username: String,
+    @SerializedName("device_name") val deviceName: String?,
+)
+
+/** POST /api/v1/auth/google gövdesi — idToken Android Credential Manager'ın
+ * ürettiği Google ID token'ı (bkz. GoogleSignInHelper.kt). nonce bu iterasyonda
+ * BİLİNÇLİ olarak kullanılmıyor (kapsam dışı: replay-koruması), code LoginRequest
+ * ile AYNI 2FA-retry deseni (mfa_required → AYNI idToken code eklenerek tekrar). */
+data class GoogleLoginRequest(
+    @SerializedName("id_token") val idToken: String,
+    val nonce: String? = null,
+    val code: String? = null,
+    @SerializedName("device_name") val deviceName: String?,
 )
 
 data class UserDto(
