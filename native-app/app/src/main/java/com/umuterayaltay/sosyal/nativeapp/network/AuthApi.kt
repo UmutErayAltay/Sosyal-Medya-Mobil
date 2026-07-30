@@ -22,6 +22,12 @@ interface AuthApi {
 
     @GET("auth/me")
     suspend fun me(): Response<MeResponse>
+
+    // Mesajlaşmaya ÖZEL değil (ana bearer token'a bağlı genel bir auth
+    // endpoint'i — app/api_v1.py api_realtime_token()) — bu yüzden
+    // MessagingApi'ye DEĞİL, buraya eklendi (bkz. RealtimeConnectionManager).
+    @GET("realtime-token")
+    suspend fun getRealtimeToken(): Response<RealtimeTokenResponse>
 }
 
 interface FeedApi {

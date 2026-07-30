@@ -18,6 +18,7 @@ import com.umuterayaltay.sosyal.nativeapp.repository.FeedRepository
 import com.umuterayaltay.sosyal.nativeapp.repository.InteractionsRepository
 import com.umuterayaltay.sosyal.nativeapp.repository.MessagingRepository
 import com.umuterayaltay.sosyal.nativeapp.repository.ProfileRepository
+import com.umuterayaltay.sosyal.nativeapp.repository.RealtimeConnectionManager
 import com.umuterayaltay.sosyal.nativeapp.repository.ReelsRepository
 import com.umuterayaltay.sosyal.nativeapp.repository.SettingsRepository
 
@@ -46,6 +47,8 @@ object ServiceLocator {
         private set
     lateinit var settingsRepository: SettingsRepository
         private set
+    lateinit var realtimeConnectionManager: RealtimeConnectionManager
+        private set
 
     private var initialized = false
 
@@ -73,6 +76,9 @@ object ServiceLocator {
         messagingRepository = MessagingRepository(messagingApi)
         interactionsRepository = InteractionsRepository(interactionsApi)
         settingsRepository = SettingsRepository(settingsApi)
+        // authRepository'ye bağımlı — /realtime-token onun üzerinden çağrılıyor
+        // (bkz. RealtimeConnectionManager sınıf yorumu).
+        realtimeConnectionManager = RealtimeConnectionManager(authRepository)
 
         initialized = true
     }

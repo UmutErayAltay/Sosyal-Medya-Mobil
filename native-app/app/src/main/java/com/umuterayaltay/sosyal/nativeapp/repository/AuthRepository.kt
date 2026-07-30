@@ -19,6 +19,19 @@ sealed class AuthResult {
     data class Error(val code: String?, val message: String?) : AuthResult()
 }
 
+/** GET /realtime-token sonucu — RealtimeConnectionManager bunu tüketir.
+ * error HER ZAMAN (503 unavailable / 401 relogin_required / network_error/
+ * unknown_error) çağıran tarafın SESSİZCE polling'e düşmesi gereken bir
+ * sinyaldir (bkz. RealtimeTokenResponse yorumu, ApiModels.kt). */
+sealed class RealtimeTokenResult {
+    data class Success(
+        val accessToken: String,
+        val supabaseUrl: String,
+        val supabasePublishableKey: String,
+    ) : RealtimeTokenResult()
+    data class Error(val code: String?) : RealtimeTokenResult()
+}
+
 class AuthRepository(
     private val authApi: AuthApi,
     private val tokenStore: TokenStore,
@@ -113,6 +126,31 @@ class AuthRepository(
             if (response.isSuccessful) response.body()?.user else null
         } catch (e: Exception) {
             null
+        }
+    }
+
+    /** Native Realtime bağlantısı için taze bir Supabase Auth access token'ı
+     * ister (bkz. RealtimeConnectionManager, app/api_v1.py api_realtime_token()
+     * docstring'i — "Realtime hiçbir zaman ÇEKİRDEK bir özellik değildir").
+     * Buradaki HER hata çağıran tarafın SESSİZCE polling'e düşmesi gereken bir
+     * sinyaldir — ana bearer token'a (bu repository'nin diğer metotlarının
+     * kullandığı, TokenStore'daki) HİÇ dokunulmaz. */
+    suspend fun getRealtimeToken(): RealtimeTokenResult = withContext(Dispatchers.IO) {
+        try {
+            val response = authApi.getRealtimeToken()
+            val body = response.body()
+            val accessToken = body?.accessToken
+            val supabaseUrl = body?.supabaseUrl
+            val supabaseKey = body?.supabasePublishableKey
+            if (response.isSuccessful && accessToken != null && supabaseUrl != null && supabaseKey != null) {
+                RealtimeTokenResult.Success(accessToken, supabaseUrl, supabaseKey)
+            } else {
+                RealtimeTokenResult.Error(body?.error ?: RetrofitClient.parseErrorCode(response))
+            }
+        } catch (e: IOException) {
+            RealtimeTokenResult.Error("network_error")
+        } catch (e: Exception) {
+            RealtimeTokenResult.Error("unknown_error")
         }
     }
 

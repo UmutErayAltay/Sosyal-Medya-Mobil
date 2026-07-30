@@ -61,6 +61,19 @@ data class MeResponse(
     val error: String?,
 )
 
+/** GET /api/v1/realtime-token yanıtı (app/api_v1.py api_realtime_token() —
+ * Faz 4 sonu, gerçek Supabase Realtime — bkz. RealtimeConnectionManager).
+ * error İKİ farklı anlam taşıyabilir: "unavailable" (Realtime bu cihaz için
+ * hiç kurulmamış/şifreleme kapalı, 503) veya "relogin_required" (Supabase
+ * oturumu kesin ölmüş, 401) — HER İKİSİNDE de native SESSİZCE polling'e
+ * düşer, ANA bearer token'a (bu isteği doğrulayan token) DOKUNULMAZ. */
+data class RealtimeTokenResponse(
+    @SerializedName("access_token") val accessToken: String? = null,
+    @SerializedName("supabase_url") val supabaseUrl: String? = null,
+    @SerializedName("supabase_publishable_key") val supabasePublishableKey: String? = null,
+    val error: String? = null,
+)
+
 data class LogoutResponse(
     val ok: Boolean?,
     val error: String?,

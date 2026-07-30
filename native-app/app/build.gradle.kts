@@ -102,16 +102,45 @@ dependencies {
     implementation("androidx.credentials:credentials-play-services-auth:1.3.0")
     implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")
 
-    // Yerel cache — Room
-    implementation("androidx.room:room-runtime:2.6.1")
-    implementation("androidx.room:room-ktx:2.6.1")
-    kapt("androidx.room:room-compiler:2.6.1")
+    // Yerel cache — Room. 2.6.1 -> 2.8.4: Kotlin 2.1.20'ye geçince (bkz. kök
+    // build.gradle.kts yorumu) kaptDebugKotlin şu hatayla PATLADI: "Provided
+    // Metadata instance has version 2.1.0, while maximum supported version is
+    // 2.0.0" — Room 2.6.1'in kapt annotation processor'ı içine gömülü
+    // (jarjarred) kotlinx-metadata-jvm okuyucusu Kotlin 2.1.x'in ürettiği
+    // @Metadata formatını TANIMIYORDU (supabase-kt'den TAMAMEN bağımsız bir
+    // sorun — kendi PostEntity.kt'mizin metadata'sını okurken patlıyordu).
+    // 2.8.4 (bu satırın en güncel stabil sürümü, Google Maven metadata'sından
+    // doğrulandı) güncel kotlinx-metadata-jvm ile geliyor, gerçek build ile
+    // doğrulandı.
+    implementation("androidx.room:room-runtime:2.8.4")
+    implementation("androidx.room:room-ktx:2.8.4")
+    kapt("androidx.room:room-compiler:2.8.4")
 
     // Video oynatma (Reels) — ExoPlayer + PlayerView, Compose BOM 2024.12.01 ile
     // uyumlu stabil sürüm (1.5.1). VerticalPager için ek bağımlılık GEREKMEZ,
     // androidx.compose.foundation.pager zaten Compose foundation'ın parçası.
     implementation("androidx.media3:media3-exoplayer:1.5.1")
     implementation("androidx.media3:media3-ui:1.5.1")
+
+    // Gerçek Supabase Realtime (Faz 4 sonu — mesajlaşmada polling fallback'li
+    // canlı mesaj teslimi, bkz. RealtimeConnectionManager). Bu proje İLK KEZ
+    // Supabase'e DOĞRUDAN bağlanıyor (o ana kadar her şey Flask /api/v1 REST
+    // katmanı üzerinden gidiyordu) — sadece realtime-kt modülü kullanılıyor,
+    // auth-kt/postgrest-kt YOK (JWT'yi kendi Flask backend'imizin
+    // /realtime-token uç noktasından alıyoruz, Supabase Auth'a native'den HİÇ
+    // login olunmuyor). 3.1.4 seçildi: setAuth() (periyodik JWT yenileme) İLK
+    // kez 3.1.0'da eklendi (GitHub kaynağı okunarak doğrulandı — 3.0.x'te
+    // yok), 3.1.4 o satırın son yaması. Ktor engine olarak OkHttp seçildi
+    // (projede zaten OkHttp var, resmi Troubleshooting dokümanı Android'de
+    // WebSocket için OkHttp/CIO'yu öneriyor — ktor-client-android eski engine
+    // WebSocket'i DESTEKLEMİYOR). kotlinx.serialization eklentisi BİLİNÇLİ
+    // olarak eklenmedi: postgres_changes payload'ı (JsonObject) Gson'a
+    // toString() ile aktarılıp MessageDto'ya çevriliyor (bkz.
+    // RealtimeConnectionManager) — projenin "Retrofit+Gson, kotlinx.serialization
+    // DEĞİL" kararıyla (bkz. ServiceLocator.kt yorumu) tutarlı kalınsın diye.
+    implementation(platform("io.github.jan-tennert.supabase:bom:3.1.4"))
+    implementation("io.github.jan-tennert.supabase:realtime-kt")
+    implementation("io.ktor:ktor-client-okhttp:3.1.2")
 
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")

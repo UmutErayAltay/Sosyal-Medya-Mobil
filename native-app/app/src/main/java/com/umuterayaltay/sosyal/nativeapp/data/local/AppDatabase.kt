@@ -29,7 +29,11 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "sosyal_native.db",
                 )
-                    .fallbackToDestructiveMigration()
+                    // Room 2.8.4'e yükseltilince (bkz. app/build.gradle.kts yorumu —
+                    // Kotlin 2.1.20 uyumluluğu için) no-arg overload deprecated oldu;
+                    // dropAllTables=true ESKİ varsayılan davranışla BİREBİR aynı
+                    // (şema uyuşmazlığında tüm tablolar silinip yeniden doldurulur).
+                    .fallbackToDestructiveMigration(dropAllTables = true)
                     .build().also { INSTANCE = it }
             }
         }

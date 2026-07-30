@@ -10,6 +10,7 @@ import com.umuterayaltay.sosyal.nativeapp.network.ConversationInfoDto
 import com.umuterayaltay.sosyal.nativeapp.network.MessageDto
 import com.umuterayaltay.sosyal.nativeapp.repository.ConversationDetailResult
 import com.umuterayaltay.sosyal.nativeapp.repository.SendMessageResult
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -35,11 +36,20 @@ private const val POLL_INTERVAL_MS = 5000L
  * listenin BAŞINA ekler — [messages] her zaman artan (eskiden yeniye) sırada
  * kalır, scroll pozisyonu bu yüzden loadOlder() sonrası bozulmaz.
  *
- * Basit polling: gerçek Supabase Realtime YOK (bilinçli sınır) — bunun yerine
- * viewModelScope içinde 5 saniyede bir page=1 tekrar çekilir, o anda listede
- * OLMAYAN id'ler (yeni gelen mesajlar) listenin SONUNA eklenir; var olan
- * mesajlara/eski sayfalara dokunulmaz. viewModelScope, ViewModel onCleared()
- * olduğunda OTOMATİK iptal edilir — döngü ayrıca elle durdurulmuyor.
+ * Canlı mesaj teslimi: ÖNCE gerçek Supabase Realtime (bkz.
+ * ServiceLocator.realtimeConnectionManager / RealtimeConnectionManager) denenir
+ * — init'te connectRealtimeOrPoll() bunu KURAR, başarılı olursa startPolling()
+ * HİÇ ÇAĞRILMAZ. Realtime kurulumda VEYA sonradan (bağlantı koparsa/JWT
+ * yenilenemezse) BAŞARISIZ olursa, RealtimeConnectionManager onFailure
+ * callback'ini tetikler ve BURADAN itibaren eski (Faz 3'ten kalma) basit
+ * polling devreye girer: viewModelScope içinde 5 saniyede bir page=1 tekrar
+ * çekilir, o anda listede OLMAYAN id'ler (yeni gelen mesajlar) listenin
+ * SONUNA eklenir; var olan mesajlara/eski sayfalara dokunulmaz. Bu dedupe/
+ * append mantığı [appendFreshMessages]'ta ortaklaştırıldı — hem polling hem
+ * Realtime'ın tek mesajlık teslimi AYNI helper'ı kullanır. viewModelScope,
+ * ViewModel onCleared() olduğunda OTOMATİK iptal edilir (polling döngüsü
+ * ayrıca elle durdurulmuyor) — ama Realtime bağlantısının WebSocket'i AYRICA
+ * (elle) kapatılmalı, bkz. onCleared() override'ı.
  */
 class ConversationViewModel(private val conversationId: String) : ViewModel() {
 
@@ -94,7 +104,19 @@ class ConversationViewModel(private val conversationId: String) : ViewModel() {
     init {
         resolveMyUserId()
         loadInitial()
-        startPolling()
+        connectRealtimeOrPoll()
+    }
+
+    /** Bkz. sınıf yorumu — ÖNCE Realtime dener, başarısız olursa (kurulumda
+     * VEYA sonradan) [onFailure] üzerinden startPolling()'e düşer. */
+    private fun connectRealtimeOrPoll() {
+        viewModelScope.launch {
+            ServiceLocator.realtimeConnectionManager.connect(
+                conversationId = conversationId,
+                onNewMessage = { message -> appendFreshMessages(listOf(message)) },
+                onFailure = { startPolling() },
+            )
+        }
     }
 
     private fun resolveMyUserId() {
@@ -153,13 +175,7 @@ class ConversationViewModel(private val conversationId: String) : ViewModel() {
 
     private suspend fun pollNewest() {
         when (val result = messagingRepository.getConversationDetail(conversationId, 1)) {
-            is ConversationDetailResult.Success -> {
-                val existingIds = _messages.value.mapTo(HashSet()) { it.id }
-                val freshOnes = result.messages.filter { it.id !in existingIds }
-                if (freshOnes.isNotEmpty()) {
-                    _messages.value = _messages.value + freshOnes
-                }
-            }
+            is ConversationDetailResult.Success -> appendFreshMessages(result.messages)
             is ConversationDetailResult.Error -> {
                 // Polling hatası kullanıcıyı rahatsız etmesin (arka planda sessizce
                 // yeniden dener) — SADECE 401'de oturum sonlandırılır.
@@ -168,6 +184,20 @@ class ConversationViewModel(private val conversationId: String) : ViewModel() {
                     _events.emit(ConversationEvent.SessionExpired)
                 }
             }
+        }
+    }
+
+    /** pollNewest() (sayfa=1 tekrar çekimi) VE Realtime'ın tek mesajlık INSERT
+     * teslimi (bkz. RealtimeConnectionManager.onNewMessage) AYNI "listede yoksa
+     * sona ekle" (id bazlı dedupe) mantığını kullanır — kod tekrarını önlemek
+     * için burada ortaklaştırıldı. Realtime tarafı Dispatchers.IO'dan (ViewModel'in
+     * ana thread'i DIŞINDA) çağrılabilir — StateFlow.value ataması thread-safe
+     * olduğu için bu fonksiyon suspend/main-confined OLMAK ZORUNDA değil. */
+    private fun appendFreshMessages(candidates: List<MessageDto>) {
+        val existingIds = _messages.value.mapTo(HashSet()) { it.id }
+        val freshOnes = candidates.filter { it.id !in existingIds }
+        if (freshOnes.isNotEmpty()) {
+            _messages.value = _messages.value + freshOnes
         }
     }
 
@@ -251,6 +281,21 @@ class ConversationViewModel(private val conversationId: String) : ViewModel() {
             "forbidden" -> "Bu konuşmaya erişiminiz yok"
             "network_error" -> "Bağlantı hatası — internet bağlantınızı kontrol edin"
             else -> "Mesajlar yüklenemedi, lütfen tekrar deneyin"
+        }
+    }
+
+    /** ExoPlayer.release() ile AYNI disiplin: Realtime WebSocket bağlantısı
+     * ELLE kapatılmazsa sızar (viewModelScope'un otomatik iptali sadece BİZİM
+     * coroutine'lerimizi durdurur, RealtimeConnectionManager'ın kendi iç
+     * bağlantısını DEĞİL — bkz. o sınıfın disconnect() yorumu). onCleared()
+     * SUSPEND bir fonksiyon DEĞİL ve viewModelScope bu noktada ZATEN iptal
+     * edilmiş durumda (ViewModel'in kendi iç mekanizması onCleared()'dan ÖNCE
+     * closeable'ları kapatıyor) — bu yüzden disconnect()'i çağırabilmek için
+     * AYRI, kısa ömürlü bir scope kullanılıyor. */
+    override fun onCleared() {
+        super.onCleared()
+        CoroutineScope(Dispatchers.IO).launch {
+            ServiceLocator.realtimeConnectionManager.disconnect(conversationId)
         }
     }
 }
