@@ -8,10 +8,13 @@ import com.umuterayaltay.sosyal.nativeapp.network.MessageDto
 import com.umuterayaltay.sosyal.nativeapp.network.MessagingApi
 import com.umuterayaltay.sosyal.nativeapp.network.RenameGroupRequest
 import com.umuterayaltay.sosyal.nativeapp.network.RetrofitClient
-import com.umuterayaltay.sosyal.nativeapp.network.SendMessageRequest
 import com.umuterayaltay.sosyal.nativeapp.network.ConversationSummaryDto
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.MultipartBody
+import okhttp3.RequestBody
+import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
 
 sealed class ConversationsResult {
@@ -133,12 +136,36 @@ class MessagingRepository(
             }
         }
 
-    suspend fun sendMessage(conversationId: String, content: String, replyToId: String?): SendMessageResult =
+    /**
+     * Metin ve/veya görsel gönderir — app/api_v1.py api_send_message() artık
+     * multipart/form-data bekliyor (JSON DEĞİL). En az content VEYA imageBytes
+     * dolu olmalı (backend ikisi de boşsa "empty" döner) — burada ayrıca bir
+     * ön-kontrol YAPILMIYOR, tek doğruluk kaynağı backend olsun diye
+     * (ConversationViewModel.send() UI tarafında aynı kontrolü zaten yapıyor,
+     * InteractionsRepository.createPost() ile AYNI gerekçe). replyToId null ise
+     * @Part de null geçilir (Retrofit null Part'ı atlar).
+     */
+    suspend fun sendMessage(
+        conversationId: String,
+        content: String,
+        replyToId: String?,
+        imageBytes: ByteArray?,
+        imageMimeType: String?,
+    ): SendMessageResult =
         withContext(Dispatchers.IO) {
             try {
+                val contentBody: RequestBody = content.toRequestBody("text/plain".toMediaTypeOrNull())
+                val replyToBody: RequestBody? = replyToId?.toRequestBody("text/plain".toMediaTypeOrNull())
+                val imagePart: MultipartBody.Part? = imageBytes?.let { bytes ->
+                    val imageBody = bytes.toRequestBody((imageMimeType ?: "image/jpeg").toMediaTypeOrNull())
+                    MultipartBody.Part.createFormData("image", "message_image", imageBody)
+                }
+
                 val response = messagingApi.sendMessage(
                     conversationId,
-                    SendMessageRequest(content = content, replyToId = replyToId),
+                    contentBody,
+                    replyToBody,
+                    imagePart,
                 )
                 val body = response.body()
                 if (response.isSuccessful && body?.message != null) {

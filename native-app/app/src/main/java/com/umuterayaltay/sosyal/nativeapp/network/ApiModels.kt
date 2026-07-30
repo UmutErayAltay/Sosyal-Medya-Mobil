@@ -307,10 +307,12 @@ data class ReelsResponse(
 // ---- Mesajlaşma (app/api_v1.py satır ~1289-1577: _serialize_conversation_summary,
 // api_message_conversations, api_message_conversation_detail, api_send_message,
 // api_start_conversation, api_mark_conversation_read okunarak doğrulandı).
-// BİLİNÇLİ SINIR: grup yönetimi/mesaj düzenleme-silme-sabitleme-iletme/tepki
-// VERME/görsel-ses-sticker-GIF gönderme/WebRTC yok — sadece inbox + geçmiş
-// (sayfalı) + metin gönder(+reply) + start + mark-read. Gerçek Supabase
-// Realtime YOK, native taraf basit polling yapar (bkz. ConversationViewModel).
+// Metin + GÖRSEL gönderme (multipart/form-data) destekleniyor (Faz 4, native
+// Android — bkz. MessagingApi.sendMessage()). BİLİNÇLİ SINIR: mesaj düzenleme/
+// silme/sabitleme/iletme/tepki VERME/ses-sticker-GIF gönderme/WebRTC yok —
+// grup yönetimi AYRICA yapıldı (bkz. aşağıdaki "Grup yönetimi" bölümü).
+// Gerçek Supabase Realtime YOK, native taraf basit polling yapar (bkz.
+// ConversationViewModel).
 
 /** _serialize_conversation_summary() çıktısı — inbox satırı. */
 data class ConversationSummaryDto(
@@ -392,10 +394,9 @@ data class ConversationDetailResponse(
     val error: String? = null,
 )
 
-data class SendMessageRequest(
-    val content: String,
-    @SerializedName("reply_to_id") val replyToId: String? = null,
-)
+// NOT: SendMessageRequest (JSON gövde) artık KULLANILMIYOR — send endpoint'i
+// multipart/form-data'ya geçti (bkz. MessagingApi.sendMessage()), content/
+// reply_to_id doğrudan RequestBody olarak taşınıyor.
 
 data class SendMessageResponse(
     val message: MessageDto? = null,

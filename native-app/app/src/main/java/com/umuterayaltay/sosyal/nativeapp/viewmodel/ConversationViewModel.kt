@@ -1,5 +1,7 @@
 package com.umuterayaltay.sosyal.nativeapp.viewmodel
 
+import android.content.Context
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -8,6 +10,7 @@ import com.umuterayaltay.sosyal.nativeapp.network.ConversationInfoDto
 import com.umuterayaltay.sosyal.nativeapp.network.MessageDto
 import com.umuterayaltay.sosyal.nativeapp.repository.ConversationDetailResult
 import com.umuterayaltay.sosyal.nativeapp.repository.SendMessageResult
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -15,6 +18,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 sealed class ConversationEvent {
     data object SessionExpired : ConversationEvent()
@@ -68,6 +72,12 @@ class ConversationViewModel(private val conversationId: String) : ViewModel() {
 
     private val _replyingTo = MutableStateFlow<MessageDto?>(null)
     val replyingTo: StateFlow<MessageDto?> = _replyingTo.asStateFlow()
+
+    // Gönderilecek görsel (opsiyonel) — CreatePostViewModel._selectedImageUri
+    // ile AYNI desen (Photo Picker'dan seçilen Uri, gönderilene/iptal edilene
+    // kadar burada tutulur).
+    private val _selectedImageUri = MutableStateFlow<Uri?>(null)
+    val selectedImageUri: StateFlow<Uri?> = _selectedImageUri.asStateFlow()
 
     // Mesaj balonunu ben/karşı taraf olarak hizalamak için — AuthRepository.
     // getCurrentUser() (Faz 3 Profil'de eklendi) ile BİR KEZ çözülüp burada
@@ -165,18 +175,51 @@ class ConversationViewModel(private val conversationId: String) : ViewModel() {
         _sendText.value = text
     }
 
-    fun send() {
+    fun onImageSelected(uri: Uri?) {
+        _selectedImageUri.value = uri
+    }
+
+    /** [context] SADECE seçilen görsel Uri'sinin byte'larını/mime tipini okumak
+     * için gerekiyor (ContentResolver) — ViewModel Context'i SAKLAMAZ, sadece
+     * bu tek çağrı sırasında kullanır (CreatePostViewModel.submit() ile AYNI
+     * desen/gerekçe). */
+    fun send(context: Context) {
         val content = _sendText.value.trim()
-        if (content.isEmpty()) return
+        val imageUri = _selectedImageUri.value
+        if (content.isEmpty() && imageUri == null) return
         val replyId = _replyingTo.value?.id
+
         viewModelScope.launch {
-            when (val result = messagingRepository.sendMessage(conversationId, content, replyId)) {
+            var imageBytes: ByteArray? = null
+            var imageMimeType: String? = null
+            if (imageUri != null) {
+                try {
+                    withContext(Dispatchers.IO) {
+                        imageBytes = context.contentResolver.openInputStream(imageUri)?.use { it.readBytes() }
+                    }
+                    imageMimeType = context.contentResolver.getType(imageUri)
+                } catch (e: Exception) {
+                    _error.value = "Görsel okunamadı, lütfen tekrar deneyin"
+                    return@launch
+                }
+            }
+
+            when (
+                val result = messagingRepository.sendMessage(
+                    conversationId,
+                    content,
+                    replyId,
+                    imageBytes,
+                    imageMimeType,
+                )
+            ) {
                 is SendMessageResult.Success -> {
                     // Optimistic DEĞİL — sunucu yanıtındaki mesajı kullanıyoruz
                     // (basit ve güvenilir, spesifikasyon gereği).
                     _messages.value = _messages.value + result.message
                     _sendText.value = ""
                     _replyingTo.value = null
+                    _selectedImageUri.value = null
                 }
                 is SendMessageResult.Error -> handleError(result.code, silent = true)
             }

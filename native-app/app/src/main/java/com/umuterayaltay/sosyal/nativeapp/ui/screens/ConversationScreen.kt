@@ -1,5 +1,9 @@
 package com.umuterayaltay.sosyal.nativeapp.ui.screens
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -20,6 +24,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Person
@@ -44,6 +49,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
@@ -70,6 +76,7 @@ fun ConversationScreen(
         factory = ConversationViewModelFactory(conversationId),
     ),
 ) {
+    val context = LocalContext.current
     val messages by viewModel.messages.collectAsState()
     val loading by viewModel.loading.collectAsState()
     val loadingOlder by viewModel.loadingOlder.collectAsState()
@@ -79,6 +86,7 @@ fun ConversationScreen(
     val sendText by viewModel.sendText.collectAsState()
     val replyingTo by viewModel.replyingTo.collectAsState()
     val myUserId by viewModel.myUserId.collectAsState()
+    val selectedImageUri by viewModel.selectedImageUri.collectAsState()
 
     LaunchedEffect(Unit) {
         viewModel.events.collect { event ->
@@ -155,9 +163,11 @@ fun ConversationScreen(
             ConversationInputBar(
                 sendText = sendText,
                 onSendTextChange = viewModel::onSendTextChange,
-                onSend = viewModel::send,
+                onSend = { viewModel.send(context) },
                 replyingTo = replyingTo,
                 onCancelReply = viewModel::clearReplyingTo,
+                selectedImageUri = selectedImageUri,
+                onImageSelected = viewModel::onImageSelected,
             )
         },
     ) { padding ->
@@ -247,12 +257,24 @@ private fun MessageBubble(message: MessageDto, isMine: Boolean, onReplyClick: ()
                         )
                     }
                 }
+                val imageUrl = message.imageUrl
+                if (!imageUrl.isNullOrBlank()) {
+                    AsyncImage(
+                        model = imageUrl,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .padding(top = if (replyTo != null) 6.dp else 0.dp)
+                            .size(200.dp)
+                            .clip(MaterialTheme.shapes.small),
+                    )
+                }
                 if (!message.content.isNullOrBlank()) {
                     Text(
                         text = message.content,
                         style = MaterialTheme.typography.bodyLarge,
                         color = contentColor,
-                        modifier = Modifier.padding(top = if (replyTo != null) 6.dp else 0.dp),
+                        modifier = Modifier.padding(top = if (replyTo != null || !imageUrl.isNullOrBlank()) 6.dp else 0.dp),
                     )
                 }
                 Text(
@@ -273,7 +295,16 @@ private fun ConversationInputBar(
     onSend: () -> Unit,
     replyingTo: MessageDto?,
     onCancelReply: () -> Unit,
+    selectedImageUri: Uri?,
+    onImageSelected: (Uri?) -> Unit,
 ) {
+    // CreatePostScreen'deki AYNI Photo Picker deseni — seçilen Uri ViewModel'e
+    // (ConversationViewModel.selectedImageUri) bildirilir, bu composable
+    // KENDİ local state'ini TUTMAZ.
+    val imagePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia(),
+    ) { uri -> onImageSelected(uri) }
+
     Column {
         if (replyingTo != null) {
             Row(
@@ -297,19 +328,56 @@ private fun ConversationInputBar(
                 }
             }
         }
+        if (selectedImageUri != null) {
+            Box(
+                modifier = Modifier.padding(start = 12.dp, top = 6.dp),
+            ) {
+                AsyncImage(
+                    model = selectedImageUri,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .size(64.dp)
+                        .clip(MaterialTheme.shapes.small),
+                )
+                IconButton(
+                    onClick = { onImageSelected(null) },
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .size(20.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.8f)),
+                ) {
+                    Icon(
+                        Icons.Filled.Close,
+                        contentDescription = "Görseli kaldır",
+                        modifier = Modifier.size(14.dp),
+                    )
+                }
+            }
+        }
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            IconButton(
+                onClick = {
+                    imagePickerLauncher.launch(
+                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                    )
+                },
+            ) {
+                Icon(Icons.Filled.AddPhotoAlternate, contentDescription = "Görsel ekle")
+            }
             OutlinedTextField(
                 value = sendText,
                 onValueChange = onSendTextChange,
                 modifier = Modifier.weight(1f),
                 placeholder = { Text("Bir mesaj yaz...") },
             )
-            IconButton(onClick = onSend, enabled = sendText.isNotBlank()) {
+            IconButton(onClick = onSend, enabled = sendText.isNotBlank() || selectedImageUri != null) {
                 Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Gönder")
             }
         }

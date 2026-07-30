@@ -1,9 +1,13 @@
 package com.umuterayaltay.sosyal.nativeapp.network
 
+import okhttp3.MultipartBody
+import okhttp3.RequestBody
 import retrofit2.Response
 import retrofit2.http.Body
 import retrofit2.http.GET
+import retrofit2.http.Multipart
 import retrofit2.http.POST
+import retrofit2.http.Part
 import retrofit2.http.Path
 import retrofit2.http.Query
 
@@ -29,10 +33,18 @@ interface MessagingApi {
         @Query("page") page: Int,
     ): Response<ConversationDetailResponse>
 
+    // multipart/form-data — content (opsiyonel metin), reply_to_id (opsiyonel),
+    // image (opsiyonel dosya) — en az content VEYA image dolu olmalı (backend
+    // ikisi de boşsa 400 {"error":"empty"} döner). SettingsApi.editProfile()
+    // ile AYNI desen (bkz. dosya yorumu). SendMessageRequest (JSON) artık
+    // KULLANILMIYOR, ApiModels.kt'den kaldırıldı.
+    @Multipart
     @POST("messages/conversations/{id}/send")
     suspend fun sendMessage(
         @Path("id") conversationId: String,
-        @Body request: SendMessageRequest,
+        @Part("content") content: RequestBody,
+        @Part("reply_to_id") replyToId: RequestBody?,
+        @Part image: MultipartBody.Part?,
     ): Response<SendMessageResponse>
 
     @POST("messages/start/{username}")
