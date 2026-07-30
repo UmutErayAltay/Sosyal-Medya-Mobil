@@ -1,0 +1,251 @@
+package com.umuterayaltay.sosyal.nativeapp.ui.screens
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import coil.compose.AsyncImage
+import com.umuterayaltay.sosyal.nativeapp.network.NotificationDto
+import com.umuterayaltay.sosyal.nativeapp.viewmodel.NotificationsEvent
+import com.umuterayaltay.sosyal.nativeapp.viewmodel.NotificationsViewModel
+
+/**
+ * Bildirimler ekranı — InboxScreen'in LazyColumn + loading/error/empty
+ * (CenteredMessage) deseniyle GÖRSEL olarak tutarlı. Sayfalama sonsuz kaydırma
+ * DEĞİL, ConversationViewModel.loadOlder() gibi basit bir "Daha fazla yükle"
+ * butonu (görev tanımı: sonsuz kaydırma şart değil).
+ *
+ * Backend sözleşmesi: app/api_v1.py api_list_notifications() — GET
+ * /api/v1/notifications?page=N (bkz. ApiModels.kt NotificationDto yorumu).
+ *
+ * Navigasyon 4 ayrı callback'e bölündü — bu ekran navController'ı BİLMEZ,
+ * kararı [resolveNotificationTarget] verir, gerçek navigate() çağrısı
+ * AppNavHost.kt'de yapılır (ConversationScreen/ProfileScreen ile AYNI desen).
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun NotificationsScreen(
+    onNavigateBack: () -> Unit,
+    onNavigateToPost: (String) -> Unit,
+    onNavigateToProfile: (String) -> Unit,
+    onNavigateToConversation: (String) -> Unit,
+    onNavigateToFollowRequests: () -> Unit,
+    onSessionExpired: () -> Unit,
+    viewModel: NotificationsViewModel = viewModel(),
+) {
+    val notifications by viewModel.notifications.collectAsState()
+    val hasNext by viewModel.hasNext.collectAsState()
+    val loading by viewModel.loading.collectAsState()
+    val loadingMore by viewModel.loadingMore.collectAsState()
+    val error by viewModel.error.collectAsState()
+
+    LaunchedEffect(Unit) {
+        viewModel.events.collect { event ->
+            when (event) {
+                is NotificationsEvent.SessionExpired -> onSessionExpired()
+            }
+        }
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Bildirimler") },
+                navigationIcon = {
+                    IconButton(onClick = onNavigateBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Geri")
+                    }
+                },
+            )
+        },
+    ) { padding ->
+        when {
+            loading && notifications.isEmpty() -> CenteredMessage(padding) { CircularProgressIndicator() }
+            error != null && notifications.isEmpty() -> CenteredMessage(padding) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(error ?: "")
+                    Button(onClick = { viewModel.load() }, modifier = Modifier.padding(top = 12.dp)) {
+                        Text("Tekrar dene")
+                    }
+                }
+            }
+            notifications.isEmpty() -> CenteredMessage(padding) { Text("Henüz bildirimin yok") }
+            else -> LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding),
+                contentPadding = PaddingValues(vertical = 8.dp),
+            ) {
+                itemsIndexed(notifications, key = { index, _ -> index }) { _, notification ->
+                    val target = resolveNotificationTarget(notification)
+                    NotificationRow(
+                        notification = notification,
+                        onClick = target?.let {
+                            {
+                                when (it) {
+                                    is NotificationTarget.Post -> onNavigateToPost(it.postId)
+                                    is NotificationTarget.Profile -> onNavigateToProfile(it.username)
+                                    is NotificationTarget.Conversation -> onNavigateToConversation(it.conversationId)
+                                    NotificationTarget.FollowRequests -> onNavigateToFollowRequests()
+                                }
+                            }
+                        },
+                    )
+                }
+                if (hasNext) {
+                    item {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            if (loadingMore) {
+                                CircularProgressIndicator(modifier = Modifier.size(28.dp))
+                            } else {
+                                OutlinedButton(onClick = { viewModel.loadMore() }) {
+                                    Text("Daha fazla yükle")
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Bir bildirim satırına tıklanınca gidilecek yer — görev tanımındaki "Native
+ * navigasyon karşılıkları" tablosunun BİREBİR Kotlin karşılığı. Tip bazlı
+ * kontrol EDİLİR (sadece alan doluluğuna bakılmaz): `hashtag_post` backend'de
+ * post_id de doldursa BİLİNÇLİ olarak tıklanamaz bırakıldı (native'de hashtag
+ * sayfası yok — bkz. görev tanımı kısıtları), bu yüzden post_id kontrolünden
+ * ÖNCE type kontrolü yapılır. */
+private sealed class NotificationTarget {
+    data class Post(val postId: String) : NotificationTarget()
+    data class Profile(val username: String) : NotificationTarget()
+    data class Conversation(val conversationId: String) : NotificationTarget()
+    data object FollowRequests : NotificationTarget()
+}
+
+private fun resolveNotificationTarget(notification: NotificationDto): NotificationTarget? = when {
+    notification.type == "follow_request" -> NotificationTarget.FollowRequests
+    // native'de hashtag sayfası YOK — post_id dolu olsa bile bu tip tıklanamaz.
+    notification.type == "hashtag_post" -> null
+    !notification.username.isNullOrBlank() -> NotificationTarget.Profile(notification.username)
+    !notification.postId.isNullOrBlank() -> NotificationTarget.Post(notification.postId)
+    !notification.conversationId.isNullOrBlank() -> NotificationTarget.Conversation(notification.conversationId)
+    else -> null
+}
+
+/** InboxScreen.kt'deki (file-private) CenteredMessage ile AYNI görsel — Kotlin
+ * top-level `private` dosya sınırlarını aştığı için burada AYRI bir kopya
+ * tutuluyor (FollowRequestsScreen.kt'nin Box'ı doğrudan inline etmesiyle AYNI
+ * gerekçe). */
+@Composable
+private fun CenteredMessage(padding: PaddingValues, content: @Composable () -> Unit) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(padding)
+            .padding(32.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        content()
+    }
+}
+
+@Composable
+private fun NotificationRow(notification: NotificationDto, onClick: (() -> Unit)?) {
+    val rowModifier = if (onClick != null) {
+        Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 8.dp)
+    } else {
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 8.dp)
+    }
+
+    Row(modifier = rowModifier, verticalAlignment = Alignment.CenterVertically) {
+        if (!notification.avatarUrl.isNullOrBlank()) {
+            AsyncImage(
+                model = notification.avatarUrl,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(CircleShape),
+            )
+        } else {
+            Icon(
+                imageVector = Icons.Filled.Person,
+                contentDescription = null,
+                modifier = Modifier.size(44.dp),
+            )
+        }
+
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .padding(start = 12.dp),
+        ) {
+            Text(
+                text = listOfNotNull(notification.actorSummary, notification.text)
+                    .joinToString(" ")
+                    .ifBlank { "Yeni bildirim" },
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = if (!notification.isRead) FontWeight.Bold else FontWeight.Normal,
+            )
+            Text(
+                text = formatClockTime(notification.createdAt),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
+        if (!notification.isRead) {
+            Box(
+                modifier = Modifier
+                    .padding(start = 8.dp)
+                    .size(10.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primary),
+            )
+        }
+    }
+}

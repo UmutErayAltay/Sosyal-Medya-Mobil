@@ -8,6 +8,7 @@ import com.umuterayaltay.sosyal.nativeapp.network.DiscoverApi
 import com.umuterayaltay.sosyal.nativeapp.network.FeedApi
 import com.umuterayaltay.sosyal.nativeapp.network.InteractionsApi
 import com.umuterayaltay.sosyal.nativeapp.network.MessagingApi
+import com.umuterayaltay.sosyal.nativeapp.network.NotificationsApi
 import com.umuterayaltay.sosyal.nativeapp.network.ProfileApi
 import com.umuterayaltay.sosyal.nativeapp.network.ReelsApi
 import com.umuterayaltay.sosyal.nativeapp.network.RetrofitClient
@@ -17,6 +18,7 @@ import com.umuterayaltay.sosyal.nativeapp.repository.DiscoverRepository
 import com.umuterayaltay.sosyal.nativeapp.repository.FeedRepository
 import com.umuterayaltay.sosyal.nativeapp.repository.InteractionsRepository
 import com.umuterayaltay.sosyal.nativeapp.repository.MessagingRepository
+import com.umuterayaltay.sosyal.nativeapp.repository.NotificationsRepository
 import com.umuterayaltay.sosyal.nativeapp.repository.ProfileRepository
 import com.umuterayaltay.sosyal.nativeapp.repository.RealtimeConnectionManager
 import com.umuterayaltay.sosyal.nativeapp.repository.ReelsRepository
@@ -43,6 +45,8 @@ object ServiceLocator {
         private set
     lateinit var messagingRepository: MessagingRepository
         private set
+    lateinit var notificationsRepository: NotificationsRepository
+        private set
     lateinit var interactionsRepository: InteractionsRepository
         private set
     lateinit var settingsRepository: SettingsRepository
@@ -64,6 +68,7 @@ object ServiceLocator {
         val profileApi = retrofit.create(ProfileApi::class.java)
         val reelsApi = retrofit.create(ReelsApi::class.java)
         val messagingApi = retrofit.create(MessagingApi::class.java)
+        val notificationsApi = retrofit.create(NotificationsApi::class.java)
         val interactionsApi = retrofit.create(InteractionsApi::class.java)
         val settingsApi = retrofit.create(SettingsApi::class.java)
         val database = AppDatabase.getInstance(appContext)
@@ -74,6 +79,7 @@ object ServiceLocator {
         profileRepository = ProfileRepository(profileApi)
         reelsRepository = ReelsRepository(reelsApi)
         messagingRepository = MessagingRepository(messagingApi)
+        notificationsRepository = NotificationsRepository(notificationsApi)
         interactionsRepository = InteractionsRepository(interactionsApi)
         settingsRepository = SettingsRepository(settingsApi)
         // authRepository'ye bağımlı — /realtime-token onun üzerinden çağrılıyor

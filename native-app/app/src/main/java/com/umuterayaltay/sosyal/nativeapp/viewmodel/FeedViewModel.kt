@@ -6,6 +6,7 @@ import com.umuterayaltay.sosyal.nativeapp.ServiceLocator
 import com.umuterayaltay.sosyal.nativeapp.repository.FeedRefreshResult
 import com.umuterayaltay.sosyal.nativeapp.repository.Post
 import com.umuterayaltay.sosyal.nativeapp.repository.ToggleLikeResult
+import com.umuterayaltay.sosyal.nativeapp.repository.UnreadCountResult
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -30,6 +31,7 @@ class FeedViewModel : ViewModel() {
 
     private val feedRepository = ServiceLocator.feedRepository
     private val interactionsRepository = ServiceLocator.interactionsRepository
+    private val notificationsRepository = ServiceLocator.notificationsRepository
     private val tokenStore = ServiceLocator.tokenStore
 
     val posts: StateFlow<List<Post>> = feedRepository.observePosts()
@@ -41,14 +43,36 @@ class FeedViewModel : ViewModel() {
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
 
+    // Bildirim zili rozeti (opsiyonel) — sadece görüntüleme amaçlı, hata olursa
+    // sessizce 0'da kalır (bir sayaç yüzünden Ana Sayfa'yı bir hata state'ine
+    // düşürmek istenmiyor, toggleLike()'ın diğer-hatalar-sessiz-yutulur
+    // gerekçesiyle AYNI).
+    private val _unreadNotificationsCount = MutableStateFlow(0)
+    val unreadNotificationsCount: StateFlow<Int> = _unreadNotificationsCount.asStateFlow()
+
     private val _events = MutableSharedFlow<FeedEvent>()
     val events: SharedFlow<FeedEvent> = _events
 
     init {
         refresh()
+        loadUnreadNotificationsCount()
+    }
+
+    fun loadUnreadNotificationsCount() {
+        viewModelScope.launch {
+            when (val result = notificationsRepository.getUnreadCount()) {
+                is UnreadCountResult.Success -> _unreadNotificationsCount.value = result.count
+                is UnreadCountResult.Error -> Unit // sessizce yutulur, bkz. yukarıdaki alan yorumu
+            }
+        }
     }
 
     fun refresh() {
+        // Pull-to-refresh ile bildirim rozeti de tazelenir (ör. kullanıcı
+        // Bildirimler'i açıp geri döndükten sonra Ana Sayfa'yı yenilerse rozet
+        // güncel sayıyı yansıtsın) — ayrı bir lifecycle-observer İCAT EDİLMEDİ,
+        // mevcut kullanıcı eylemine (yenileme) bindirildi.
+        loadUnreadNotificationsCount()
         viewModelScope.launch {
             _isRefreshing.value = true
             when (val result = feedRepository.refresh()) {

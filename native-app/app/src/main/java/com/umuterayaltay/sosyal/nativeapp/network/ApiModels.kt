@@ -660,3 +660,50 @@ data class TwoFactorDisableRequest(
     val password: String,
     val code: String,
 )
+
+// ---- Bildirimler (app/api_v1.py satır ~2785-2833: api_list_notifications()/
+// api_unread_notifications_count() okunarak doğrulandı — backend zaten
+// commit 55833b2'de tamamlandı, bu SADECE native tüketim tarafı). KRİTİK
+// SAPMA: web'in _group_notifications()'ı bir `target_url` (Flask url_for()
+// string'i) üretir, native bunu KULLANAMAZ — bu yüzden native uç noktası
+// ("/notifications"nin AYNISI ama farklı jsonify alanları) `target_url`
+// yerine HAM alanları (post_id/username/conversation_id/hashtag) döner,
+// navigasyon kararını native kendi route'larıyla verir (bkz. AppNavHost.kt
+// "notifications" route'u + NotificationsScreen.kt resolveTarget()).
+//
+// Alanlardan SADECE tipine uygun olanlar dolu gelir, diğerleri null:
+// post_id -> like/comment/reply/comment_like/comment_reaction/hashtag_post/
+// repost/mention(post'a aitse); username -> SADECE follow/follow_accept/
+// story_reaction (profile'a gidilecek türler); conversation_id -> message/
+// mention(post'a ait değilse); hashtag -> hashtag_post (etiket adı, native'de
+// hashtag sayfası YOK, bu tip BİLİNÇLİ olarak tıklanamaz bırakıldı - post_id
+// dolu olsa bile, bkz. NotificationsScreen.kt resolveTarget()); follow_request
+// tipinde yukarıdakilerin HİÇBİRİ dolu değil, tıklanınca native'in zaten var
+// olan "followRequests" route'una gidilir.
+data class NotificationDto(
+    val type: String,
+    @SerializedName("actor_summary") val actorSummary: String? = null,
+    @SerializedName("avatar_url") val avatarUrl: String? = null,
+    val text: String? = null,
+    @SerializedName("created_at") val createdAt: String? = null,
+    @SerializedName("is_read") val isRead: Boolean = false,
+    @SerializedName("post_id") val postId: String? = null,
+    val username: String? = null,
+    @SerializedName("conversation_id") val conversationId: String? = null,
+    val hashtag: String? = null,
+)
+
+data class NotificationsResponse(
+    val notifications: List<NotificationDto>? = null,
+    @SerializedName("has_next") val hasNext: Boolean = false,
+    val error: String? = null,
+)
+
+/** unread-count 20sn TTL cache'li (bkz. backend docstring'i) — error alanı
+ * pratikte hiç dolmaz (sadece 401 unauthorized errorBody'den ayrı parse edilir,
+ * bkz. RetrofitClient.parseErrorCode), ama diğer *Response DTO'larıyla AYNI
+ * şekil tutarlılığı için burada da tutuldu. */
+data class UnreadCountResponse(
+    val count: Int = 0,
+    val error: String? = null,
+)

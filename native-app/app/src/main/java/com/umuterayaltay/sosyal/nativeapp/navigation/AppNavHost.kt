@@ -20,6 +20,7 @@ import com.umuterayaltay.sosyal.nativeapp.ui.screens.LoginScreen
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.MainScaffold
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.NewMessageScreen
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.NotificationPreferencesScreen
+import com.umuterayaltay.sosyal.nativeapp.ui.screens.NotificationsScreen
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.PostDetailScreen
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.ProfileScreen
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.RegisterScreen
@@ -91,6 +92,16 @@ private const val ROUTE_MAIN = "main"
  * ve Google Sign-In (Credential Manager) akışları AYRI bir route GEREKTİRMEZ -
  * LoginScreen kendi içinde (AuthViewModel.LoginUiState.NeedsCode) bir alt-ekran
  * olarak render eder.
+ *
+ * Bildirimler ekranı (native Android liste görüntüleme - backend zaten
+ * commit 55833b2'de tamamlandı): "notifications" - "followRequests"/"insights"
+ * ile AYNI basit PUSH deseniyle FeedScreen'in TopAppBar'ındaki zil ikonundan
+ * erişilir. NotificationsScreen'in 4 navigasyon callback'i burada gerçek
+ * route'lara bağlanır: post_id -> "postDetail/{id}", username -> "profile/
+ * {username}", conversation_id -> "conversation/{id}", type=="follow_request"
+ * -> ZATEN VAR olan "followRequests". hashtag_post BİLİNÇLİ olarak tıklanamaz
+ * bırakıldı (native'de hashtag sayfası yok) - bkz. NotificationsScreen.kt
+ * resolveNotificationTarget().
  */
 @Composable
 fun AppNavHost() {
@@ -197,6 +208,20 @@ fun AppNavHost() {
         composable("followRequests") {
             FollowRequestsScreen(
                 onNavigateBack = { navController.navigateUp() },
+                onSessionExpired = {
+                    navController.navigate(ROUTE_LOGIN) {
+                        popUpTo(ROUTE_MAIN) { inclusive = true }
+                    }
+                },
+            )
+        }
+        composable("notifications") {
+            NotificationsScreen(
+                onNavigateBack = { navController.navigateUp() },
+                onNavigateToPost = { postId -> navController.navigate("postDetail/$postId") },
+                onNavigateToProfile = { username -> navController.navigate("profile/$username") },
+                onNavigateToConversation = { conversationId -> navController.navigate("conversation/$conversationId") },
+                onNavigateToFollowRequests = { navController.navigate("followRequests") },
                 onSessionExpired = {
                     navController.navigate(ROUTE_LOGIN) {
                         popUpTo(ROUTE_MAIN) { inclusive = true }
