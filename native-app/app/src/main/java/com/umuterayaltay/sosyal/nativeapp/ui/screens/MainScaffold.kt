@@ -66,6 +66,7 @@ fun MainScaffold(navController: NavHostController, onSessionExpired: () -> Unit)
                 MainTab.Feed -> FeedScreen(
                     onSessionExpired = onSessionExpired,
                     onNavigateToPostDetail = { postId -> navController.navigate("postDetail/$postId") },
+                    onNewPostClick = { navController.navigate("createPost") },
                 )
                 MainTab.Discover -> DiscoverScreen(
                     onSessionExpired = onSessionExpired,

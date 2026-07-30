@@ -1,16 +1,21 @@
 package com.umuterayaltay.sosyal.nativeapp.network
 
+import okhttp3.MultipartBody
+import okhttp3.RequestBody
 import retrofit2.Response
 import retrofit2.http.Body
 import retrofit2.http.GET
+import retrofit2.http.Multipart
 import retrofit2.http.POST
+import retrofit2.http.Part
 import retrofit2.http.Path
 
 /**
- * Post beğeni + yorum (post detay) için 3 endpoint — app/api_v1.py satır
- * ~1582-1801 (bkz. ApiModels.kt DTO yorumları) ile birebir eşleşir.
- * ProfileApi/MessagingApi ile AYNI desen: tek bir domain'in tüm endpoint'lerini
- * kendi dosyasında toplar.
+ * Post beğeni + yorum (post detay) + post OLUŞTURMA için endpoint'ler —
+ * app/api_v1.py satır ~1582-1801 (beğeni/yorum) ve "# ----------------------- POST
+ * OLUŞTURMA" başlığı altındaki api_create_post() (bkz. ApiModels.kt DTO
+ * yorumları) ile birebir eşleşir. ProfileApi/MessagingApi ile AYNI desen: tek
+ * bir domain'in tüm endpoint'lerini kendi dosyasında toplar.
  */
 interface InteractionsApi {
     // Retrofit interface metodu abstract olmak zorunda (dinamik proxy ile
@@ -31,4 +36,16 @@ interface InteractionsApi {
         @Path("id") postId: String,
         @Body request: AddCommentRequest,
     ): Response<AddCommentResponse>
+
+    // multipart/form-data — JSON DEĞİL, çünkü opsiyonel bir görsel dosyası
+    // içerebiliyor (backend api_create_post() ile AYNI kodlama). `image` null
+    // geçilirse Retrofit bu parçayı isteğe hiç eklemez (backend'de
+    // request.files.get("image") None döner, has_image=False olur).
+    @Multipart
+    @POST("posts")
+    suspend fun createPost(
+        @Part("content") content: RequestBody,
+        @Part("visibility") visibility: RequestBody,
+        @Part image: MultipartBody.Part?,
+    ): Response<CreatePostResponse>
 }

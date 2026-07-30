@@ -448,3 +448,13 @@ data class AddCommentResponse(
     val comment: CommentDto? = null,
     val error: String? = null,
 )
+
+// ---- Post oluşturma (app/api_v1.py api_create_post() — Faz 4, native Android
+// içerik-oluşturma. BİLİNÇLİ SINIR: çoklu görsel/video/GIF/anket/taslak/konum
+// YOK — sadece metin + TEK opsiyonel görsel + görünürlük.) ----
+
+/** POST /api/v1/posts (multipart/form-data) yanıtı — PostDto ile AYNI şekil. */
+data class CreatePostResponse(
+    val post: PostDto? = null,
+    val error: String? = null,
+)

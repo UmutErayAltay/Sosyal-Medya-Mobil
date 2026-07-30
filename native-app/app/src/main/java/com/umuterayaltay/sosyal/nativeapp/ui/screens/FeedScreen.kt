@@ -8,9 +8,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -32,6 +36,7 @@ import com.umuterayaltay.sosyal.nativeapp.viewmodel.FeedViewModel
 fun FeedScreen(
     onSessionExpired: () -> Unit,
     onNavigateToPostDetail: (String) -> Unit,
+    onNewPostClick: () -> Unit,
     viewModel: FeedViewModel = viewModel(),
 ) {
     val posts by viewModel.posts.collectAsState()
@@ -47,7 +52,17 @@ fun FeedScreen(
     }
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text("Ana Sayfa") }) },
+        topBar = {
+            TopAppBar(
+                title = { Text("Ana Sayfa") },
+                actions = {
+                    // InboxScreen'in "Yeni Mesaj" ikon-butonu DESENİYLE tutarlı.
+                    IconButton(onClick = onNewPostClick) {
+                        Icon(Icons.Filled.Add, contentDescription = "Yeni Gönderi")
+                    }
+                },
+            )
+        },
     ) { padding ->
         PullToRefreshBox(
             isRefreshing = isRefreshing,

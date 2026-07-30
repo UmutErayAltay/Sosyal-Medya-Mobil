@@ -8,6 +8,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.umuterayaltay.sosyal.nativeapp.ServiceLocator
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.ConversationScreen
+import com.umuterayaltay.sosyal.nativeapp.ui.screens.CreatePostScreen
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.FollowListScreen
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.FollowRequestsScreen
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.InsightsScreen
@@ -42,6 +43,12 @@ private const val ROUTE_MAIN = "main"
  * Faz 4 (native Android beğeni+yorum): "postDetail/{postId}" - Feed/Discover/
  * Reels/Profil'deki PostCard'ın yorum ikonuna veya ReelOverlay'in yorum
  * ikonuna tıklanınca ROUTE_MAIN üstüne PUSH edilir (AYNI desen).
+ *
+ * Faz 4 (native Android post OLUŞTURMA): "createPost" - FeedScreen'in
+ * TopAppBar'ındaki "+" ikonundan ROUTE_MAIN üstüne PUSH edilir. Paylaşım
+ * BAŞARILI olunca sadece geri navigasyon yapılır (navigateUp) - Feed'in
+ * ANINDA yeni postu göstermesi bu turun kapsamı DIŞI, kullanıcı var olan
+ * pull-to-refresh ile görebilir.
  */
 @Composable
 fun AppNavHost() {
@@ -183,6 +190,17 @@ fun AppNavHost() {
             PostDetailScreen(
                 postId = postId,
                 onNavigateBack = { navController.navigateUp() },
+                onSessionExpired = {
+                    navController.navigate(ROUTE_LOGIN) {
+                        popUpTo(ROUTE_MAIN) { inclusive = true }
+                    }
+                },
+            )
+        }
+        composable("createPost") {
+            CreatePostScreen(
+                onNavigateBack = { navController.navigateUp() },
+                onPostCreated = { navController.navigateUp() },
                 onSessionExpired = {
                     navController.navigate(ROUTE_LOGIN) {
                         popUpTo(ROUTE_MAIN) { inclusive = true }

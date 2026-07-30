@@ -7,6 +7,10 @@ import com.umuterayaltay.sosyal.nativeapp.network.LikeRequest
 import com.umuterayaltay.sosyal.nativeapp.network.RetrofitClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.MultipartBody
+import okhttp3.RequestBody
+import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
 
 sealed class ToggleLikeResult {
@@ -24,6 +28,11 @@ sealed class PostDetailResult {
 sealed class AddCommentResult {
     data class Success(val comment: CommentDto) : AddCommentResult()
     data class Error(val code: String?) : AddCommentResult()
+}
+
+sealed class CreatePostResult {
+    data class Success(val post: Post) : CreatePostResult()
+    data class Error(val code: String?) : CreatePostResult()
 }
 
 /**
@@ -91,4 +100,40 @@ class InteractionsRepository(
                 AddCommentResult.Error("unknown_error")
             }
         }
+
+    /**
+     * Yeni post oluşturur — app/api_v1.py api_create_post() ile AYNI kısıt:
+     * content VE imageBytes ikisi de boşsa backend zaten "empty" döner, burada
+     * ayrıca bir ön-kontrol YAPILMIYOR (tek doğruluk kaynağı backend olsun diye
+     * — CreatePostViewModel.submit() UI tarafında aynı kontrolü zaten yapıyor).
+     */
+    suspend fun createPost(
+        content: String,
+        visibility: String,
+        imageBytes: ByteArray?,
+        imageMimeType: String?,
+        imageFileName: String?,
+    ): CreatePostResult = withContext(Dispatchers.IO) {
+        try {
+            val contentBody: RequestBody = content.toRequestBody("text/plain".toMediaTypeOrNull())
+            val visibilityBody: RequestBody = visibility.toRequestBody("text/plain".toMediaTypeOrNull())
+            val imagePart: MultipartBody.Part? = imageBytes?.let { bytes ->
+                val imageBody = bytes.toRequestBody(imageMimeType?.toMediaTypeOrNull())
+                MultipartBody.Part.createFormData("image", imageFileName ?: "image.jpg", imageBody)
+            }
+
+            val response = interactionsApi.createPost(contentBody, visibilityBody, imagePart)
+            val body = response.body()
+            val post = body?.post
+            if (response.isSuccessful && body != null && body.error == null && post != null) {
+                CreatePostResult.Success(post.toDomain())
+            } else {
+                CreatePostResult.Error(body?.error ?: RetrofitClient.parseErrorCode(response))
+            }
+        } catch (e: IOException) {
+            CreatePostResult.Error("network_error")
+        } catch (e: Exception) {
+            CreatePostResult.Error("unknown_error")
+        }
+    }
 }
