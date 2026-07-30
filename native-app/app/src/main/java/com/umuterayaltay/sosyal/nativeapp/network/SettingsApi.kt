@@ -54,4 +54,20 @@ interface SettingsApi {
 
     @POST("profile/deactivate")
     suspend fun deactivateAccount(@Body request: DeactivateAccountRequest): Response<SimpleOkResponse>
+
+    // ---- 2FA (TOTP) yönetimi — bkz. ApiModels.kt "2FA (TOTP) yönetimi" bölüm
+    // notu. status şifre gerektirmez (salt-okunur), enroll/enroll-verify/disable
+    // hepsi AYNI {"error": "..."} hata şeklini paylaşır (RetrofitClient.parseErrorCode
+    // ile ayrıştırılır).
+    @GET("2fa/status")
+    suspend fun getTwoFactorStatus(): Response<TwoFactorStatusResponse>
+
+    @POST("2fa/enroll")
+    suspend fun enrollTwoFactor(@Body request: TwoFactorEnrollRequest): Response<TwoFactorEnrollResponse>
+
+    @POST("2fa/enroll/verify")
+    suspend fun verifyTwoFactorEnroll(@Body request: TwoFactorVerifyRequest): Response<SimpleOkResponse>
+
+    @POST("2fa/disable")
+    suspend fun disableTwoFactor(@Body request: TwoFactorDisableRequest): Response<SimpleOkResponse>
 }

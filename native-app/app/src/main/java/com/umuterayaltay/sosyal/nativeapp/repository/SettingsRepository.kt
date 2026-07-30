@@ -7,6 +7,9 @@ import com.umuterayaltay.sosyal.nativeapp.network.ProfileDto
 import com.umuterayaltay.sosyal.nativeapp.network.RetrofitClient
 import com.umuterayaltay.sosyal.nativeapp.network.SettingsApi
 import com.umuterayaltay.sosyal.nativeapp.network.SimpleOkResponse
+import com.umuterayaltay.sosyal.nativeapp.network.TwoFactorDisableRequest
+import com.umuterayaltay.sosyal.nativeapp.network.TwoFactorEnrollRequest
+import com.umuterayaltay.sosyal.nativeapp.network.TwoFactorVerifyRequest
 import com.umuterayaltay.sosyal.nativeapp.network.UserSearchDto
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -43,6 +46,19 @@ sealed class SimpleActionResult {
 sealed class DeactivateResult {
     data object Success : DeactivateResult()
     data class Error(val code: String?) : DeactivateResult()
+}
+
+sealed class TwoFactorStatusResult {
+    data class Success(val enabled: Boolean) : TwoFactorStatusResult()
+    data class Error(val code: String?) : TwoFactorStatusResult()
+}
+
+/** enrollTwoFactor() BAŞARILI olduğunda backend'in döndüğü factorId/secret —
+ * verify adımı factorId'yi, ekran secret'ı okunabilir biçimde göstermek için
+ * ikisini de taşır (qr_code BİLİNÇLİ olarak burada YOK, bkz. ApiModels.kt notu). */
+sealed class TwoFactorEnrollResult {
+    data class Success(val factorId: String, val secret: String) : TwoFactorEnrollResult()
+    data class Error(val code: String?) : TwoFactorEnrollResult()
 }
 
 /**
@@ -173,6 +189,56 @@ class SettingsRepository(
             DeactivateResult.Error("unknown_error")
         }
     }
+
+    /** Şifre gerektirmez (salt-okunur) — "Güvenlik (2FA)" ekranı açılınca
+     * mevcut durumu yüklemek için çağrılır. */
+    suspend fun getTwoFactorStatus(): TwoFactorStatusResult = withContext(Dispatchers.IO) {
+        try {
+            val response = settingsApi.getTwoFactorStatus()
+            val body = response.body()
+            val enabled = body?.enabled
+            if (response.isSuccessful && body?.error == null && enabled != null) {
+                TwoFactorStatusResult.Success(enabled)
+            } else {
+                TwoFactorStatusResult.Error(body?.error ?: RetrofitClient.parseErrorCode(response))
+            }
+        } catch (e: IOException) {
+            TwoFactorStatusResult.Error("network_error")
+        } catch (e: Exception) {
+            TwoFactorStatusResult.Error("unknown_error")
+        }
+    }
+
+    /** Enroll akışının 1. adımı — şifre doğrulanır, başarılıysa factor_id +
+     * secret döner (kullanıcı 2. adımda Authenticator'a bu secret'ı girip
+     * ürettiği kodu [verifyTwoFactorEnroll] ile doğrular). */
+    suspend fun enrollTwoFactor(password: String): TwoFactorEnrollResult = withContext(Dispatchers.IO) {
+        try {
+            val response = settingsApi.enrollTwoFactor(TwoFactorEnrollRequest(password))
+            val body = response.body()
+            val factorId = body?.factorId
+            val secret = body?.secret
+            if (response.isSuccessful && body?.error == null && factorId != null && secret != null) {
+                TwoFactorEnrollResult.Success(factorId, secret)
+            } else {
+                TwoFactorEnrollResult.Error(body?.error ?: RetrofitClient.parseErrorCode(response))
+            }
+        } catch (e: IOException) {
+            TwoFactorEnrollResult.Error("network_error")
+        } catch (e: Exception) {
+            TwoFactorEnrollResult.Error("unknown_error")
+        }
+    }
+
+    /** Enroll akışının 2. adımı — Authenticator'daki 6 haneli kodla doğrular,
+     * başarılıysa 2FA hesapta AKTİF hale gelir. */
+    suspend fun verifyTwoFactorEnroll(password: String, factorId: String, code: String): SimpleActionResult =
+        runAction { settingsApi.verifyTwoFactorEnroll(TwoFactorVerifyRequest(password, factorId, code)) }
+
+    /** Şifre VE kodu AYNI istekte birlikte ister (bkz. TwoFactorDisableRequest
+     * docstring'i) — iki ayrı adım DEĞİL. */
+    suspend fun disableTwoFactor(password: String, code: String): SimpleActionResult =
+        runAction { settingsApi.disableTwoFactor(TwoFactorDisableRequest(password, code)) }
 
     /** DiscoverRepository.runAction ile AYNI desen — ok/error şekilli tüm
      * ikincil eylem endpoint'leri için tek ortak yol. */

@@ -16,6 +16,7 @@ import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.PersonOff
+import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Stars
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -66,6 +67,7 @@ fun SettingsScreen(
     onNavigateToEditProfile: () -> Unit,
     onNavigateToNotificationPreferences: () -> Unit,
     onNavigateToCloseFriends: () -> Unit,
+    onNavigateToTwoFactor: () -> Unit,
     onDeactivated: () -> Unit,
     onSessionExpired: () -> Unit,
     viewModel: SettingsViewModel = viewModel(),
@@ -119,6 +121,12 @@ fun SettingsScreen(
                 icon = Icons.Filled.Stars,
                 label = "Yakın Arkadaşlar",
                 onClick = onNavigateToCloseFriends,
+            )
+            HorizontalDivider()
+            SettingsRow(
+                icon = Icons.Filled.Security,
+                label = "Güvenlik (2FA)",
+                onClick = onNavigateToTwoFactor,
             )
             Spacer(modifier = Modifier.height(24.dp))
             HorizontalDivider()

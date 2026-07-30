@@ -540,3 +540,46 @@ data class DeactivateAccountRequest(
 // {id}/remove ve /profile/deactivate hepsi {"ok": true}/{"error": "..."} şekli
 // döner — SimpleOkResponse (yukarıda tanımlı) reuse edilir, ayrı bir yanıt
 // DTO'su İCAT EDİLMEDİ.
+
+// ---- 2FA (TOTP) yönetimi (app/api_v1.py 2fa/status, 2fa/enroll,
+// 2fa/enroll/verify, 2fa/disable — backend sözleşmesi görev tanımından birebir
+// alındı, Faz 4 native Android "Güvenlik (2FA)" ekranı). BİLİNÇLİ SINIR: login
+// akışının 2FA-kod isteme kısmı (LoginRequest.code, mfa_required) AYRI bir
+// iterasyonda zaten yapıldı — bu SADECE Ayarlar'dan enroll/disable. qr_code
+// alanı gerçek Supabase'den dönen ~360KB'lık data:image/svg+xml SVG string'i —
+// BU İTERASYONDA render edilmiyor (kapsam dışı: yeni bir coil-svg bağımlılığı +
+// büyük SVG parse riski), sadece secret metni okunabilir biçimde gösterilir.
+
+data class TwoFactorStatusResponse(
+    val enabled: Boolean? = null,
+    val error: String? = null,
+)
+
+data class TwoFactorEnrollRequest(
+    val password: String,
+)
+
+/** [qrCode] JSON'dan kayıpsız geçsin diye modele alınıyor ama hiçbir UI kodu bu
+ * alanı OKUMAZ/render ETMEZ — sadece [secret] kullanılır (bkz. yukarıdaki
+ * bölüm notu). */
+data class TwoFactorEnrollResponse(
+    @SerializedName("factor_id") val factorId: String? = null,
+    val secret: String? = null,
+    @SerializedName("qr_code") val qrCode: String? = null,
+    val error: String? = null,
+)
+
+data class TwoFactorVerifyRequest(
+    val password: String,
+    @SerializedName("factor_id") val factorId: String,
+    val code: String,
+)
+
+/** disable, password VE code'u AYNI istekte BİRLİKTE ister — Supabase'in "AAL2
+ * required to unenroll" kısıtlaması yüzünden password-only asla çalışmaz,
+ * backend bunu tek istekte çözer, native taraf sadece iki alanı birlikte
+ * gönderir (iki ayrı adım DEĞİL). */
+data class TwoFactorDisableRequest(
+    val password: String,
+    val code: String,
+)

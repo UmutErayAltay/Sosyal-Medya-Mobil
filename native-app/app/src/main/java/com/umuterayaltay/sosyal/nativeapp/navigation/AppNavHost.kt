@@ -22,6 +22,7 @@ import com.umuterayaltay.sosyal.nativeapp.ui.screens.PostDetailScreen
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.ProfileScreen
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.RegisterScreen
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.SettingsScreen
+import com.umuterayaltay.sosyal.nativeapp.ui.screens.TwoFactorScreen
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.FollowListKind
 
 private const val ROUTE_LOGIN = "login"
@@ -63,6 +64,11 @@ private const val ROUTE_MAIN = "main"
  * ile AYNI hedefe (ROUTE_LOGIN, ROUTE_MAIN'i yığından temizleyerek) gider -
  * kavramsal olarak farklı (kullanıcı BİLEREK çıktı) ama navigasyon davranışı
  * özdeş olduğu için AYNI lambda gövdesi kullanılır.
+ *
+ * Faz 4 (native Android 2FA yönetimi - enroll/disable): "twoFactor" - AYNI
+ * PUSH deseniyle "settings"in "Güvenlik (2FA)" satırından erişilir. Login
+ * akışının 2FA-KOD İSTEME kısmından (LoginScreen'in NeedsCode alt-ekranı) AYRI
+ * bir özellik - bu route SADECE Ayarlar'dan enroll/disable yönetir.
  *
  * Faz 4 (native Android auth genişletme: kayıt ol + Google ile giriş + 2FA):
  * "register" - ROUTE_LOGIN'in YANINDA, AYNI seviyede (ROUTE_MAIN üstüne PUSH
@@ -249,6 +255,7 @@ fun AppNavHost() {
                 onNavigateToEditProfile = { navController.navigate("editProfile") },
                 onNavigateToNotificationPreferences = { navController.navigate("notificationPreferences") },
                 onNavigateToCloseFriends = { navController.navigate("closeFriends") },
+                onNavigateToTwoFactor = { navController.navigate("twoFactor") },
                 onDeactivated = {
                     // onSessionExpired ile AYNI navigasyon hedefi - kullanıcı burada
                     // BİLEREK çıktı, oturumu dışarıdan geçersizleşmedi (bkz. yukarıdaki
@@ -287,6 +294,16 @@ fun AppNavHost() {
         }
         composable("closeFriends") {
             CloseFriendsScreen(
+                onNavigateBack = { navController.navigateUp() },
+                onSessionExpired = {
+                    navController.navigate(ROUTE_LOGIN) {
+                        popUpTo(ROUTE_MAIN) { inclusive = true }
+                    }
+                },
+            )
+        }
+        composable("twoFactor") {
+            TwoFactorScreen(
                 onNavigateBack = { navController.navigateUp() },
                 onSessionExpired = {
                     navController.navigate(ROUTE_LOGIN) {
