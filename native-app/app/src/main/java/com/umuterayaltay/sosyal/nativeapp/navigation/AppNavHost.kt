@@ -7,6 +7,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.umuterayaltay.sosyal.nativeapp.ServiceLocator
+import com.umuterayaltay.sosyal.nativeapp.ui.screens.BlockedUsersScreen
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.CloseFriendsScreen
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.ConversationScreen
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.CreatePostScreen
@@ -83,6 +84,12 @@ private const val ROUTE_MAIN = "main"
  * PUSH deseniyle "settings"in "Güvenlik (2FA)" satırından erişilir. Login
  * akışının 2FA-KOD İSTEME kısmından (LoginScreen'in NeedsCode alt-ekranı) AYRI
  * bir özellik - bu route SADECE Ayarlar'dan enroll/disable yönetir.
+ *
+ * Kullanıcı engelleme (Faz 4 sonrası eksik giderme, native Android): mevcut
+ * "profile/{username}" ekranının TopAppBar'ındaki (SADECE !isSelf iken görünen)
+ * üç-nokta menüsünden POST /block/{username} toggle'ı doğrudan çağrılır - AYRI
+ * bir route GEREKMEZ. "blockedUsers" - "closeFriends" ile AYNI basit PUSH
+ * deseniyle "settings"in "Engellenen Kullanıcılar" satırından erişilir.
  *
  * Faz 4 (native Android auth genişletme: kayıt ol + Google ile giriş + 2FA):
  * "register" - ROUTE_LOGIN'in YANINDA, AYNI seviyede (ROUTE_MAIN üstüne PUSH
@@ -336,6 +343,7 @@ fun AppNavHost() {
                 onNavigateToNotificationPreferences = { navController.navigate("notificationPreferences") },
                 onNavigateToCloseFriends = { navController.navigate("closeFriends") },
                 onNavigateToTwoFactor = { navController.navigate("twoFactor") },
+                onNavigateToBlockedUsers = { navController.navigate("blockedUsers") },
                 onDeactivated = {
                     // onSessionExpired ile AYNI navigasyon hedefi - kullanıcı burada
                     // BİLEREK çıktı, oturumu dışarıdan geçersizleşmedi (bkz. yukarıdaki
@@ -384,6 +392,16 @@ fun AppNavHost() {
         }
         composable("twoFactor") {
             TwoFactorScreen(
+                onNavigateBack = { navController.navigateUp() },
+                onSessionExpired = {
+                    navController.navigate(ROUTE_LOGIN) {
+                        popUpTo(ROUTE_MAIN) { inclusive = true }
+                    }
+                },
+            )
+        }
+        composable("blockedUsers") {
+            BlockedUsersScreen(
                 onNavigateBack = { navController.navigateUp() },
                 onSessionExpired = {
                     navController.navigate(ROUTE_LOGIN) {

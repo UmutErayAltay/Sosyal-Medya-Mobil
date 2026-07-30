@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Notifications
@@ -68,6 +69,7 @@ fun SettingsScreen(
     onNavigateToNotificationPreferences: () -> Unit,
     onNavigateToCloseFriends: () -> Unit,
     onNavigateToTwoFactor: () -> Unit,
+    onNavigateToBlockedUsers: () -> Unit,
     onDeactivated: () -> Unit,
     onSessionExpired: () -> Unit,
     viewModel: SettingsViewModel = viewModel(),
@@ -127,6 +129,12 @@ fun SettingsScreen(
                 icon = Icons.Filled.Security,
                 label = "Güvenlik (2FA)",
                 onClick = onNavigateToTwoFactor,
+            )
+            HorizontalDivider()
+            SettingsRow(
+                icon = Icons.Filled.Block,
+                label = "Engellenen Kullanıcılar",
+                onClick = onNavigateToBlockedUsers,
             )
             Spacer(modifier = Modifier.height(24.dp))
             HorizontalDivider()

@@ -1,5 +1,6 @@
 package com.umuterayaltay.sosyal.nativeapp.repository
 
+import com.umuterayaltay.sosyal.nativeapp.network.BlockedUserDto
 import com.umuterayaltay.sosyal.nativeapp.network.FollowListResponse
 import com.umuterayaltay.sosyal.nativeapp.network.FollowUserDto
 import com.umuterayaltay.sosyal.nativeapp.network.InsightsResponse
@@ -42,6 +43,16 @@ sealed class FollowRequestsResult {
 sealed class FollowActionResult {
     data object Success : FollowActionResult()
     data class Error(val code: String?) : FollowActionResult()
+}
+
+sealed class ToggleBlockResult {
+    data class Success(val blocked: Boolean) : ToggleBlockResult()
+    data class Error(val code: String?) : ToggleBlockResult()
+}
+
+sealed class BlockedUsersResult {
+    data class Success(val users: List<BlockedUserDto>) : BlockedUsersResult()
+    data class Error(val code: String?) : BlockedUsersResult()
 }
 
 /**
@@ -146,6 +157,41 @@ class ProfileRepository(
 
     suspend fun rejectFollowRequest(followerId: String): FollowActionResult =
         runAction { profileApi.rejectFollowRequest(followerId) }
+
+    /** POST /block/{username} toggle — dönen `blocked` alanı YENİ durumu
+     * taşır, çağıran taraf (ProfileViewModel/BlockedUsersViewModel) bunu
+     * yorumlar (bkz. ilgili ViewModel yorumları). */
+    suspend fun toggleBlock(username: String): ToggleBlockResult = withContext(Dispatchers.IO) {
+        try {
+            val response = profileApi.toggleBlock(username)
+            val body = response.body()
+            if (response.isSuccessful && body?.ok == true) {
+                ToggleBlockResult.Success(body.blocked)
+            } else {
+                ToggleBlockResult.Error(body?.error ?: RetrofitClient.parseErrorCode(response))
+            }
+        } catch (e: IOException) {
+            ToggleBlockResult.Error("network_error")
+        } catch (e: Exception) {
+            ToggleBlockResult.Error("unknown_error")
+        }
+    }
+
+    suspend fun getBlockedUsers(): BlockedUsersResult = withContext(Dispatchers.IO) {
+        try {
+            val response = profileApi.getBlockedUsers()
+            val body = response.body()
+            if (response.isSuccessful && body != null && body.error == null) {
+                BlockedUsersResult.Success(body.users ?: emptyList())
+            } else {
+                BlockedUsersResult.Error(body?.error ?: RetrofitClient.parseErrorCode(response))
+            }
+        } catch (e: IOException) {
+            BlockedUsersResult.Error("network_error")
+        } catch (e: Exception) {
+            BlockedUsersResult.Error("unknown_error")
+        }
+    }
 
     /** DiscoverRepository.runAction ile AYNI desen - ok/error sekilli tum
      * ikincil eylem endpoint'leri icin tek ortak yol. */

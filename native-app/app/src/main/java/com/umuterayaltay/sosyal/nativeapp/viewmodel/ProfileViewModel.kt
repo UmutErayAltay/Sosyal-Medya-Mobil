@@ -8,6 +8,7 @@ import com.umuterayaltay.sosyal.nativeapp.network.ProfileDto
 import com.umuterayaltay.sosyal.nativeapp.network.ProfileStatsDto
 import com.umuterayaltay.sosyal.nativeapp.repository.Post
 import com.umuterayaltay.sosyal.nativeapp.repository.ProfileResult
+import com.umuterayaltay.sosyal.nativeapp.repository.ToggleBlockResult
 import com.umuterayaltay.sosyal.nativeapp.repository.ToggleFollowResult
 import com.umuterayaltay.sosyal.nativeapp.repository.ToggleLikeResult
 import com.umuterayaltay.sosyal.nativeapp.repository.toDomain
@@ -153,6 +154,43 @@ class ProfileViewModel(private val requestedUsername: String?) : ViewModel() {
                         _events.emit(ProfileEvent.SessionExpired)
                     } else {
                         _error.value = mapErrorMessage(result.code)
+                    }
+                }
+            }
+        }
+    }
+
+    /** Profil ekranındaki "Engelle"/"Engeli Kaldır" aksiyonu — toggleFollow()'un
+     * AKSİNE tam bir loadProfile() TEKRARI YAPILMAZ (spesifikasyon gereği):
+     * backend {"ok":true,"blocked":bool} döner, bu YENİ durum doğrudan
+     * _isBlockedByMe'ye yazılır. Backend blok BAŞARILI olunca karşılıklı takip
+     * ilişkisini de koparıyor (her iki yönde, bkz. app/api_v1.py
+     * api_toggle_block() docstring'i) — bu yan etki loadProfile() olmadan
+     * yansımaz, bu yüzden blocked=true durumunda isFollowing/isPendingRequest
+     * de burada local olarak sıfırlanır (stale "Takip Ediliyor" state'i
+     * önlenir). unblock'ta (blocked=false) takip durumu zaten kopmuş
+     * durumdaydı, dokunulmaz. */
+    fun toggleBlock() {
+        val username = resolvedUsername ?: return
+        viewModelScope.launch {
+            when (val result = profileRepository.toggleBlock(username)) {
+                is ToggleBlockResult.Success -> {
+                    _isBlockedByMe.value = result.blocked
+                    if (result.blocked) {
+                        _isFollowing.value = false
+                        _isPendingRequest.value = false
+                    }
+                }
+                is ToggleBlockResult.Error -> {
+                    if (result.code == "unauthorized") {
+                        tokenStore.clearToken()
+                        _events.emit(ProfileEvent.SessionExpired)
+                    } else {
+                        _error.value = when (result.code) {
+                            "cannot_block_self" -> "Kendini engelleyemezsin"
+                            "not_found" -> "Kullanıcı bulunamadı"
+                            else -> "İşlem başarısız, lütfen tekrar deneyin"
+                        }
                     }
                 }
             }

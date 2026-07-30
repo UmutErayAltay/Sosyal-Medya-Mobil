@@ -16,11 +16,16 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.BarChart
+import androidx.compose.material.icons.filled.Block
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -30,6 +35,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -103,6 +109,9 @@ fun ProfileScreen(
     val loading by viewModel.loading.collectAsState()
     val error by viewModel.error.collectAsState()
 
+    var showBlockMenu by remember { mutableStateOf(false) }
+    var showBlockConfirmDialog by remember { mutableStateOf(false) }
+
     LaunchedEffect(Unit) {
         viewModel.events.collect { event ->
             when (event) {
@@ -132,6 +141,30 @@ fun ProfileScreen(
                         }
                         IconButton(onClick = onNavigateToSettings) {
                             Icon(Icons.Filled.Settings, contentDescription = "Ayarlar")
+                        }
+                    } else if (!isSelf && !isDeactivated) {
+                        // Başkasının profili: engelle/engeli kaldır aksiyonu üç-nokta
+                        // overflow menüde - "Takip Et" butonuyla aynı hizada ayrı bir
+                        // buton yerine, yanlışlıkla dokunmayı zorlaştıran bilinçli tercih.
+                        IconButton(onClick = { showBlockMenu = true }) {
+                            Icon(Icons.Filled.MoreVert, contentDescription = "Diğer seçenekler")
+                        }
+                        DropdownMenu(expanded = showBlockMenu, onDismissRequest = { showBlockMenu = false }) {
+                            DropdownMenuItem(
+                                text = { Text(if (isBlockedByMe) "Engeli Kaldır" else "Engelle") },
+                                leadingIcon = { Icon(Icons.Filled.Block, contentDescription = null) },
+                                onClick = {
+                                    showBlockMenu = false
+                                    if (isBlockedByMe) {
+                                        // Engeli kaldırma geri dönüşü kolay bir aksiyon -
+                                        // ekstra onay diyaloğu istenmedi (CloseFriendsScreen'in
+                                        // "Kaldır" ikonuyla AYNI düşük-sürtünme yaklaşımı).
+                                        viewModel.toggleBlock()
+                                    } else {
+                                        showBlockConfirmDialog = true
+                                    }
+                                },
+                            )
                         }
                     }
                 },
@@ -173,6 +206,37 @@ fun ProfileScreen(
                 onCommentClick = { onNavigateToPostDetail(it.id) },
             )
         }
+    }
+
+    if (showBlockConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showBlockConfirmDialog = false },
+            icon = { Icon(Icons.Filled.Block, contentDescription = null) },
+            title = { Text("Kullanıcıyı engelle") },
+            text = {
+                Text(
+                    "${profile?.username?.let { "$it kullanıcısını" } ?: "Bu kullanıcıyı"} " +
+                        "engellemek istediğine emin misin? Engellenince birbirinizin " +
+                        "gönderilerini göremezsiniz ve varsa takip ilişkiniz kopar.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showBlockConfirmDialog = false
+                        viewModel.toggleBlock()
+                    },
+                ) {
+                    Text("Engelle", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showBlockConfirmDialog = false }) {
+                    Text("Vazgeç")
+                }
+            },
+        )
     }
 }
 

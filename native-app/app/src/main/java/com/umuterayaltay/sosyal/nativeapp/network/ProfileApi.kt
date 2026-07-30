@@ -37,4 +37,15 @@ interface ProfileApi {
 
     @POST("follow-requests/{followerId}/reject")
     suspend fun rejectFollowRequest(@Path("followerId") followerId: String): Response<SimpleOkResponse>
+
+    // ---- Engelleme (Faz 4 sonrası eksik giderme — bkz. ApiModels.kt "Engelleme"
+    // bölüm notu). toggleFollow ile AYNI konuma (ProfileApi) bilinçli olarak
+    // eklendi: block de username'e bağlı bir profil aksiyonu, ProfileViewModel
+    // zaten profileRepository'yi kullanıyor - SettingsApi'ye taşımak gereksiz
+    // bir çapraz-repository bağımlılığı yaratırdı.
+    @POST("block/{username}")
+    suspend fun toggleBlock(@Path("username") username: String): Response<ToggleBlockResponse>
+
+    @GET("blocked")
+    suspend fun getBlockedUsers(): Response<BlockedUsersResponse>
 }

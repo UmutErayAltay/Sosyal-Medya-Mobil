@@ -239,6 +239,35 @@ data class ProfileResponse(
     val error: String? = null,
 )
 
+// ---- Engelleme (app/api_v1.py satır ~3251-3313: api_toggle_block()/
+// api_blocked_list() okunarak doğrulandı — Faz 4 sonrası eksik giderme, native
+// Android. is_blocked_by_me ZATEN ProfileResponse'ta var (yukarıda) — burada
+// SADECE toggle + liste endpoint'lerinin DTO'ları. Backend engelleyince
+// karşılıklı takip ilişkisini de koparıyor (her iki yönde) — bu yüzden native
+// tarafta blok BAŞARILI olunca isFollowing/isPendingRequest de local olarak
+// sıfırlanır, bkz. ProfileViewModel.toggleBlock().)
+
+data class ToggleBlockResponse(
+    val ok: Boolean = false,
+    val blocked: Boolean = false,
+    val error: String? = null,
+)
+
+/** GET /blocked satırı — api_blocked_list()'in "profiles!blocks_blocked_id_fkey
+ * (id, username, avatar_url, full_name)" select'i, UserSearchDto'dan FARKLI
+ * (is_deactivated alanı yok) - bu yüzden ayrı bir DTO. */
+data class BlockedUserDto(
+    val id: String,
+    val username: String?,
+    @SerializedName("avatar_url") val avatarUrl: String?,
+    @SerializedName("full_name") val fullName: String?,
+)
+
+data class BlockedUsersResponse(
+    val users: List<BlockedUserDto>? = null,
+    val error: String? = null,
+)
+
 // _api_follow_list()'in profiles satiri + is_following/is_self eklentisi;
 // api_list_follow_requests() da AYNI sekli doner ama is_following alanini hic
 // SET'lemez - bu yuzden isFollowing burada varsayilan false ile guvenli.
