@@ -90,6 +90,7 @@ fun MainScaffold(navController: NavHostController, onSessionExpired: () -> Unit)
                     onNavigateToInsights = { navController.navigate("insights") },
                     onNavigateToFollowRequests = { navController.navigate("followRequests") },
                     onNavigateToPostDetail = { postId -> navController.navigate("postDetail/$postId") },
+                    onNavigateToSettings = { navController.navigate("settings") },
                     onSessionExpired = onSessionExpired,
                     // onNavigateBack YOK: bu, alt navigasyondaki KOK "Profil" sekmesi
                     // - geri tusu YOK (push edilmis bir route degil).

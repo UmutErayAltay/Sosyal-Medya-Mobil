@@ -11,6 +11,7 @@ import com.umuterayaltay.sosyal.nativeapp.network.MessagingApi
 import com.umuterayaltay.sosyal.nativeapp.network.ProfileApi
 import com.umuterayaltay.sosyal.nativeapp.network.ReelsApi
 import com.umuterayaltay.sosyal.nativeapp.network.RetrofitClient
+import com.umuterayaltay.sosyal.nativeapp.network.SettingsApi
 import com.umuterayaltay.sosyal.nativeapp.repository.AuthRepository
 import com.umuterayaltay.sosyal.nativeapp.repository.DiscoverRepository
 import com.umuterayaltay.sosyal.nativeapp.repository.FeedRepository
@@ -18,6 +19,7 @@ import com.umuterayaltay.sosyal.nativeapp.repository.InteractionsRepository
 import com.umuterayaltay.sosyal.nativeapp.repository.MessagingRepository
 import com.umuterayaltay.sosyal.nativeapp.repository.ProfileRepository
 import com.umuterayaltay.sosyal.nativeapp.repository.ReelsRepository
+import com.umuterayaltay.sosyal.nativeapp.repository.SettingsRepository
 
 /**
  * Bu MVP fazında Hilt/Dagger yerine elle (manual) DI — kotlinx.serialization'ı
@@ -42,6 +44,8 @@ object ServiceLocator {
         private set
     lateinit var interactionsRepository: InteractionsRepository
         private set
+    lateinit var settingsRepository: SettingsRepository
+        private set
 
     private var initialized = false
 
@@ -58,6 +62,7 @@ object ServiceLocator {
         val reelsApi = retrofit.create(ReelsApi::class.java)
         val messagingApi = retrofit.create(MessagingApi::class.java)
         val interactionsApi = retrofit.create(InteractionsApi::class.java)
+        val settingsApi = retrofit.create(SettingsApi::class.java)
         val database = AppDatabase.getInstance(appContext)
 
         authRepository = AuthRepository(authApi, tokenStore)
@@ -67,6 +72,7 @@ object ServiceLocator {
         reelsRepository = ReelsRepository(reelsApi)
         messagingRepository = MessagingRepository(messagingApi)
         interactionsRepository = InteractionsRepository(interactionsApi)
+        settingsRepository = SettingsRepository(settingsApi)
 
         initialized = true
     }

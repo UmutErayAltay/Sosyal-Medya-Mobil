@@ -7,16 +7,20 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.umuterayaltay.sosyal.nativeapp.ServiceLocator
+import com.umuterayaltay.sosyal.nativeapp.ui.screens.CloseFriendsScreen
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.ConversationScreen
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.CreatePostScreen
+import com.umuterayaltay.sosyal.nativeapp.ui.screens.EditProfileScreen
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.FollowListScreen
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.FollowRequestsScreen
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.InsightsScreen
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.LoginScreen
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.MainScaffold
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.NewMessageScreen
+import com.umuterayaltay.sosyal.nativeapp.ui.screens.NotificationPreferencesScreen
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.PostDetailScreen
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.ProfileScreen
+import com.umuterayaltay.sosyal.nativeapp.ui.screens.SettingsScreen
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.FollowListKind
 
 private const val ROUTE_LOGIN = "login"
@@ -49,6 +53,15 @@ private const val ROUTE_MAIN = "main"
  * BAŞARILI olunca sadece geri navigasyon yapılır (navigateUp) - Feed'in
  * ANINDA yeni postu göstermesi bu turun kapsamı DIŞI, kullanıcı var olan
  * pull-to-refresh ile görebilir.
+ *
+ * Faz 4 (native Android profil ayarları): "settings", "editProfile",
+ * "notificationPreferences", "closeFriends" - "insights" gibi basit route'lar
+ * DESENİYLE ROUTE_MAIN üstüne PUSH edilir, ProfileScreen'in TopAppBar'ındaki
+ * (SADECE isSelf iken görünen) "Ayarlar" ikonundan erişilir. "settings"in
+ * deaktivasyon BAŞARILI olduğunda çağırdığı onDeactivated, onSessionExpired
+ * ile AYNI hedefe (ROUTE_LOGIN, ROUTE_MAIN'i yığından temizleyerek) gider -
+ * kavramsal olarak farklı (kullanıcı BİLEREK çıktı) ama navigasyon davranışı
+ * özdeş olduğu için AYNI lambda gövdesi kullanılır.
  */
 @Composable
 fun AppNavHost() {
@@ -88,6 +101,7 @@ fun AppNavHost() {
                 onNavigateToInsights = { navController.navigate("insights") },
                 onNavigateToFollowRequests = { navController.navigate("followRequests") },
                 onNavigateToPostDetail = { postId -> navController.navigate("postDetail/$postId") },
+                onNavigateToSettings = { navController.navigate("settings") },
                 onNavigateBack = { navController.navigateUp() },
                 onSessionExpired = {
                     navController.navigate(ROUTE_LOGIN) {
@@ -201,6 +215,58 @@ fun AppNavHost() {
             CreatePostScreen(
                 onNavigateBack = { navController.navigateUp() },
                 onPostCreated = { navController.navigateUp() },
+                onSessionExpired = {
+                    navController.navigate(ROUTE_LOGIN) {
+                        popUpTo(ROUTE_MAIN) { inclusive = true }
+                    }
+                },
+            )
+        }
+        composable("settings") {
+            SettingsScreen(
+                onNavigateBack = { navController.navigateUp() },
+                onNavigateToEditProfile = { navController.navigate("editProfile") },
+                onNavigateToNotificationPreferences = { navController.navigate("notificationPreferences") },
+                onNavigateToCloseFriends = { navController.navigate("closeFriends") },
+                onDeactivated = {
+                    // onSessionExpired ile AYNI navigasyon hedefi - kullanıcı burada
+                    // BİLEREK çıktı, oturumu dışarıdan geçersizleşmedi (bkz. yukarıdaki
+                    // dosya docstring'i).
+                    navController.navigate(ROUTE_LOGIN) {
+                        popUpTo(ROUTE_MAIN) { inclusive = true }
+                    }
+                },
+                onSessionExpired = {
+                    navController.navigate(ROUTE_LOGIN) {
+                        popUpTo(ROUTE_MAIN) { inclusive = true }
+                    }
+                },
+            )
+        }
+        composable("editProfile") {
+            EditProfileScreen(
+                onNavigateBack = { navController.navigateUp() },
+                onSaved = { navController.navigateUp() },
+                onSessionExpired = {
+                    navController.navigate(ROUTE_LOGIN) {
+                        popUpTo(ROUTE_MAIN) { inclusive = true }
+                    }
+                },
+            )
+        }
+        composable("notificationPreferences") {
+            NotificationPreferencesScreen(
+                onNavigateBack = { navController.navigateUp() },
+                onSessionExpired = {
+                    navController.navigate(ROUTE_LOGIN) {
+                        popUpTo(ROUTE_MAIN) { inclusive = true }
+                    }
+                },
+            )
+        }
+        composable("closeFriends") {
+            CloseFriendsScreen(
+                onNavigateBack = { navController.navigateUp() },
                 onSessionExpired = {
                     navController.navigate(ROUTE_LOGIN) {
                         popUpTo(ROUTE_MAIN) { inclusive = true }

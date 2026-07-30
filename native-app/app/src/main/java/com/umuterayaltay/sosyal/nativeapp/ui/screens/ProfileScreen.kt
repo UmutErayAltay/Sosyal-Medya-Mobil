@@ -18,6 +18,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -83,6 +84,7 @@ fun ProfileScreen(
     onNavigateToInsights: () -> Unit,
     onNavigateToFollowRequests: () -> Unit,
     onNavigateToPostDetail: (String) -> Unit,
+    onNavigateToSettings: () -> Unit,
     onSessionExpired: () -> Unit,
     onNavigateBack: (() -> Unit)? = null,
     viewModel: ProfileViewModel = viewModel(factory = ProfileViewModelFactory(username)),
@@ -127,6 +129,9 @@ fun ProfileScreen(
                         }
                         IconButton(onClick = onNavigateToInsights) {
                             Icon(Icons.Filled.BarChart, contentDescription = "İstatistikler")
+                        }
+                        IconButton(onClick = onNavigateToSettings) {
+                            Icon(Icons.Filled.Settings, contentDescription = "Ayarlar")
                         }
                     }
                 },

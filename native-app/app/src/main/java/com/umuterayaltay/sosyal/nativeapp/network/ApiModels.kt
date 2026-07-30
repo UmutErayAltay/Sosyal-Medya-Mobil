@@ -458,3 +458,62 @@ data class CreatePostResponse(
     val post: PostDto? = null,
     val error: String? = null,
 )
+
+// ---- Profil Ayarları (app/api_v1.py "# ----------------------- PROFİL AYARLARI"
+// başlığı altındaki api_profile_edit()/api_notification_preferences()/
+// api_close_friends_list()/api_add_close_friend()/api_remove_close_friend()/
+// api_deactivate_account() okunarak doğrulandı — Faz 4, native Android.
+// BİLİNÇLİ SINIR (backend'de de aynı sınır): 2FA enroll/verify/disable, aktif
+// oturum listesi/uzaktan-çıkış, şifre değiştirme/sıfırlama YOK. ----
+
+/** POST /profile/edit (multipart/form-data) yanıtı — ProfileDto var olan tipi
+ * reuse eder, alan adları zaten uyumlu (bkz. _serialize_profile_for_api ile
+ * BİREBİR aynı 7 alanı döndüren api_profile_edit() jsonify'ı). */
+data class EditProfileResponse(
+    val ok: Boolean = false,
+    val profile: ProfileDto? = null,
+    val error: String? = null,
+)
+
+/** GET/POST /notifications/preferences gövdesi — NOTIFICATION_TYPES'taki (app/
+ * notifications.py) 13 kolonun BİREBİR aynısı, snake_case @SerializedName ile. */
+data class NotificationPreferencesDto(
+    @SerializedName("notify_like") val notifyLike: Boolean = true,
+    @SerializedName("notify_comment") val notifyComment: Boolean = true,
+    @SerializedName("notify_reply") val notifyReply: Boolean = true,
+    @SerializedName("notify_comment_like") val notifyCommentLike: Boolean = true,
+    @SerializedName("notify_comment_reaction") val notifyCommentReaction: Boolean = true,
+    @SerializedName("notify_follow") val notifyFollow: Boolean = true,
+    @SerializedName("notify_follow_request") val notifyFollowRequest: Boolean = true,
+    @SerializedName("notify_follow_accept") val notifyFollowAccept: Boolean = true,
+    @SerializedName("notify_message") val notifyMessage: Boolean = true,
+    @SerializedName("notify_mention") val notifyMention: Boolean = true,
+    @SerializedName("notify_hashtag_post") val notifyHashtagPost: Boolean = true,
+    @SerializedName("notify_story_reaction") val notifyStoryReaction: Boolean = true,
+    @SerializedName("notify_repost") val notifyRepost: Boolean = true,
+)
+
+data class NotificationPreferencesResponse(
+    val preferences: NotificationPreferencesDto? = null,
+    val error: String? = null,
+)
+
+/** GET /close-friends yanıtı — profiles satırı UserSearchDto ile AYNI şekil
+ * (id/username/avatar_url/full_name), ayrı bir DTO İCAT EDİLMEDİ. */
+data class CloseFriendsResponse(
+    val users: List<UserSearchDto>? = null,
+    val error: String? = null,
+)
+
+data class AddCloseFriendRequest(
+    @SerializedName("user_id") val userId: String,
+)
+
+data class DeactivateAccountRequest(
+    val password: String? = null,
+)
+
+// NOT: /notifications/preferences POST, /close-friends/add, /close-friends/
+// {id}/remove ve /profile/deactivate hepsi {"ok": true}/{"error": "..."} şekli
+// döner — SimpleOkResponse (yukarıda tanımlı) reuse edilir, ayrı bir yanıt
+// DTO'su İCAT EDİLMEDİ.
