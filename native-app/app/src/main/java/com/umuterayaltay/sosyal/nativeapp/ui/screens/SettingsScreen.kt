@@ -18,6 +18,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.PersonOff
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Smartphone
 import androidx.compose.material.icons.filled.Stars
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -70,6 +71,7 @@ fun SettingsScreen(
     onNavigateToCloseFriends: () -> Unit,
     onNavigateToTwoFactor: () -> Unit,
     onNavigateToBlockedUsers: () -> Unit,
+    onNavigateToActiveSessions: () -> Unit,
     onDeactivated: () -> Unit,
     onSessionExpired: () -> Unit,
     viewModel: SettingsViewModel = viewModel(),
@@ -135,6 +137,12 @@ fun SettingsScreen(
                 icon = Icons.Filled.Block,
                 label = "Engellenen Kullanıcılar",
                 onClick = onNavigateToBlockedUsers,
+            )
+            HorizontalDivider()
+            SettingsRow(
+                icon = Icons.Filled.Smartphone,
+                label = "Aktif Oturumlar",
+                onClick = onNavigateToActiveSessions,
             )
             Spacer(modifier = Modifier.height(24.dp))
             HorizontalDivider()

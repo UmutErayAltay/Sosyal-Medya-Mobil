@@ -70,4 +70,16 @@ interface SettingsApi {
 
     @POST("2fa/disable")
     suspend fun disableTwoFactor(@Body request: TwoFactorDisableRequest): Response<SimpleOkResponse>
+
+    // ---- Aktif Oturumlar (native cihazlar) — bkz. ApiModels.kt "Aktif
+    // Oturumlar" bölüm notu. revoke/revoke-others AYNI SimpleOkResponse
+    // şeklini paylaşır (ok/error), ayrı bir yanıt tipi İCAT EDİLMEDİ.
+    @GET("sessions")
+    suspend fun getSessions(): Response<SessionsResponse>
+
+    @POST("sessions/{id}/revoke")
+    suspend fun revokeSession(@Path("id") sessionId: String): Response<SimpleOkResponse>
+
+    @POST("sessions/revoke-others")
+    suspend fun revokeOtherSessions(): Response<SimpleOkResponse>
 }

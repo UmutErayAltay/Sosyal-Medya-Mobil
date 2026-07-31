@@ -5,6 +5,7 @@ import com.umuterayaltay.sosyal.nativeapp.network.DeactivateAccountRequest
 import com.umuterayaltay.sosyal.nativeapp.network.NotificationPreferencesDto
 import com.umuterayaltay.sosyal.nativeapp.network.ProfileDto
 import com.umuterayaltay.sosyal.nativeapp.network.RetrofitClient
+import com.umuterayaltay.sosyal.nativeapp.network.SessionDto
 import com.umuterayaltay.sosyal.nativeapp.network.SettingsApi
 import com.umuterayaltay.sosyal.nativeapp.network.SimpleOkResponse
 import com.umuterayaltay.sosyal.nativeapp.network.TwoFactorDisableRequest
@@ -59,6 +60,13 @@ sealed class TwoFactorStatusResult {
 sealed class TwoFactorEnrollResult {
     data class Success(val factorId: String, val secret: String) : TwoFactorEnrollResult()
     data class Error(val code: String?) : TwoFactorEnrollResult()
+}
+
+/** "Aktif Oturumlar" ekranı için — GET /sessions'ın döndüğü native cihaz
+ * listesi (bkz. ApiModels.kt SessionDto notu). */
+sealed class SessionsResult {
+    data class Success(val sessions: List<SessionDto>) : SessionsResult()
+    data class Error(val code: String?) : SessionsResult()
 }
 
 /**
@@ -239,6 +247,39 @@ class SettingsRepository(
      * docstring'i) — iki ayrı adım DEĞİL. */
     suspend fun disableTwoFactor(password: String, code: String): SimpleActionResult =
         runAction { settingsApi.disableTwoFactor(TwoFactorDisableRequest(password, code)) }
+
+    /** "Aktif Oturumlar" ekranı açılınca çağrılır — sadece kendi hesabına
+     * giriş yapmış native cihazları döner, is_current bu isteği yapan
+     * cihazı işaretler (bkz. ApiModels.kt SessionDto notu). */
+    suspend fun getSessions(): SessionsResult = withContext(Dispatchers.IO) {
+        try {
+            val response = settingsApi.getSessions()
+            val body = response.body()
+            if (response.isSuccessful && body != null && body.error == null) {
+                SessionsResult.Success(body.sessions ?: emptyList())
+            } else {
+                SessionsResult.Error(body?.error ?: RetrofitClient.parseErrorCode(response))
+            }
+        } catch (e: IOException) {
+            SessionsResult.Error("network_error")
+        } catch (e: Exception) {
+            SessionsResult.Error("unknown_error")
+        }
+    }
+
+    /** Başkasının oturumunu 403 forbidden, KENDİ mevcut oturumunu bu yoldan
+     * iptal etmeye çalışırsan 400 use_logout döner (bkz. görev tanımı) — bu
+     * ikinci durum UI'da zaten baştan engellenir (is_current satırlarda
+     * revoke butonu hiç gösterilmez), ama repository katmanı backend'in
+     * döndüğü HERHANGİ bir error kodunu olduğu gibi yukarı taşır. */
+    suspend fun revokeSession(sessionId: String): SimpleActionResult =
+        runAction { settingsApi.revokeSession(sessionId) }
+
+    /** Mevcut cihaz HARİÇ tüm oturumları iptal eder — backend hangi
+     * satırların silindiğini dönmediği için çağıran taraf (ViewModel) BAŞARILI
+     * sonrasında listeyi TAM yeniden yüklemeli (bkz. ActiveSessionsViewModel). */
+    suspend fun revokeOtherSessions(): SimpleActionResult =
+        runAction { settingsApi.revokeOtherSessions() }
 
     /** DiscoverRepository.runAction ile AYNI desen — ok/error şekilli tüm
      * ikincil eylem endpoint'leri için tek ortak yol. */

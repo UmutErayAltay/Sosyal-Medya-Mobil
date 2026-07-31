@@ -647,6 +647,30 @@ data class DeactivateAccountRequest(
 // döner — SimpleOkResponse (yukarıda tanımlı) reuse edilir, ayrı bir yanıt
 // DTO'su İCAT EDİLMEDİ.
 
+// ---- Aktif Oturumlar (native cihazlar) (app/api_v1.py GET /sessions,
+// POST /sessions/{id}/revoke, POST /sessions/revoke-others — backend ZATEN
+// tamamlandı/pushlandı (commit c96072f), bu SADECE native tüketim tarafı.
+// ÖNEMLİ KAVRAMSAL FARK: web'in "Aktif Oturumlar" (user_sessions, tarayıcı
+// session'ları) özelliğinin KAVRAMSAL karşılığı ama FARKLI bir mekanizma —
+// bu, native'in KENDİ bearer token sistemi (api_tokens, her satır = bir
+// cihazın girişi) üzerinde çalışır. Yani "hesabına giriş yapmış BAŞKA NATIVE
+// CİHAZLAR" listesi. revoke/revoke-others zaten var olan SimpleOkResponse'u
+// reuse eder (sadece ok/error dönüyorlar) — use_logout/forbidden gibi hata
+// kodları için ayrı bir tip İCAT EDİLMEDİ, error alanı yeterli.
+
+data class SessionDto(
+    val id: String,
+    @SerializedName("device_name") val deviceName: String?,
+    @SerializedName("created_at") val createdAt: String?,
+    @SerializedName("last_used_at") val lastUsedAt: String?,
+    @SerializedName("is_current") val isCurrent: Boolean = false,
+)
+
+data class SessionsResponse(
+    val sessions: List<SessionDto>? = null,
+    val error: String? = null,
+)
+
 // ---- 2FA (TOTP) yönetimi (app/api_v1.py 2fa/status, 2fa/enroll,
 // 2fa/enroll/verify, 2fa/disable — backend sözleşmesi görev tanımından birebir
 // alındı, Faz 4 native Android "Güvenlik (2FA)" ekranı). BİLİNÇLİ SINIR: login

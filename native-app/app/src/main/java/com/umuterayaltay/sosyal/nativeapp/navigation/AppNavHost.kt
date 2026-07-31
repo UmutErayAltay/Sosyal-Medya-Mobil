@@ -7,6 +7,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.umuterayaltay.sosyal.nativeapp.ServiceLocator
+import com.umuterayaltay.sosyal.nativeapp.ui.screens.ActiveSessionsScreen
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.BlockedUsersScreen
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.CloseFriendsScreen
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.ConversationScreen
@@ -90,6 +91,15 @@ private const val ROUTE_MAIN = "main"
  * üç-nokta menüsünden POST /block/{username} toggle'ı doğrudan çağrılır - AYRI
  * bir route GEREKMEZ. "blockedUsers" - "closeFriends" ile AYNI basit PUSH
  * deseniyle "settings"in "Engellenen Kullanıcılar" satırından erişilir.
+ *
+ * Aktif Oturumlar (Faz 4 sonrası eksik giderme SONUNCUSU, native Android):
+ * "activeSessions" - "blockedUsers" ile AYNI basit PUSH deseniyle "settings"in
+ * "Aktif Oturumlar" satırından erişilir. Web'in "Aktif Oturumlar" (user_sessions,
+ * tarayıcı) özelliğinin KAVRAMSAL karşılığı ama FARKLI bir mekanizma - native'in
+ * KENDİ bearer token sistemi (api_tokens) üzerinde çalışır, "hesabına giriş
+ * yapmış BAŞKA NATIVE CİHAZLAR" listesi gösterir (bkz. ApiModels.kt SessionDto
+ * notu). Bu ekrandan çıkış navigasyonu YOK (KENDİ oturumunu bu yoldan
+ * kapatamazsın, backend 400 use_logout döner - normal "Çıkış Yap" kullanılmalı).
  *
  * Faz 4 (native Android auth genişletme: kayıt ol + Google ile giriş + 2FA):
  * "register" - ROUTE_LOGIN'in YANINDA, AYNI seviyede (ROUTE_MAIN üstüne PUSH
@@ -344,6 +354,7 @@ fun AppNavHost() {
                 onNavigateToCloseFriends = { navController.navigate("closeFriends") },
                 onNavigateToTwoFactor = { navController.navigate("twoFactor") },
                 onNavigateToBlockedUsers = { navController.navigate("blockedUsers") },
+                onNavigateToActiveSessions = { navController.navigate("activeSessions") },
                 onDeactivated = {
                     // onSessionExpired ile AYNI navigasyon hedefi - kullanıcı burada
                     // BİLEREK çıktı, oturumu dışarıdan geçersizleşmedi (bkz. yukarıdaki
@@ -402,6 +413,16 @@ fun AppNavHost() {
         }
         composable("blockedUsers") {
             BlockedUsersScreen(
+                onNavigateBack = { navController.navigateUp() },
+                onSessionExpired = {
+                    navController.navigate(ROUTE_LOGIN) {
+                        popUpTo(ROUTE_MAIN) { inclusive = true }
+                    }
+                },
+            )
+        }
+        composable("activeSessions") {
+            ActiveSessionsScreen(
                 onNavigateBack = { navController.navigateUp() },
                 onSessionExpired = {
                     navController.navigate(ROUTE_LOGIN) {
