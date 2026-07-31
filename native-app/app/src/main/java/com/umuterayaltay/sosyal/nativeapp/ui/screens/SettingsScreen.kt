@@ -14,6 +14,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.PersonOff
@@ -60,7 +61,8 @@ import com.umuterayaltay.sosyal.nativeapp.viewmodel.SettingsViewModel
  * [onDeactivated] BAŞARILI deaktivasyon sonrası çağrılır — [onSessionExpired]
  * ile AYNI navigasyon hedefine (login ekranı) gider ama kavramsal olarak
  * farklıdır: kullanıcı burada BİLEREK çıkış yaptı, oturumu dışarıdan
- * geçersizleşmedi.
+ * geçersizleşmedi. [onLoggedOut] da AYNI hedefe gider (normal "Çıkış Yap") —
+ * üçü de navigasyon davranışı olarak özdeş, kavramsal olarak farklı.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -73,11 +75,13 @@ fun SettingsScreen(
     onNavigateToBlockedUsers: () -> Unit,
     onNavigateToActiveSessions: () -> Unit,
     onDeactivated: () -> Unit,
+    onLoggedOut: () -> Unit,
     onSessionExpired: () -> Unit,
     viewModel: SettingsViewModel = viewModel(),
 ) {
     val deactivating by viewModel.deactivating.collectAsState()
     val deactivateError by viewModel.deactivateError.collectAsState()
+    val loggingOut by viewModel.loggingOut.collectAsState()
     var showDeactivateDialog by remember { mutableStateOf(false) }
     var password by remember { mutableStateOf("") }
 
@@ -88,6 +92,7 @@ fun SettingsScreen(
                     showDeactivateDialog = false
                     onDeactivated()
                 }
+                is SettingsEvent.LoggedOut -> onLoggedOut()
                 is SettingsEvent.SessionExpired -> {
                     showDeactivateDialog = false
                     onSessionExpired()
@@ -145,6 +150,12 @@ fun SettingsScreen(
                 onClick = onNavigateToActiveSessions,
             )
             Spacer(modifier = Modifier.height(24.dp))
+            HorizontalDivider()
+            SettingsRow(
+                icon = Icons.AutoMirrored.Filled.Logout,
+                label = if (loggingOut) "Çıkış yapılıyor..." else "Çıkış Yap",
+                onClick = { if (!loggingOut) viewModel.logout() },
+            )
             HorizontalDivider()
             SettingsRow(
                 icon = Icons.Filled.PersonOff,

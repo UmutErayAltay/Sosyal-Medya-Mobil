@@ -363,6 +363,16 @@ fun AppNavHost() {
                         popUpTo(ROUTE_MAIN) { inclusive = true }
                     }
                 },
+                onLoggedOut = {
+                    // onDeactivated/onSessionExpired ile AYNI navigasyon hedefi -
+                    // normal "Çıkış Yap" (daha önce uygulamada HİÇ BİR YERE
+                    // bağlanmamıştı - AuthViewModel.logout()/AuthRepository.logout()
+                    // zaten vardı ama hiçbir UI elemanı çağırmıyordu, bu satır o
+                    // eksikliği giderir).
+                    navController.navigate(ROUTE_LOGIN) {
+                        popUpTo(ROUTE_MAIN) { inclusive = true }
+                    }
+                },
                 onSessionExpired = {
                     navController.navigate(ROUTE_LOGIN) {
                         popUpTo(ROUTE_MAIN) { inclusive = true }

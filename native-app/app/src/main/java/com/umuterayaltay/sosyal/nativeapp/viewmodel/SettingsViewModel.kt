@@ -15,6 +15,10 @@ sealed class SettingsEvent {
     /** Deaktivasyon başarılı — token ZATEN bu ViewModel içinde temizlendi
      * (bkz. deactivate()), UI sadece login'e navigasyonu tetiklemeli. */
     data object Deactivated : SettingsEvent()
+    /** Normal çıkış (logout()) başarılı — token ZATEN temizlendi (bkz.
+     * AuthRepository.logout()'un kendi iç finally'si), UI sadece login'e
+     * navigasyonu tetiklemeli. */
+    data object LoggedOut : SettingsEvent()
     data object SessionExpired : SettingsEvent()
 }
 
@@ -34,6 +38,7 @@ sealed class SettingsEvent {
 class SettingsViewModel : ViewModel() {
 
     private val settingsRepository = ServiceLocator.settingsRepository
+    private val authRepository = ServiceLocator.authRepository
     private val tokenStore = ServiceLocator.tokenStore
 
     private val _deactivating = MutableStateFlow(false)
@@ -42,11 +47,28 @@ class SettingsViewModel : ViewModel() {
     private val _deactivateError = MutableStateFlow<String?>(null)
     val deactivateError: StateFlow<String?> = _deactivateError.asStateFlow()
 
+    private val _loggingOut = MutableStateFlow(false)
+    val loggingOut: StateFlow<Boolean> = _loggingOut.asStateFlow()
+
     private val _events = MutableSharedFlow<SettingsEvent>()
     val events: SharedFlow<SettingsEvent> = _events
 
     fun clearDeactivateError() {
         _deactivateError.value = null
+    }
+
+    /** AuthRepository.logout() ağ hatası olsa bile YEREL token'ı HER ZAMAN
+     * temizler (kendi docstring'i) — bu yüzden burada bir Error dalı YOK,
+     * çağrı dönünce (başarılı ya da değil) kullanıcı native'de HER HALÜKARDA
+     * çıkış yapmış sayılır, tek olay LoggedOut. */
+    fun logout() {
+        if (_loggingOut.value) return
+        viewModelScope.launch {
+            _loggingOut.value = true
+            authRepository.logout()
+            _events.emit(SettingsEvent.LoggedOut)
+            _loggingOut.value = false
+        }
     }
 
     fun deactivate(password: String?) {
