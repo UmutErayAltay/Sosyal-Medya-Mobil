@@ -8,6 +8,7 @@ import androidx.lifecycle.viewModelScope
 import com.umuterayaltay.sosyal.nativeapp.ServiceLocator
 import com.umuterayaltay.sosyal.nativeapp.network.ConversationInfoDto
 import com.umuterayaltay.sosyal.nativeapp.network.MessageDto
+import com.umuterayaltay.sosyal.nativeapp.network.ReplyToDto
 import com.umuterayaltay.sosyal.nativeapp.repository.ConversationDetailResult
 import com.umuterayaltay.sosyal.nativeapp.repository.SendMessageResult
 import kotlinx.coroutines.CoroutineScope
@@ -20,6 +21,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.time.Instant
+import java.util.UUID
 
 sealed class ConversationEvent {
     data object SessionExpired : ConversationEvent()
@@ -212,12 +215,58 @@ class ConversationViewModel(private val conversationId: String) : ViewModel() {
     /** [context] SADECE seçilen görsel Uri'sinin byte'larını/mime tipini okumak
      * için gerekiyor (ContentResolver) — ViewModel Context'i SAKLAMAZ, sadece
      * bu tek çağrı sırasında kullanır (CreatePostViewModel.submit() ile AYNI
-     * desen/gerekçe). */
+     * desen/gerekçe).
+     *
+     * OPTIMISTIC gönderim (web'in "mesaj göndermeyi sıraya alma" — anında
+     * sohbete yansıtıp gerçek gönderimi arka planda yapma — deneyimiyle
+     * tutarlı olsun diye, kullanıcı geri bildirimi üzerine eklendi): metin
+     * kutusu/görsel seçimi TIKLANIR TIKLANMAZ temizlenir ve "local-" önekli
+     * geçici bir id'yle mesaj HEMEN listeye eklenir — ağ isteği bittiğinde
+     * (appendFreshMessages'ın AKSİNE, id burada henüz sunucudan gelmediği
+     * için) bu geçici satır [replaceOptimisticMessage] ile sunucunun
+     * döndürdüğü GERÇEK mesajla YERİNDE değiştirilir (pozisyon bozulmaz).
+     * Gönderim BAŞARISIZ olursa geçici satır listeden çıkarılır, metin/görsel
+     * kullanıcı kaybetmesin diye GERİ YÜKLENİR ve hata (sessiz DEĞİL, kullanıcı
+     * fark etmeli) gösterilir. Görsel yükleme sürerken geçici balonun
+     * imageUrl'i BİLEREK null bırakılır (yerel content:// URI'sini MessageDto's
+     * String alanına güvenilir biçimde koymak yerine basit tutuldu) — görsel,
+     * gerçek mesaj gelince balon üzerinde belirir.
+     */
     fun send(context: Context) {
         val content = _sendText.value.trim()
         val imageUri = _selectedImageUri.value
         if (content.isEmpty() && imageUri == null) return
-        val replyId = _replyingTo.value?.id
+        val replyingTo = _replyingTo.value
+        val replyId = replyingTo?.id
+
+        val tempId = "local-${UUID.randomUUID()}"
+        val optimisticMessage = MessageDto(
+            id = tempId,
+            senderId = _myUserId.value ?: "",
+            content = content,
+            replyToId = replyId,
+            readAt = null,
+            createdAt = Instant.now().toString(),
+            profiles = null,
+            replyTo = replyingTo?.let {
+                ReplyToDto(
+                    id = it.id,
+                    content = it.content,
+                    imageUrl = it.imageUrl,
+                    senderId = it.senderId,
+                    profiles = it.profiles,
+                )
+            },
+            reactions = null,
+            sticker = null,
+            imageUrl = null,
+        )
+
+        // Input HEMEN temizlenir — "gönderdim" hissi ağ isteği bitmeden verilir.
+        _messages.value = _messages.value + optimisticMessage
+        _sendText.value = ""
+        _replyingTo.value = null
+        _selectedImageUri.value = null
 
         viewModelScope.launch {
             var imageBytes: ByteArray? = null
@@ -229,6 +278,8 @@ class ConversationViewModel(private val conversationId: String) : ViewModel() {
                     }
                     imageMimeType = context.contentResolver.getType(imageUri)
                 } catch (e: Exception) {
+                    removeOptimisticMessage(tempId)
+                    restoreFailedSend(content, replyingTo, imageUri)
                     _error.value = "Görsel okunamadı, lütfen tekrar deneyin"
                     return@launch
                 }
@@ -243,17 +294,39 @@ class ConversationViewModel(private val conversationId: String) : ViewModel() {
                     imageMimeType,
                 )
             ) {
-                is SendMessageResult.Success -> {
-                    // Optimistic DEĞİL — sunucu yanıtındaki mesajı kullanıyoruz
-                    // (basit ve güvenilir, spesifikasyon gereği).
-                    _messages.value = _messages.value + result.message
-                    _sendText.value = ""
-                    _replyingTo.value = null
-                    _selectedImageUri.value = null
+                is SendMessageResult.Success -> replaceOptimisticMessage(tempId, result.message)
+                is SendMessageResult.Error -> {
+                    removeOptimisticMessage(tempId)
+                    if (result.code == "unauthorized") {
+                        handleError(result.code)
+                    } else {
+                        restoreFailedSend(content, replyingTo, imageUri)
+                        handleError(result.code)
+                    }
                 }
-                is SendMessageResult.Error -> handleError(result.code, silent = true)
             }
         }
+    }
+
+    /** Geçici (local-) satırı sunucunun döndürdüğü GERÇEK mesajla, listedeki
+     * AYNI pozisyonda değiştirir — sona eklemek yerine map ile yer değiştirmek
+     * mesajın gönderim sırasındaki konumunu korur. */
+    private fun replaceOptimisticMessage(tempId: String, real: MessageDto) {
+        _messages.value = _messages.value.map { if (it.id == tempId) real else it }
+    }
+
+    private fun removeOptimisticMessage(tempId: String) {
+        _messages.value = _messages.value.filterNot { it.id == tempId }
+    }
+
+    /** Gönderim başarısız olunca kullanıcı yazdığını/seçtiği görseli/yanıt
+     * bağlamını KAYBETMESİN diye giriş alanlarını geri yükler (silinen
+     * optimistic satırın YERİNE hiçbir şey konmaz — kullanıcı "Gönder"e
+     * tekrar basarak yeniden dener). */
+    private fun restoreFailedSend(content: String, replyingTo: MessageDto?, imageUri: Uri?) {
+        _sendText.value = content
+        _replyingTo.value = replyingTo
+        _selectedImageUri.value = imageUri
     }
 
     fun setReplyingTo(message: MessageDto) {
