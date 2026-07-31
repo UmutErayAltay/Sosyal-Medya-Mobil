@@ -27,6 +27,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -35,6 +36,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -66,10 +68,19 @@ fun FeedScreen(
         }
     }
 
+    // Web'in navbar.js'indeki "aşağı kaydırınca gizlen, yukarı kaydırınca geri
+    // gel" davranışının native karşılığı — Material3'ün hazır
+    // enterAlwaysScrollBehavior()'ı TAM OLARAK bunu yapar (elle NestedScrollConnection
+    // yazmaya gerek yok). LazyColumn'un scroll'u yukarı doğru bu bar'a
+    // nestedScroll ile bildirilir, bar kendi offset'ini animasyonla ayarlar.
+    val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
+
     Scaffold(
+        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
             TopAppBar(
                 title = { Text("Ana Sayfa") },
+                scrollBehavior = scrollBehavior,
                 actions = {
                     // InboxScreen'in ikon-butonları DESENİYLE tutarlı — yeni bir
                     // ikonun YANINA eklendi, var olanın yerine geçmedi.

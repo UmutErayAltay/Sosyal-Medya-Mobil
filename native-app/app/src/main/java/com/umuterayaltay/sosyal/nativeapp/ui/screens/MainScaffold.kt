@@ -56,9 +56,12 @@ fun MainScaffold(navController: NavHostController, onSessionExpired: () -> Unit)
             // göstergesi marka renklerinden (colorScheme.primary/secondaryContainer)
             // besleniyor — sekme değiştirme MANTIĞI (selectedTab state'i,
             // onClick) DEĞİŞMEDİ, sadece renk/vurgu token'ları eklendi.
+            // tonalElevation = 0.dp (BİLİNÇLİ): Compose'un elevation gölgesi
+            // barın ÜSTÜNDE ince, keskin bir siyah çizgi gibi görünüyordu
+            // (kullanıcı raporu, gerçek cihaz) — düz containerColor yeterli.
             NavigationBar(
                 containerColor = MaterialTheme.colorScheme.surface,
-                tonalElevation = 3.dp,
+                tonalElevation = 0.dp,
             ) {
                 MainTab.entries.forEach { tab ->
                     NavigationBarItem(

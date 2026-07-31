@@ -369,6 +369,7 @@ private fun ProfileContent(
             .fillMaxSize()
             .padding(padding),
         contentPadding = PaddingValues(bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
             ProfileHeader(
