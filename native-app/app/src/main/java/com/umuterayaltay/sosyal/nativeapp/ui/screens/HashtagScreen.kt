@@ -5,15 +5,23 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.material.icons.filled.Tag
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -62,23 +70,44 @@ fun HashtagScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("#$tag") },
+                // Web hashtag.html'deki başlık altı "N post" alt metniyle aynı dil —
+                // etiketin ne kadar aktif olduğu tek bakışta görülür.
+                title = {
+                    Column {
+                        Text(text = "#$tag", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            text = "${posts.size} gönderi",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Geri")
                     }
                 },
                 actions = {
+                    // ProfileScreen.kt'deki FollowActionButton ile AYNI ikon+metin
+                    // dili (Check/PersonAdd) — takip durumunun görsel imzası tutarlı.
                     if (isFollowing) {
                         OutlinedButton(
                             onClick = viewModel::toggleFollow,
                             modifier = Modifier.padding(end = 8.dp),
-                        ) { Text("Takip Ediliyor") }
+                        ) {
+                            Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Takip Ediliyor")
+                        }
                     } else {
                         Button(
                             onClick = viewModel::toggleFollow,
                             modifier = Modifier.padding(end = 8.dp),
-                        ) { Text("Takip Et") }
+                        ) {
+                            Icon(Icons.Filled.PersonAdd, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Takip Et")
+                        }
                     }
                 },
             )
@@ -88,13 +117,37 @@ fun HashtagScreen(
             loading && posts.isEmpty() -> CenteredMessage(padding) { CircularProgressIndicator() }
             error != null && posts.isEmpty() -> CenteredMessage(padding) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(error ?: "")
+                    Icon(
+                        imageVector = Icons.Filled.ErrorOutline,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(36.dp),
+                    )
+                    Text(
+                        text = error ?: "",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
                     Button(onClick = { viewModel.load() }, modifier = Modifier.padding(top = 12.dp)) {
                         Text("Tekrar dene")
                     }
                 }
             }
-            posts.isEmpty() -> CenteredMessage(padding) { Text("Bu etikette henüz gönderi yok") }
+            posts.isEmpty() -> CenteredMessage(padding) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(
+                        imageVector = Icons.Filled.Tag,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(36.dp),
+                    )
+                    Text(
+                        text = "Bu etikette henüz gönderi yok",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                }
+            }
             else -> LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()

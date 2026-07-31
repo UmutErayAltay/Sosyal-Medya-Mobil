@@ -6,8 +6,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -15,6 +17,8 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -33,6 +37,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -99,13 +104,31 @@ fun NotificationsScreen(
             loading && notifications.isEmpty() -> CenteredMessage(padding) { CircularProgressIndicator() }
             error != null && notifications.isEmpty() -> CenteredMessage(padding) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(error ?: "")
+                    Icon(
+                        imageVector = Icons.Filled.ErrorOutline,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(48.dp),
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(error ?: "", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Button(onClick = { viewModel.load() }, modifier = Modifier.padding(top = 12.dp)) {
                         Text("Tekrar dene")
                     }
                 }
             }
-            notifications.isEmpty() -> CenteredMessage(padding) { Text("Henüz bildirimin yok") }
+            notifications.isEmpty() -> CenteredMessage(padding) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(
+                        imageVector = Icons.Filled.Notifications,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(48.dp),
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text("Henüz bildirimin yok", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
             else -> LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
@@ -194,14 +217,23 @@ private fun CenteredMessage(padding: PaddingValues, content: @Composable () -> U
 
 @Composable
 private fun NotificationRow(notification: NotificationDto, onClick: (() -> Unit)?) {
+    // Okunmamış bildirimler kalın metin + sağdaki nokta rozetiyle ZATEN ayrışıyordu
+    // (davranış aynı) — buraya EK olarak hafif bir zemin tonu eklendi, tarama
+    // hızında "hangileri yeni" sorusunu tek bakışta netleştirmek için.
+    val background = if (!notification.isRead) {
+        MaterialTheme.colorScheme.primary.copy(alpha = 0.06f)
+    } else {
+        Color.Transparent
+    }
+    val baseModifier = Modifier
+        .fillMaxWidth()
+        .background(background)
     val rowModifier = if (onClick != null) {
-        Modifier
-            .fillMaxWidth()
+        baseModifier
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 8.dp)
     } else {
-        Modifier
-            .fillMaxWidth()
+        baseModifier
             .padding(horizontal = 12.dp, vertical = 8.dp)
     }
 

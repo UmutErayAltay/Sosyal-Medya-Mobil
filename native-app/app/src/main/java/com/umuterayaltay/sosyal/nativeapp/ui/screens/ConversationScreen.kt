@@ -10,17 +10,22 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
@@ -35,9 +40,12 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -47,9 +55,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
@@ -129,18 +139,28 @@ fun ConversationScreen(
                                 contentDescription = null,
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier
-                                    .size(32.dp)
+                                    .size(36.dp)
                                     .clip(CircleShape),
                             )
                         } else {
-                            Icon(
-                                imageVector = if (info?.isGroup == true) Icons.Filled.Groups else Icons.Filled.Person,
-                                contentDescription = null,
-                                modifier = Modifier.size(32.dp),
-                            )
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(
+                                    imageVector = if (info?.isGroup == true) Icons.Filled.Groups else Icons.Filled.Person,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(20.dp),
+                                )
+                            }
                         }
                         Text(
                             text = info?.name ?: "Konuşma",
+                            style = MaterialTheme.typography.titleMedium,
                             modifier = Modifier.padding(start = 10.dp),
                         )
                     }
@@ -175,13 +195,23 @@ fun ConversationScreen(
             loading && messages.isEmpty() -> CenteredMessage(padding) { CircularProgressIndicator() }
             error != null && messages.isEmpty() -> CenteredMessage(padding) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(error ?: "")
+                    Text(
+                        text = error ?: "",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                     Button(onClick = { viewModel.loadInitial() }, modifier = Modifier.padding(top = 12.dp)) {
                         Text("Tekrar dene")
                     }
                 }
             }
-            messages.isEmpty() -> CenteredMessage(padding) { Text("Henüz mesaj yok, ilk mesajı sen gönder") }
+            messages.isEmpty() -> CenteredMessage(padding) {
+                Text(
+                    text = "Henüz mesaj yok, ilk mesajı sen gönder",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             else -> LazyColumn(
                 state = listState,
                 modifier = Modifier
@@ -221,6 +251,19 @@ private fun MessageBubble(message: MessageDto, isMine: Boolean, onReplyClick: ()
     } else {
         MaterialTheme.colorScheme.onSurfaceVariant
     }
+    // Konuşma balonu köşe yuvarlaklığı — WhatsApp/Telegram gibi kendi
+    // mesajının/gönderenin tarafına bakan köşe "sivriltilerek" hangi taraftan
+    // geldiği anında ayırt edilir (renk zaten ayırıyordu, şekil ek bir ipucu).
+    val bubbleShape = if (isMine) {
+        RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = 16.dp, bottomEnd = 4.dp)
+    } else {
+        RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = 4.dp, bottomEnd = 16.dp)
+    }
+    // Optimistic ("local-" id'li, henüz sunucuya ulaşmamış) mesaj — davranış
+    // AYNI kalıyor (ConversationViewModel.send() mantığına dokunulmadı), sadece
+    // hafif saydamlıkla "gönderiliyor" hissi veriliyor (spesifikasyonda istenen).
+    val isSending = message.id.startsWith("local-")
+    val bubbleAlpha = if (isSending) 0.6f else 1f
 
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -229,32 +272,44 @@ private fun MessageBubble(message: MessageDto, isMine: Boolean, onReplyClick: ()
         Card(
             modifier = Modifier
                 .widthIn(max = 280.dp)
+                .alpha(bubbleAlpha)
                 // Uzun basınca "Yanıtla" — bu turda tek uzun-tık aksiyonu var,
                 // ayrı bir menü/IconButton İCAT edilmedi (spesifikasyon: basit).
                 .combinedClickable(onClick = {}, onLongClick = onReplyClick),
+            shape = bubbleShape,
             colors = CardDefaults.cardColors(containerColor = bubbleColor),
         ) {
             Column(modifier = Modifier.padding(10.dp)) {
                 val replyTo = message.replyTo
                 if (replyTo != null) {
-                    Column(
+                    Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .background(contentColor.copy(alpha = 0.12f), MaterialTheme.shapes.small)
-                            .padding(6.dp),
+                            .height(IntrinsicSize.Min)
+                            .background(contentColor.copy(alpha = 0.10f), MaterialTheme.shapes.extraSmall)
+                            .padding(vertical = 6.dp, horizontal = 8.dp),
                     ) {
-                        Text(
-                            text = replyTo.profiles?.username ?: "Bilinmeyen kullanıcı",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = contentColor,
+                        Box(
+                            modifier = Modifier
+                                .width(3.dp)
+                                .fillMaxHeight()
+                                .background(contentColor.copy(alpha = 0.6f), MaterialTheme.shapes.extraSmall),
                         )
-                        Text(
-                            text = replyTo.content?.takeIf { it.isNotBlank() }
-                                ?: if (!replyTo.imageUrl.isNullOrBlank()) "Görsel" else "",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = contentColor,
-                            maxLines = 1,
-                        )
+                        Column(modifier = Modifier.padding(start = 8.dp)) {
+                            Text(
+                                text = replyTo.profiles?.username ?: "Bilinmeyen kullanıcı",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = contentColor,
+                            )
+                            Text(
+                                text = replyTo.content?.takeIf { it.isNotBlank() }
+                                    ?: if (!replyTo.imageUrl.isNullOrBlank()) "Görsel" else "",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = contentColor.copy(alpha = 0.85f),
+                                maxLines = 1,
+                            )
+                        }
                     }
                 }
                 val imageUrl = message.imageUrl
@@ -266,7 +321,7 @@ private fun MessageBubble(message: MessageDto, isMine: Boolean, onReplyClick: ()
                         modifier = Modifier
                             .padding(top = if (replyTo != null) 6.dp else 0.dp)
                             .size(200.dp)
-                            .clip(MaterialTheme.shapes.small),
+                            .clip(MaterialTheme.shapes.medium),
                     )
                 }
                 if (!message.content.isNullOrBlank()) {
@@ -278,10 +333,12 @@ private fun MessageBubble(message: MessageDto, isMine: Boolean, onReplyClick: ()
                     )
                 }
                 Text(
-                    text = formatClockTime(message.createdAt),
+                    text = if (isSending) "gönderiliyor…" else formatClockTime(message.createdAt),
                     style = MaterialTheme.typography.labelSmall,
-                    color = contentColor,
-                    modifier = Modifier.padding(top = 4.dp),
+                    color = contentColor.copy(alpha = 0.8f),
+                    modifier = Modifier
+                        .align(Alignment.End)
+                        .padding(top = 4.dp),
                 )
             }
         }
@@ -305,80 +362,123 @@ private fun ConversationInputBar(
         contract = ActivityResultContracts.PickVisualMedia(),
     ) { uri -> onImageSelected(uri) }
 
-    Column {
-        if (replyingTo != null) {
+    Surface(
+        color = MaterialTheme.colorScheme.surface,
+        tonalElevation = 3.dp,
+    ) {
+        Column {
+            if (replyingTo != null) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(IntrinsicSize.Min)
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .width(3.dp)
+                            .fillMaxHeight()
+                            .background(MaterialTheme.colorScheme.primary, MaterialTheme.shapes.extraSmall),
+                    )
+                    val replyUsername = replyingTo.profiles?.username ?: "kullanıcı"
+                    val preview = replyingTo.content?.takeIf { it.isNotBlank() } ?: "Görsel"
+                    Column(modifier = Modifier
+                        .weight(1f)
+                        .padding(start = 8.dp)) {
+                        Text(
+                            text = "$replyUsername kullanıcısına yanıt veriyorsun",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.primary,
+                            maxLines = 1,
+                        )
+                        Text(
+                            text = preview,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                        )
+                    }
+                    IconButton(onClick = onCancelReply) {
+                        Icon(Icons.Filled.Close, contentDescription = "Yanıtlamayı iptal et")
+                    }
+                }
+            }
+            if (selectedImageUri != null) {
+                Box(
+                    modifier = Modifier.padding(start = 12.dp, top = 8.dp),
+                ) {
+                    AsyncImage(
+                        model = selectedImageUri,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .size(64.dp)
+                            .clip(MaterialTheme.shapes.medium),
+                    )
+                    IconButton(
+                        onClick = { onImageSelected(null) },
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .size(20.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.8f)),
+                    ) {
+                        Icon(
+                            Icons.Filled.Close,
+                            contentDescription = "Görseli kaldır",
+                            modifier = Modifier.size(14.dp),
+                        )
+                    }
+                }
+            }
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(MaterialTheme.colorScheme.surfaceVariant)
-                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                    .padding(horizontal = 8.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                val replyUsername = replyingTo.profiles?.username ?: "kullanıcı"
-                val preview = replyingTo.content?.takeIf { it.isNotBlank() } ?: "Görsel"
-                Text(
-                    text = "$replyUsername kullanıcısına yanıt veriyorsun: \"$preview\"",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    modifier = Modifier.weight(1f),
-                )
-                IconButton(onClick = onCancelReply) {
-                    Icon(Icons.Filled.Close, contentDescription = "Yanıtlamayı iptal et")
-                }
-            }
-        }
-        if (selectedImageUri != null) {
-            Box(
-                modifier = Modifier.padding(start = 12.dp, top = 6.dp),
-            ) {
-                AsyncImage(
-                    model = selectedImageUri,
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier
-                        .size(64.dp)
-                        .clip(MaterialTheme.shapes.small),
-                )
                 IconButton(
-                    onClick = { onImageSelected(null) },
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .size(20.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.8f)),
+                    onClick = {
+                        imagePickerLauncher.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                        )
+                    },
                 ) {
                     Icon(
-                        Icons.Filled.Close,
-                        contentDescription = "Görseli kaldır",
-                        modifier = Modifier.size(14.dp),
+                        Icons.Filled.AddPhotoAlternate,
+                        contentDescription = "Görsel ekle",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-            }
-        }
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            IconButton(
-                onClick = {
-                    imagePickerLauncher.launch(
-                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
-                    )
-                },
-            ) {
-                Icon(Icons.Filled.AddPhotoAlternate, contentDescription = "Görsel ekle")
-            }
-            OutlinedTextField(
-                value = sendText,
-                onValueChange = onSendTextChange,
-                modifier = Modifier.weight(1f),
-                placeholder = { Text("Bir mesaj yaz...") },
-            )
-            IconButton(onClick = onSend, enabled = sendText.isNotBlank() || selectedImageUri != null) {
-                Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Gönder")
+                OutlinedTextField(
+                    value = sendText,
+                    onValueChange = onSendTextChange,
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(horizontal = 4.dp),
+                    placeholder = { Text("Bir mesaj yaz...") },
+                    shape = MaterialTheme.shapes.extraLarge,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+                    ),
+                    maxLines = 4,
+                )
+                val canSend = sendText.isNotBlank() || selectedImageUri != null
+                IconButton(
+                    onClick = onSend,
+                    enabled = canSend,
+                    colors = IconButtonDefaults.iconButtonColors(
+                        containerColor = if (canSend) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                        contentColor = if (canSend) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    ),
+                ) {
+                    Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Gönder")
+                }
             }
         }
     }

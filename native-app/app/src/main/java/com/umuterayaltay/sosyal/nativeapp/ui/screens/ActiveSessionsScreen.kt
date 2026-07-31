@@ -5,14 +5,17 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Smartphone
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -99,14 +102,32 @@ fun ActiveSessionsScreen(
 
             error != null && sessions.isEmpty() -> CenteredMessage(padding) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(error ?: "")
+                    Icon(
+                        imageVector = Icons.Filled.ErrorOutline,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(48.dp),
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(error ?: "", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Button(onClick = { viewModel.load() }, modifier = Modifier.padding(top = 12.dp)) {
                         Text("Tekrar dene")
                     }
                 }
             }
 
-            sessions.isEmpty() -> CenteredMessage(padding) { Text("Başka bir aktif oturum yok.") }
+            sessions.isEmpty() -> CenteredMessage(padding) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(
+                        imageVector = Icons.Filled.Smartphone,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(48.dp),
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text("Başka bir aktif oturum yok.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
 
             else -> Column(
                 modifier = Modifier

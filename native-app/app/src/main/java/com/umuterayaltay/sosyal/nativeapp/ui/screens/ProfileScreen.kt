@@ -1,15 +1,20 @@
 package com.umuterayaltay.sosyal.nativeapp.ui.screens
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -17,6 +22,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Block
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.HourglassEmpty
+import androidx.compose.material.icons.filled.Inbox
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PersonAdd
@@ -51,6 +61,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.umuterayaltay.sosyal.nativeapp.network.ProfileDto
@@ -177,7 +188,18 @@ fun ProfileScreen(
 
             error != null && profile == null -> FullScreenCenter(padding) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(error ?: "")
+                    Icon(
+                        imageVector = Icons.Filled.ErrorOutline,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(40.dp),
+                    )
+                    Text(
+                        text = error ?: "",
+                        textAlign = TextAlign.Center,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 12.dp),
+                    )
                     Button(onClick = { viewModel.loadProfile() }, modifier = Modifier.padding(top = 12.dp)) {
                         Text("Tekrar dene")
                     }
@@ -259,11 +281,11 @@ private fun FullScreenCenter(padding: PaddingValues, content: @Composable () -> 
 private fun DeactivatedProfileContent(padding: PaddingValues, profile: ProfileDto) {
     FullScreenCenter(padding) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            ProfileAvatar(profile.avatarUrl, size = 72.dp)
+            ProfileAvatar(profile.avatarUrl, size = 80.dp)
             Text(
                 text = profile.username ?: "",
                 style = MaterialTheme.typography.titleLarge,
-                modifier = Modifier.padding(top = 12.dp),
+                modifier = Modifier.padding(top = 16.dp),
             )
             Text(
                 text = "Bu hesap deaktif",
@@ -275,19 +297,37 @@ private fun DeactivatedProfileContent(padding: PaddingValues, profile: ProfileDt
     }
 }
 
+/**
+ * Gorsel cila: sabit boyutlu daire icinde her zaman surfaceVariant zemin +
+ * ince outline halkasi - hem gercek avatar hem placeholder ikon icin AYNI
+ * cerceve, boylece profil resmi olmayan kullanicilarda da duzenli/tutarli
+ * bir daire gorunur (onceki halde placeholder ikon serbest boyuttaydi).
+ */
 @Composable
 private fun ProfileAvatar(avatarUrl: String?, size: Dp = 64.dp) {
-    if (!avatarUrl.isNullOrBlank()) {
-        AsyncImage(
-            model = avatarUrl,
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier
-                .size(size)
-                .clip(CircleShape),
-        )
-    } else {
-        Icon(imageVector = Icons.Filled.Person, contentDescription = null, modifier = Modifier.size(size))
+    Box(
+        modifier = Modifier
+            .size(size)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .border(1.dp, MaterialTheme.colorScheme.outline, CircleShape),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (!avatarUrl.isNullOrBlank()) {
+            AsyncImage(
+                model = avatarUrl,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+        } else {
+            Icon(
+                imageVector = Icons.Filled.Person,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(size * 0.55f),
+            )
+        }
     }
 }
 
@@ -352,11 +392,20 @@ private fun ProfileContent(
                         .padding(32.dp),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text(
-                        text = "Bu hesap gizli — gönderileri görmek için takip etmelisin",
-                        textAlign = TextAlign.Center,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(
+                            imageVector = Icons.Filled.Lock,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(36.dp),
+                        )
+                        Text(
+                            text = "Bu hesap gizli — gönderileri görmek için takip etmelisin",
+                            textAlign = TextAlign.Center,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 12.dp),
+                        )
+                    }
                 }
             }
         } else {
@@ -388,7 +437,19 @@ private fun ProfileContent(
                             .padding(32.dp),
                         contentAlignment = Alignment.Center,
                     ) {
-                        Text("Burada henüz bir şey yok.")
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(
+                                imageVector = Icons.Filled.Inbox,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(36.dp),
+                            )
+                            Text(
+                                text = "Burada henüz bir şey yok.",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(top = 12.dp),
+                            )
+                        }
                     }
                 }
             } else {
@@ -423,8 +484,11 @@ private fun ProfileHeader(
             .padding(16.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            ProfileAvatar(profile.avatarUrl, size = 72.dp)
-            Column(modifier = Modifier.padding(start = 16.dp)) {
+            ProfileAvatar(profile.avatarUrl, size = 88.dp)
+            Column(
+                modifier = Modifier.padding(start = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
                 Text(text = profile.username ?: "bilinmeyen", style = MaterialTheme.typography.titleLarge)
                 if (!profile.fullName.isNullOrBlank()) {
                     Text(
@@ -439,7 +503,7 @@ private fun ProfileHeader(
         if (!profile.bio.isNullOrBlank()) {
             Text(
                 text = profile.bio,
-                style = MaterialTheme.typography.bodyMedium,
+                style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 20.sp),
                 modifier = Modifier.padding(top = 12.dp),
             )
         }
@@ -448,7 +512,10 @@ private fun ProfileHeader(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 16.dp),
+                    .padding(top = 16.dp)
+                    .clip(MaterialTheme.shapes.large)
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                    .padding(vertical = 14.dp),
                 horizontalArrangement = Arrangement.SpaceEvenly,
             ) {
                 StatColumn(label = "Gönderi", value = stats.posts)
@@ -459,36 +526,12 @@ private fun ProfileHeader(
         }
 
         if (!isSelf) {
-            when {
-                isBlockedByMe -> OutlinedButton(
-                    onClick = {},
-                    enabled = false,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 16.dp),
-                ) { Text("Engellendi") }
-
-                isFollowing -> OutlinedButton(
-                    onClick = onToggleFollow,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 16.dp),
-                ) { Text("Takip Ediliyor") }
-
-                isPendingRequest -> OutlinedButton(
-                    onClick = onToggleFollow,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 16.dp),
-                ) { Text("İstek Gönderildi") }
-
-                else -> Button(
-                    onClick = onToggleFollow,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 16.dp),
-                ) { Text("Takip Et") }
-            }
+            FollowActionButton(
+                isBlockedByMe = isBlockedByMe,
+                isFollowing = isFollowing,
+                isPendingRequest = isPendingRequest,
+                onToggleFollow = onToggleFollow,
+            )
         }
     }
 }
@@ -496,11 +539,63 @@ private fun ProfileHeader(
 @Composable
 private fun StatColumn(label: String, value: Int, onClick: (() -> Unit)? = null) {
     Column(
-        modifier = (if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
-            .padding(horizontal = 8.dp),
+        modifier = (
+            if (onClick != null) {
+                Modifier
+                    .clip(MaterialTheme.shapes.small)
+                    .clickable(onClick = onClick)
+            } else {
+                Modifier
+            }
+            )
+            .padding(horizontal = 10.dp, vertical = 2.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text(text = "$value", style = MaterialTheme.typography.titleMedium)
-        Text(text = label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(text = "$value", style = MaterialTheme.typography.titleLarge)
+        Text(text = label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+/**
+ * Gorsel cila: 4 takip-durumu butonu artik AYNI yukseklik + oncu ikonla
+ * tutarli (onceki halde sadece metin farkliydi, OutlinedButton/Button
+ * ayrimi disinda gorsel bir hiyerarsi yoktu). Davranis/callback AYNI kaldi.
+ */
+@Composable
+private fun FollowActionButton(
+    isBlockedByMe: Boolean,
+    isFollowing: Boolean,
+    isPendingRequest: Boolean,
+    onToggleFollow: () -> Unit,
+) {
+    val buttonModifier = Modifier
+        .fillMaxWidth()
+        .padding(top = 16.dp)
+        .height(46.dp)
+
+    when {
+        isBlockedByMe -> OutlinedButton(onClick = {}, enabled = false, modifier = buttonModifier) {
+            Icon(Icons.Filled.Block, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Engellendi")
+        }
+
+        isFollowing -> OutlinedButton(onClick = onToggleFollow, modifier = buttonModifier) {
+            Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Takip Ediliyor")
+        }
+
+        isPendingRequest -> OutlinedButton(onClick = onToggleFollow, modifier = buttonModifier) {
+            Icon(Icons.Filled.HourglassEmpty, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("İstek Gönderildi")
+        }
+
+        else -> Button(onClick = onToggleFollow, modifier = buttonModifier) {
+            Icon(Icons.Filled.PersonAdd, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Takip Et")
+        }
     }
 }

@@ -1,7 +1,9 @@
 package com.umuterayaltay.sosyal.nativeapp.ui.screens
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -10,6 +12,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Block
@@ -43,8 +48,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -113,60 +120,67 @@ fun SettingsScreen(
             )
         },
     ) { padding ->
-        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .verticalScroll(rememberScrollState()),
+        ) {
+            SettingsSectionHeader("Hesap")
             SettingsRow(
                 icon = Icons.Filled.Edit,
                 label = "Profili Düzenle",
                 onClick = onNavigateToEditProfile,
             )
-            HorizontalDivider()
             SettingsRow(
                 icon = Icons.Filled.Notifications,
                 label = "Bildirim Tercihleri",
                 onClick = onNavigateToNotificationPreferences,
             )
-            HorizontalDivider()
             SettingsRow(
                 icon = Icons.Filled.Stars,
                 label = "Yakın Arkadaşlar",
                 onClick = onNavigateToCloseFriends,
             )
-            HorizontalDivider()
+
+            SettingsSectionHeader("Gizlilik ve Güvenlik")
             SettingsRow(
                 icon = Icons.Filled.Security,
                 label = "Güvenlik (2FA)",
                 onClick = onNavigateToTwoFactor,
             )
-            HorizontalDivider()
             SettingsRow(
                 icon = Icons.Filled.Block,
                 label = "Engellenen Kullanıcılar",
                 onClick = onNavigateToBlockedUsers,
             )
-            HorizontalDivider()
             SettingsRow(
                 icon = Icons.Filled.Smartphone,
                 label = "Aktif Oturumlar",
                 onClick = onNavigateToActiveSessions,
             )
-            Spacer(modifier = Modifier.height(24.dp))
-            HorizontalDivider()
+
+            Spacer(modifier = Modifier.height(16.dp))
+            HorizontalDivider(thickness = 8.dp, color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+
             SettingsRow(
                 icon = Icons.AutoMirrored.Filled.Logout,
                 label = if (loggingOut) "Çıkış yapılıyor..." else "Çıkış Yap",
+                labelWeight = FontWeight.SemiBold,
                 onClick = { if (!loggingOut) viewModel.logout() },
             )
-            HorizontalDivider()
             SettingsRow(
                 icon = Icons.Filled.PersonOff,
                 label = "Hesabı Deaktive Et",
                 tint = MaterialTheme.colorScheme.error,
+                iconBackground = MaterialTheme.colorScheme.errorContainer,
                 onClick = {
                     password = ""
                     viewModel.clearDeactivateError()
                     showDeactivateDialog = true
                 },
             )
+            Spacer(modifier = Modifier.height(8.dp))
         }
     }
 
@@ -233,24 +247,48 @@ fun SettingsScreen(
     }
 }
 
+/** Bölüm başlığı — SettingsScreen'in düz satır listesini "Hesap" / "Gizlilik
+ * ve Güvenlik" gibi mantıksal gruplara ayırır (görsel cila, navigasyon/state
+ * DEĞİŞMEDİ). */
+@Composable
+private fun SettingsSectionHeader(title: String) {
+    Text(
+        text = title,
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.padding(start = 16.dp, top = 20.dp, bottom = 4.dp),
+    )
+}
+
 @Composable
 private fun SettingsRow(
     icon: ImageVector,
     label: String,
     onClick: () -> Unit,
     tint: Color = MaterialTheme.colorScheme.onSurface,
+    iconBackground: Color = MaterialTheme.colorScheme.surfaceVariant,
+    labelWeight: FontWeight = FontWeight.Normal,
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 16.dp),
+            .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(imageVector = icon, contentDescription = null, tint = tint)
+        Box(
+            modifier = Modifier
+                .size(36.dp)
+                .clip(CircleShape)
+                .background(iconBackground),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(imageVector = icon, contentDescription = null, tint = tint, modifier = Modifier.size(20.dp))
+        }
         Text(
             text = label,
             style = MaterialTheme.typography.bodyLarge,
+            fontWeight = labelWeight,
             color = tint,
             modifier = Modifier
                 .padding(start = 16.dp)

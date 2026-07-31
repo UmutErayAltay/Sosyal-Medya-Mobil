@@ -4,20 +4,25 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.PersonRemove
+import androidx.compose.material.icons.filled.SearchOff
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Stars
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -97,7 +102,18 @@ fun CloseFriendsScreen(
                 searchQuery.length >= 2 -> {
                     when {
                         searching && searchResults.isEmpty() -> CenteredBox { CircularProgressIndicator() }
-                        searchResults.isEmpty() -> CenteredBox { Text("Kullanıcı bulunamadı") }
+                        searchResults.isEmpty() -> CenteredBox {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Icon(
+                                    imageVector = Icons.Filled.SearchOff,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(48.dp),
+                                )
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Text("Kullanıcı bulunamadı", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
                         else -> LazyColumn(
                             modifier = Modifier.fillMaxSize(),
                             contentPadding = PaddingValues(vertical = 8.dp),
@@ -116,7 +132,18 @@ fun CloseFriendsScreen(
 
                 loading && friends.isEmpty() -> CenteredBox { CircularProgressIndicator() }
 
-                friends.isEmpty() -> CenteredBox { Text("Henüz yakın arkadaşın yok.") }
+                friends.isEmpty() -> CenteredBox {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(
+                            imageVector = Icons.Filled.Stars,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(48.dp),
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text("Henüz yakın arkadaşın yok.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
 
                 else -> LazyColumn(
                     modifier = Modifier.fillMaxSize(),
@@ -133,8 +160,11 @@ fun CloseFriendsScreen(
                                 fullName = user.fullName,
                                 modifier = Modifier.weight(1f),
                             )
-                            IconButton(onClick = { viewModel.remove(user.id) }) {
-                                Icon(Icons.Filled.PersonRemove, contentDescription = "Yakın arkadaşlıktan çıkar")
+                            // BlockedUsersScreen'in "Engeli Kaldır" TextButton'ıyla AYNI
+                            // görsel dil — daha önce ikon-tek IconButton'du, etikete
+                            // dönüştürüldü (davranış AYNI, sadece görünüm).
+                            TextButton(onClick = { viewModel.remove(user.id) }) {
+                                Text("Çıkar", color = MaterialTheme.colorScheme.error)
                             }
                         }
                     }

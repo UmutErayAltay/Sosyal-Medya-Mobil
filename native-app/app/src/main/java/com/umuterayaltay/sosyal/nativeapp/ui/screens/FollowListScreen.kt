@@ -5,15 +5,20 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -77,26 +82,56 @@ fun FollowListScreen(
             loading && users.isEmpty() -> CenteredMessage(padding) { CircularProgressIndicator() }
             error != null && users.isEmpty() -> CenteredMessage(padding) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(error ?: "")
+                    Icon(
+                        imageVector = Icons.Filled.ErrorOutline,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(40.dp),
+                    )
+                    Text(
+                        text = error ?: "",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 12.dp),
+                    )
                     Button(onClick = { viewModel.load() }, modifier = Modifier.padding(top = 12.dp)) {
                         Text("Tekrar dene")
                     }
                 }
             }
-            users.isEmpty() -> CenteredMessage(padding) { Text("Henüz kimse yok.") }
+            users.isEmpty() -> CenteredMessage(padding) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(
+                        imageVector = Icons.Filled.Groups,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(40.dp),
+                    )
+                    Text(
+                        text = "Henüz kimse yok.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 12.dp),
+                    )
+                }
+            }
             else -> LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding),
                 contentPadding = PaddingValues(vertical = 8.dp),
             ) {
-                items(users, key = { it.id }) { user ->
+                itemsIndexed(users, key = { _, user -> user.id }) { index, user ->
                     UserRow(
                         avatarUrl = user.avatarUrl,
                         username = user.username,
                         fullName = user.fullName,
                         onClick = { user.username?.let(onUserClick) },
                     )
+                    // Avatar genisligi (40dp) + satir ici bosluklarla hizali
+                    // girinti - UserRow.kt'nin KENDISINE dokunulmadi, sadece
+                    // etrafina eklendi.
+                    if (index < users.lastIndex) {
+                        HorizontalDivider(modifier = Modifier.padding(start = 64.dp))
+                    }
                 }
             }
         }

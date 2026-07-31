@@ -1,5 +1,6 @@
 package com.umuterayaltay.sosyal.nativeapp.ui.screens
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -14,11 +15,16 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkAdd
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.SearchOff
 import androidx.compose.material.icons.filled.Tag
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
@@ -47,6 +53,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.umuterayaltay.sosyal.nativeapp.network.HashtagSearchDto
@@ -154,22 +162,26 @@ fun DiscoverScreen(
                     searchLoading && noResults -> item { CenteredBox { CircularProgressIndicator() } }
                     searchError != null -> item {
                         CenteredBox {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text(searchError ?: "")
-                                Button(
-                                    onClick = { viewModel.search(query) },
-                                    modifier = Modifier.padding(top = 12.dp),
-                                ) { Text("Tekrar dene") }
-                            }
+                            StateMessage(
+                                icon = Icons.Filled.ErrorOutline,
+                                text = searchError ?: "",
+                                onRetry = { viewModel.search(query) },
+                            )
                         }
                     }
                     noResults -> item {
-                        CenteredBox { Text("Sonuç bulunamadı") }
+                        CenteredBox {
+                            StateMessage(icon = Icons.Filled.SearchOff, text = "Sonuç bulunamadı")
+                        }
                     }
                     else -> {
+                        // Arama sonuçları: küçük harf, sayaçlı, gri alt başlıklar —
+                        // aşağıdaki algoritmik Keşfet akışının kendi başlığından
+                        // (ikon + büyük puntolu) BİLEREK görsel olarak ayrıştırıldı
+                        // (web'in search.html "Kullanıcılar (N)" desenine paralel).
                         if (searchType == SearchType.All || searchType == SearchType.Users) {
                             if (searchUsers.isNotEmpty()) {
-                                item { SectionHeader("Kullanıcılar") }
+                                item { SectionHeader("Kullanıcılar", count = searchUsers.size) }
                                 items(searchUsers, key = { "user_${it.id}" }) { user ->
                                     UserResultRow(user, onClick = { user.username?.let(onUserClick) })
                                 }
@@ -177,7 +189,7 @@ fun DiscoverScreen(
                         }
                         if (searchType == SearchType.All || searchType == SearchType.Hashtags) {
                             if (searchHashtags.isNotEmpty()) {
-                                item { SectionHeader("Hashtag'ler") }
+                                item { SectionHeader("Hashtag'ler", count = searchHashtags.size) }
                                 items(searchHashtags, key = { "tag_${it.tag}" }) { tag ->
                                     HashtagResultRow(tag, onClick = { onNavigateToHashtag(tag.tag) })
                                 }
@@ -185,7 +197,7 @@ fun DiscoverScreen(
                         }
                         if (searchType == SearchType.All || searchType == SearchType.Posts) {
                             if (searchPosts.isNotEmpty()) {
-                                item { SectionHeader("Postlar") }
+                                item { SectionHeader("Postlar", count = searchPosts.size) }
                                 items(searchPosts, key = { "post_${it.id}" }) { post ->
                                     PostCard(
                                         post = post,
@@ -225,23 +237,27 @@ fun DiscoverScreen(
                     }
                 }
 
-                item { SectionHeader("Keşfet") }
+                // Algoritmik Keşfet akışının başlığı — büyük ikon + açıklayıcı
+                // alt metinle üstteki arama sonucu başlıklarından bilerek daha
+                // "sayfa başlığı" gibi öne çıkarıldı (web discover.html'deki
+                // pusula ikonlu h1 + muted açıklama ile aynı dil).
+                item { DiscoverFeedHeader() }
 
                 when {
                     discoverPosts.isEmpty() && discoverLoading -> item { CenteredBox { CircularProgressIndicator() } }
                     discoverPosts.isEmpty() && discoverError != null -> item {
                         CenteredBox {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text(discoverError ?: "")
-                                Button(
-                                    onClick = { viewModel.loadDiscoverPage(1) },
-                                    modifier = Modifier.padding(top = 12.dp),
-                                ) { Text("Tekrar dene") }
-                            }
+                            StateMessage(
+                                icon = Icons.Filled.ErrorOutline,
+                                text = discoverError ?: "",
+                                onRetry = { viewModel.loadDiscoverPage(1) },
+                            )
                         }
                     }
                     discoverPosts.isEmpty() -> item {
-                        CenteredBox { Text("Şu an gösterilecek bir şey yok.") }
+                        CenteredBox {
+                            StateMessage(icon = Icons.Filled.Explore, text = "Şu an gösterilecek bir şey yok.")
+                        }
                     }
                     else -> {
                         items(discoverPosts, key = { "discover_${it.id}" }) { post ->
@@ -282,6 +298,64 @@ private fun CenteredBox(content: @Composable () -> Unit) {
     }
 }
 
+/** Boş/hata durumları için tutarlı görünüm — silik ikon + ortalanmış metin,
+ * hata ise altına "Tekrar dene" butonu ekler. Arama sonuçları VE algoritmik
+ * Keşfet akışı aynı görsel dili paylaşır, sadece ikon anlam farkı taşır. */
+@Composable
+private fun StateMessage(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    text: String,
+    onRetry: (() -> Unit)? = null,
+) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(36.dp),
+        )
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 8.dp),
+        )
+        if (onRetry != null) {
+            Button(onClick = onRetry, modifier = Modifier.padding(top = 12.dp)) {
+                Text("Tekrar dene")
+            }
+        }
+    }
+}
+
+/** Algoritmik Keşfet akışının sayfa-başlığı gibi öne çıkan üst bilgisi — web
+ * discover.html'deki pusula ikonlu h1 + "takip etmediğin kişilerden popüler
+ * postlar" açıklamasıyla aynı görsel dil (bkz. dosya başı yorum). */
+@Composable
+private fun DiscoverFeedHeader() {
+    Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = Icons.Filled.Explore,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(22.dp),
+            )
+            Text(
+                text = "Keşfet",
+                style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier.padding(start = 8.dp),
+            )
+        }
+        Text(
+            text = "Takip etmediğin kişilerden popüler postlar",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 2.dp),
+        )
+    }
+}
+
 @Composable
 private fun SearchBarRow(
     query: String,
@@ -297,6 +371,7 @@ private fun SearchBarRow(
             .padding(horizontal = 12.dp),
         placeholder = { Text("Kullanıcı, gönderi veya #hashtag ara") },
         singleLine = true,
+        shape = MaterialTheme.shapes.large,
         leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
         trailingIcon = {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -343,26 +418,37 @@ private fun DateRangeRow(
     var showFromPicker by remember { mutableStateOf(false) }
     var showToPicker by remember { mutableStateOf(false) }
 
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 12.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        AssistChip(
-            onClick = { showFromPicker = true },
-            label = { Text(dateFrom ?: "Başlangıç tarihi") },
-            modifier = Modifier.weight(1f),
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = "Tarih aralığı",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(start = 12.dp, end = 12.dp, bottom = 4.dp),
         )
-        AssistChip(
-            onClick = { showToPicker = true },
-            label = { Text(dateTo ?: "Bitiş tarihi") },
-            modifier = Modifier.weight(1f),
-        )
-        if (dateFrom != null || dateTo != null) {
-            IconButton(onClick = { onChange(null, null) }) {
-                Icon(Icons.Filled.Close, contentDescription = "Tarih filtresini temizle")
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            AssistChip(
+                onClick = { showFromPicker = true },
+                label = { Text(dateFrom ?: "Başlangıç tarihi") },
+                leadingIcon = { Icon(Icons.Filled.DateRange, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                modifier = Modifier.weight(1f),
+            )
+            AssistChip(
+                onClick = { showToPicker = true },
+                label = { Text(dateTo ?: "Bitiş tarihi") },
+                leadingIcon = { Icon(Icons.Filled.DateRange, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                modifier = Modifier.weight(1f),
+            )
+            if (dateFrom != null || dateTo != null) {
+                IconButton(onClick = { onChange(null, null) }) {
+                    Icon(Icons.Filled.Close, contentDescription = "Tarih filtresini temizle")
+                }
             }
         }
     }
@@ -435,6 +521,22 @@ private fun RecentSearchesRow(
     }
 }
 
+/** Hashtag/kayıtlı-arama satırlarındaki ikonu, kullanıcı satırlarındaki 40dp
+ * avatar dairesiyle HİZALI bir "rozet" içine alır — liste taranırken tüm
+ * satırların sol kenarı aynı genişlikte hizalanır (görsel tutarlılık). */
+@Composable
+private fun RowIconBadge(icon: androidx.compose.ui.graphics.vector.ImageVector) {
+    Box(
+        modifier = Modifier
+            .size(40.dp)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(imageVector = icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+    }
+}
+
 @Composable
 private fun SavedSearchRow(
     item: SavedSearchItemDto,
@@ -448,11 +550,7 @@ private fun SavedSearchRow(
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(
-            imageVector = Icons.Filled.Bookmark,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary,
-        )
+        RowIconBadge(Icons.Filled.Bookmark)
         Column(
             modifier = Modifier
                 .weight(1f)
@@ -499,7 +597,7 @@ private fun HashtagResultRow(hashtag: HashtagSearchDto, onClick: () -> Unit) {
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(imageVector = Icons.Filled.Tag, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+        RowIconBadge(Icons.Filled.Tag)
         Text(
             text = "#${hashtag.tag}",
             style = MaterialTheme.typography.titleSmall,
@@ -508,22 +606,32 @@ private fun HashtagResultRow(hashtag: HashtagSearchDto, onClick: () -> Unit) {
                 .weight(1f),
         )
         Text(
-            text = "${hashtag.count}",
+            text = "${hashtag.count} gönderi",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }
 
+/** Arama sonucu alt başlıkları — web search.html'in "Kullanıcılar (N)" desenine
+ * paralel, sayaç isteğe bağlı ve muted renkte başlığın yanına eklenir. */
 @Composable
-private fun SectionHeader(title: String) {
-    Text(
-        text = title,
-        style = MaterialTheme.typography.titleMedium,
+private fun SectionHeader(title: String, count: Int? = null) {
+    Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 4.dp),
-    )
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(text = title, style = MaterialTheme.typography.titleMedium)
+        if (count != null) {
+            Text(
+                text = " ($count)",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
 }
 
 @Composable

@@ -1,6 +1,8 @@
 package com.umuterayaltay.sosyal.nativeapp.ui.screens
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -51,7 +53,22 @@ fun UserRow(
                     .clip(CircleShape),
             )
         } else {
-            Icon(imageVector = Icons.Filled.Person, contentDescription = null, modifier = Modifier.size(40.dp))
+            // Avatarsız kullanıcılar için de daire çerçeve — liste taranırken
+            // avatarlı/avatarsız satırlar arasında hizalama sıçraması olmaz.
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Person,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(24.dp),
+                )
+            }
         }
         Column(modifier = Modifier.padding(start = 12.dp)) {
             Text(text = username ?: "bilinmeyen", style = MaterialTheme.typography.titleSmall)

@@ -4,29 +4,37 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -38,6 +46,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -109,11 +118,32 @@ fun PostDetailScreen(
         },
     ) { padding ->
         when {
-            loading && post == null -> CenteredMessage(padding) { CircularProgressIndicator() }
+            loading && post == null -> CenteredMessage(padding) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    CircularProgressIndicator()
+                    Text(
+                        text = "Gönderi yükleniyor…",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 16.dp),
+                    )
+                }
+            }
             error != null && post == null -> CenteredMessage(padding) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(error ?: "")
-                    Button(onClick = { viewModel.load() }, modifier = Modifier.padding(top = 12.dp)) {
+                    Icon(
+                        imageVector = Icons.Filled.ErrorOutline,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(48.dp),
+                    )
+                    Text(
+                        text = error ?: "",
+                        style = MaterialTheme.typography.bodyLarge,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(top = 12.dp),
+                    )
+                    Button(onClick = { viewModel.load() }, modifier = Modifier.padding(top = 16.dp)) {
                         Text("Tekrar dene")
                     }
                 }
@@ -123,8 +153,8 @@ fun PostDetailScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding),
-                contentPadding = PaddingValues(vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                contentPadding = PaddingValues(vertical = 8.dp, horizontal = 0.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 item {
                     PostCard(
@@ -136,8 +166,9 @@ fun PostDetailScreen(
                 }
 
                 item {
+                    HorizontalDivider(modifier = Modifier.padding(top = 16.dp, bottom = 4.dp))
                     Text(
-                        text = "Yorumlar",
+                        text = if (comments.isEmpty()) "Yorumlar" else "Yorumlar (${comments.size})",
                         style = MaterialTheme.typography.titleMedium,
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
                     )
@@ -145,12 +176,30 @@ fun PostDetailScreen(
 
                 if (comments.isEmpty()) {
                     item {
-                        Box(
+                        Column(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(32.dp),
-                            contentAlignment = Alignment.Center,
-                        ) { Text("Henüz yorum yok, ilk yorumu sen yaz") }
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.ChatBubbleOutline,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(40.dp),
+                            )
+                            Text(
+                                text = "Henüz yorum yok",
+                                style = MaterialTheme.typography.titleMedium,
+                                modifier = Modifier.padding(top = 12.dp),
+                            )
+                            Text(
+                                text = "İlk yorumu sen yaz.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(top = 4.dp),
+                            )
+                        }
                     }
                 } else {
                     items(comments, key = { it.id }) { comment ->
@@ -167,8 +216,13 @@ fun PostDetailScreen(
                                     indent = 32.dp,
                                     showReply = false,
                                     onReplyClick = {},
+                                    isReply = true,
                                 )
                             }
+                            HorizontalDivider(
+                                modifier = Modifier.padding(top = 8.dp, start = 16.dp, end = 16.dp),
+                                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f),
+                            )
                         }
                     }
                 }
@@ -183,27 +237,58 @@ private fun CommentRow(
     indent: Dp,
     showReply: Boolean,
     onReplyClick: () -> Unit,
+    isReply: Boolean = false,
 ) {
+    val avatarSize = if (isReply) 26.dp else 32.dp
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            // IntrinsicSize.Min: Row'u kendi içeriğinin (avatar/metin sütunu)
+            // intrinsic yüksekliğine SINIRLAR — aksi halde LazyColumn item'ı
+            // Row'a sınırsız (Infinity) yükseklik constraint'i verir ve
+            // aşağıdaki hiyerarşi çizgisinin fillMaxHeight() çağrısı
+            // "Infinity height" çökmesine yol açardı (standart Compose
+            // "kardeşle eşit yükseklik" deseni).
+            .height(IntrinsicSize.Min)
             .padding(start = 16.dp + indent, end = 16.dp, top = 6.dp, bottom = 6.dp),
     ) {
+        // Yanıtların üst-seviye yorumla ilişkisini görsel olarak açıkça
+        // gösteren dikey bir "hiyerarşi çizgisi" — sadece [isReply] true
+        // iken çizilir, indent boşluğunun sol kenarına yerleşir.
+        if (isReply) {
+            Box(
+                modifier = Modifier
+                    .padding(end = 10.dp)
+                    .width(2.dp)
+                    .fillMaxHeight()
+                    .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
+            )
+        }
         if (!comment.profiles?.avatarUrl.isNullOrBlank()) {
             AsyncImage(
                 model = comment.profiles?.avatarUrl,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
-                    .size(32.dp)
+                    .size(avatarSize)
                     .clip(CircleShape),
             )
         } else {
-            Icon(
-                imageVector = Icons.Filled.Person,
-                contentDescription = null,
-                modifier = Modifier.size(32.dp),
-            )
+            Box(
+                modifier = Modifier
+                    .size(avatarSize)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Person,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(avatarSize * 0.65f),
+                )
+            }
         }
         Column(modifier = Modifier.padding(start = 10.dp)) {
             Text(
@@ -234,17 +319,17 @@ private fun CommentRow(
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                if (showReply) {
-                    TextButton(onClick = onReplyClick, modifier = Modifier.padding(start = 8.dp)) {
-                        Text("Yanıtla", style = MaterialTheme.typography.labelSmall)
-                    }
-                }
                 Text(
                     text = "  ${formatClockTime(comment.createdAt)}",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(start = 4.dp),
                 )
+                if (showReply) {
+                    TextButton(onClick = onReplyClick, modifier = Modifier.padding(start = 4.dp)) {
+                        Text("Yanıtla", style = MaterialTheme.typography.labelSmall)
+                    }
+                }
             }
         }
     }
@@ -258,42 +343,61 @@ private fun CommentInputBar(
     replyingTo: CommentDto?,
     onCancelReply: () -> Unit,
 ) {
-    Column {
-        if (replyingTo != null) {
+    // Surface + tonalElevation: input bar'ı üstteki yorum listesinden görsel
+    // olarak AYIRIYOR (ConversationScreen'deki mesaj input bar'ıyla tutarlı
+    // bir "sabit alt çubuk" hissi) — işlev (onSend/onTextChange) DEĞİŞMEDİ.
+    Surface(
+        tonalElevation = 3.dp,
+        color = MaterialTheme.colorScheme.surface,
+    ) {
+        Column {
+            HorizontalDivider()
+            if (replyingTo != null) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    val replyUsername = replyingTo.profiles?.username ?: "kullanıcı"
+                    Text(
+                        text = "$replyUsername kullanıcısına yanıt veriyorsun",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        modifier = Modifier.weight(1f),
+                    )
+                    IconButton(onClick = onCancelReply) {
+                        Icon(Icons.Filled.Close, contentDescription = "Yanıtlamayı iptal et")
+                    }
+                }
+            }
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(MaterialTheme.colorScheme.surfaceVariant)
-                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                val replyUsername = replyingTo.profiles?.username ?: "kullanıcı"
-                Text(
-                    text = "$replyUsername kullanıcısına yanıt veriyorsun",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = onTextChange,
                     modifier = Modifier.weight(1f),
+                    placeholder = { Text("Bir yorum yaz...") },
+                    shape = MaterialTheme.shapes.large,
+                    maxLines = 4,
                 )
-                IconButton(onClick = onCancelReply) {
-                    Icon(Icons.Filled.Close, contentDescription = "Yanıtlamayı iptal et")
+                IconButton(onClick = onSend, enabled = text.isNotBlank()) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.Send,
+                        contentDescription = "Gönder",
+                        tint = if (text.isNotBlank()) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                    )
                 }
-            }
-        }
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            OutlinedTextField(
-                value = text,
-                onValueChange = onTextChange,
-                modifier = Modifier.weight(1f),
-                placeholder = { Text("Bir yorum yaz...") },
-            )
-            IconButton(onClick = onSend, enabled = text.isNotBlank()) {
-                Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Gönder")
             }
         }
     }

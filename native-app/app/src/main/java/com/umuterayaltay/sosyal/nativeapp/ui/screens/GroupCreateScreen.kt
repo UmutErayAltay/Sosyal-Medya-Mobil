@@ -29,6 +29,7 @@ import androidx.compose.material3.InputChip
 import androidx.compose.material3.InputChipDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -127,6 +128,10 @@ fun GroupCreateScreen(
                 placeholder = { Text("Grup adı") },
                 singleLine = true,
                 enabled = !creating,
+                shape = MaterialTheme.shapes.large,
+                colors = OutlinedTextFieldDefaults.colors(
+                    unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+                ),
             )
 
             if (selected.isNotEmpty()) {
@@ -148,6 +153,11 @@ fun GroupCreateScreen(
                                     modifier = Modifier.size(InputChipDefaults.IconSize),
                                 )
                             },
+                            colors = InputChipDefaults.inputChipColors(
+                                selectedContainerColor = MaterialTheme.colorScheme.primary,
+                                selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
+                                selectedTrailingIconColor = MaterialTheme.colorScheme.onPrimary,
+                            ),
                         )
                     }
                 }
@@ -167,8 +177,18 @@ fun GroupCreateScreen(
                     .padding(horizontal = 12.dp, vertical = 4.dp),
                 placeholder = { Text("Eklemek için kullanıcı ara") },
                 singleLine = true,
-                leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                leadingIcon = {
+                    Icon(
+                        Icons.Filled.Search,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                },
                 enabled = !creating,
+                shape = MaterialTheme.shapes.large,
+                colors = OutlinedTextFieldDefaults.colors(
+                    unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+                ),
             )
 
             if (error != null) {
@@ -182,8 +202,8 @@ fun GroupCreateScreen(
 
             when {
                 loading && results.isEmpty() -> CenteredBox { CircularProgressIndicator() }
-                query.length < 2 -> CenteredBox { Text("Aramak için en az 2 karakter yaz") }
-                results.isEmpty() -> CenteredBox { Text("Kullanıcı bulunamadı") }
+                query.length < 2 -> CenteredBox { MutedText("Aramak için en az 2 karakter yaz") }
+                results.isEmpty() -> CenteredBox { MutedText("Kullanıcı bulunamadı") }
                 else -> LazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(vertical = 8.dp),
@@ -214,6 +234,15 @@ private fun CenteredBox(content: @Composable () -> Unit) {
     ) {
         content()
     }
+}
+
+@Composable
+private fun MutedText(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.bodyLarge,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
 }
 
 /**
@@ -252,7 +281,20 @@ fun SelectableUserRow(
                     .clip(CircleShape),
             )
         } else {
-            Icon(imageVector = Icons.Filled.Person, contentDescription = null, modifier = Modifier.size(40.dp))
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Person,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
         }
         Column(
             modifier = Modifier

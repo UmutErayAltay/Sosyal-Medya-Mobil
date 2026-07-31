@@ -2,6 +2,7 @@ package com.umuterayaltay.sosyal.nativeapp.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -36,6 +37,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
@@ -92,18 +94,28 @@ fun InboxScreen(
             loading && conversations.isEmpty() -> CenteredMessage(padding) { CircularProgressIndicator() }
             error != null && conversations.isEmpty() -> CenteredMessage(padding) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(error ?: "")
+                    Text(
+                        text = error ?: "",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                     Button(onClick = { viewModel.load() }, modifier = Modifier.padding(top = 12.dp)) {
                         Text("Tekrar dene")
                     }
                 }
             }
-            conversations.isEmpty() -> CenteredMessage(padding) { Text("Henüz mesajın yok") }
+            conversations.isEmpty() -> CenteredMessage(padding) {
+                Text(
+                    text = "Henüz mesajın yok",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             else -> LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding),
-                contentPadding = PaddingValues(vertical = 8.dp),
+                contentPadding = PaddingValues(vertical = 4.dp),
             ) {
                 items(conversations, key = { it.id }) { conversation ->
                     ConversationRow(conversation, onClick = { onConversationClick(conversation.id) })
@@ -119,7 +131,7 @@ private fun ConversationRow(conversation: ConversationSummaryDto, onClick: () ->
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 8.dp),
+            .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (!conversation.avatarUrl.isNullOrBlank()) {
@@ -128,49 +140,75 @@ private fun ConversationRow(conversation: ConversationSummaryDto, onClick: () ->
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
-                    .size(48.dp)
+                    .size(52.dp)
                     .clip(CircleShape),
             )
         } else {
-            Icon(
-                imageVector = if (conversation.isGroup) Icons.Filled.Groups else Icons.Filled.Person,
-                contentDescription = null,
-                modifier = Modifier.size(48.dp),
-            )
+            Box(
+                modifier = Modifier
+                    .size(52.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = if (conversation.isGroup) Icons.Filled.Groups else Icons.Filled.Person,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(26.dp),
+                )
+            }
         }
 
         Column(
             modifier = Modifier
                 .weight(1f)
-                .padding(start = 12.dp),
+                .padding(start = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
             Text(
                 text = conversation.name ?: "Bilinmeyen",
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = if (conversation.hasUnread) FontWeight.Bold else FontWeight.Normal,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
             if (!conversation.lastMessagePreview.isNullOrBlank()) {
                 Text(
                     text = conversation.lastMessagePreview,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontWeight = if (conversation.hasUnread) FontWeight.Bold else FontWeight.Normal,
+                    color = if (conversation.hasUnread) {
+                        MaterialTheme.colorScheme.onSurface
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    fontWeight = if (conversation.hasUnread) FontWeight.SemiBold else FontWeight.Normal,
                     maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
         }
 
-        Column(horizontalAlignment = Alignment.End) {
+        Column(
+            horizontalAlignment = Alignment.End,
+            modifier = Modifier.padding(start = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
             Text(
                 text = formatClockTime(conversation.lastMessageAt),
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = if (conversation.hasUnread) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+                fontWeight = if (conversation.hasUnread) FontWeight.SemiBold else FontWeight.Normal,
             )
             if (conversation.hasUnread) {
                 Box(
                     modifier = Modifier
-                        .padding(top = 6.dp)
-                        .size(10.dp)
+                        .size(9.dp)
+                        .align(Alignment.End)
                         .clip(CircleShape)
                         .background(MaterialTheme.colorScheme.primary),
                 )

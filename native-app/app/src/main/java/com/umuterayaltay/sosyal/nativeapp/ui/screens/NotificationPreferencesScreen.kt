@@ -4,12 +4,14 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.CircularProgressIndicator
@@ -37,67 +39,74 @@ import com.umuterayaltay.sosyal.nativeapp.viewmodel.NotificationPreferencesViewM
 
 /** Tek bir bildirim türü satırı — label/description app/notifications.py
  * NOTIFICATION_TYPES sabitindeki GERÇEK Türkçe metinlerle BİREBİR aynı (o
- * dosya okunarak doğrulandı), sıra da AYNI. [getter]/[setter] NotificationPreferencesDto
- * üzerindeki ilgili alanı okur/kopyalar. */
+ * dosya okunarak doğrulandı), sıra da AYNI (sadece [PREFERENCE_ROWS]'un genel
+ * sırası — [section] alanı SADECE görsel gruplama için eklendi, backend'e
+ * giden alan sırasını/adlarını ETKİLEMEZ). [getter]/[setter]
+ * NotificationPreferencesDto üzerindeki ilgili alanı okur/kopyalar. */
 private data class PreferenceRow(
     val label: String,
     val description: String,
+    val section: String,
     val getter: (NotificationPreferencesDto) -> Boolean,
     val setter: (NotificationPreferencesDto, Boolean) -> NotificationPreferencesDto,
 )
 
+private const val SECTION_POST = "Gönderi Etkileşimleri"
+private const val SECTION_SOCIAL = "Sosyal"
+private const val SECTION_MESSAGES = "Mesajlar"
+
 private val PREFERENCE_ROWS = listOf(
     PreferenceRow(
-        "Beğeniler", "Gönderini biri beğendiğinde",
+        "Beğeniler", "Gönderini biri beğendiğinde", SECTION_POST,
         { it.notifyLike }, { p, v -> p.copy(notifyLike = v) },
     ),
     PreferenceRow(
-        "Yorumlar", "Gönderine biri yorum yaptığında",
+        "Yorumlar", "Gönderine biri yorum yaptığında", SECTION_POST,
         { it.notifyComment }, { p, v -> p.copy(notifyComment = v) },
     ),
     PreferenceRow(
-        "Yanıtlar", "Yorumuna biri yanıt verdiğinde",
+        "Yanıtlar", "Yorumuna biri yanıt verdiğinde", SECTION_POST,
         { it.notifyReply }, { p, v -> p.copy(notifyReply = v) },
     ),
     PreferenceRow(
-        "Yorum beğenileri", "Yorumunu biri beğendiğinde",
+        "Yorum beğenileri", "Yorumunu biri beğendiğinde", SECTION_POST,
         { it.notifyCommentLike }, { p, v -> p.copy(notifyCommentLike = v) },
     ),
     PreferenceRow(
-        "Yorum tepkileri", "Yorumuna biri emoji tepkisi verdiğinde",
+        "Yorum tepkileri", "Yorumuna biri emoji tepkisi verdiğinde", SECTION_POST,
         { it.notifyCommentReaction }, { p, v -> p.copy(notifyCommentReaction = v) },
     ),
     PreferenceRow(
-        "Takipçiler", "Biri seni takip etmeye başladığında",
-        { it.notifyFollow }, { p, v -> p.copy(notifyFollow = v) },
-    ),
-    PreferenceRow(
-        "Takip İstekleri", "Gizli profiline biri takip isteği gönderdiğinde",
-        { it.notifyFollowRequest }, { p, v -> p.copy(notifyFollowRequest = v) },
-    ),
-    PreferenceRow(
-        "İstek Kabülleri", "Takip isteğin kabul edildiğinde",
-        { it.notifyFollowAccept }, { p, v -> p.copy(notifyFollowAccept = v) },
-    ),
-    PreferenceRow(
-        "Mesajlar", "Sana mesaj geldiğinde",
-        { it.notifyMessage }, { p, v -> p.copy(notifyMessage = v) },
-    ),
-    PreferenceRow(
-        "Etiketlenmeler", "Bir gönderide etiketlendiğinde",
-        { it.notifyMention }, { p, v -> p.copy(notifyMention = v) },
-    ),
-    PreferenceRow(
-        "Takip edilen etiketler", "Takip ettiğin bir etikette yeni paylaşım olduğunda",
-        { it.notifyHashtagPost }, { p, v -> p.copy(notifyHashtagPost = v) },
-    ),
-    PreferenceRow(
-        "Hikaye tepkileri", "Hikayene biri emoji tepkisi verdiğinde",
+        "Hikaye tepkileri", "Hikayene biri emoji tepkisi verdiğinde", SECTION_POST,
         { it.notifyStoryReaction }, { p, v -> p.copy(notifyStoryReaction = v) },
     ),
     PreferenceRow(
-        "Yeniden paylaşımlar", "Gönderini biri yeniden paylaştığında",
+        "Yeniden paylaşımlar", "Gönderini biri yeniden paylaştığında", SECTION_POST,
         { it.notifyRepost }, { p, v -> p.copy(notifyRepost = v) },
+    ),
+    PreferenceRow(
+        "Takipçiler", "Biri seni takip etmeye başladığında", SECTION_SOCIAL,
+        { it.notifyFollow }, { p, v -> p.copy(notifyFollow = v) },
+    ),
+    PreferenceRow(
+        "Takip İstekleri", "Gizli profiline biri takip isteği gönderdiğinde", SECTION_SOCIAL,
+        { it.notifyFollowRequest }, { p, v -> p.copy(notifyFollowRequest = v) },
+    ),
+    PreferenceRow(
+        "İstek Kabülleri", "Takip isteğin kabul edildiğinde", SECTION_SOCIAL,
+        { it.notifyFollowAccept }, { p, v -> p.copy(notifyFollowAccept = v) },
+    ),
+    PreferenceRow(
+        "Etiketlenmeler", "Bir gönderide etiketlendiğinde", SECTION_SOCIAL,
+        { it.notifyMention }, { p, v -> p.copy(notifyMention = v) },
+    ),
+    PreferenceRow(
+        "Takip edilen etiketler", "Takip ettiğin bir etikette yeni paylaşım olduğunda", SECTION_SOCIAL,
+        { it.notifyHashtagPost }, { p, v -> p.copy(notifyHashtagPost = v) },
+    ),
+    PreferenceRow(
+        "Mesajlar", "Sana mesaj geldiğinde", SECTION_MESSAGES,
+        { it.notifyMessage }, { p, v -> p.copy(notifyMessage = v) },
     ),
 )
 
@@ -173,7 +182,14 @@ fun NotificationPreferencesScreen(
                 modifier = Modifier.fillMaxSize().padding(padding),
                 contentPadding = PaddingValues(vertical = 8.dp),
             ) {
-                items(PREFERENCE_ROWS, key = { it.label }) { row ->
+                itemsIndexed(PREFERENCE_ROWS, key = { _, row -> row.label }) { index, row ->
+                    // Bölüm başlığı SADECE önceki satırdan farklı bir [section]'a
+                    // geçildiğinde render edilir — PREFERENCE_ROWS zaten bölüm
+                    // sırasına göre gruplu (bkz. yukarıdaki tanım), o yüzden tek
+                    // geçiş kontrolü yeterli.
+                    if (index == 0 || PREFERENCE_ROWS[index - 1].section != row.section) {
+                        PreferenceSectionHeader(row.section, addTopSpace = index != 0)
+                    }
                     PreferenceSwitchRow(
                         row = row,
                         checked = row.getter(preferences!!),
@@ -182,7 +198,9 @@ fun NotificationPreferencesScreen(
                             viewModel.updateField { row.setter(it, newValue) }
                         },
                     )
-                    HorizontalDivider()
+                    if (index == PREFERENCE_ROWS.lastIndex || PREFERENCE_ROWS[index + 1].section == row.section) {
+                        HorizontalDivider()
+                    }
                 }
                 if (error != null) {
                     item {
@@ -196,6 +214,21 @@ fun NotificationPreferencesScreen(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun PreferenceSectionHeader(title: String, addTopSpace: Boolean) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        if (addTopSpace) {
+            Spacer(modifier = Modifier.height(12.dp))
+        }
+        Text(
+            text = title,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+        )
     }
 }
 

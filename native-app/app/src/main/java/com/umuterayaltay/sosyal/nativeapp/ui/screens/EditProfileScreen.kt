@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -180,48 +181,62 @@ fun EditProfileScreen(
                 Text("Profil Fotoğrafını Değiştir")
             }
 
-            OutlinedTextField(
-                value = fullName,
-                onValueChange = viewModel::onFullNameChange,
-                label = { Text("Ad Soyad") },
-                singleLine = true,
-                enabled = !submitting,
-                modifier = Modifier.fillMaxWidth(),
-            )
+            HorizontalDivider()
 
-            OutlinedTextField(
-                value = username,
-                onValueChange = viewModel::onUsernameChange,
-                label = { Text("Kullanıcı Adı") },
-                singleLine = true,
-                enabled = !submitting,
-                modifier = Modifier.fillMaxWidth(),
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                OutlinedTextField(
+                    value = fullName,
+                    onValueChange = viewModel::onFullNameChange,
+                    label = { Text("Ad Soyad") },
+                    singleLine = true,
+                    enabled = !submitting,
+                    modifier = Modifier.fillMaxWidth(),
+                )
 
-            OutlinedTextField(
-                value = bio,
-                onValueChange = viewModel::onBioChange,
-                label = { Text("Biyografi") },
-                minLines = 3,
-                enabled = !submitting,
-                modifier = Modifier.fillMaxWidth(),
-            )
+                OutlinedTextField(
+                    value = username,
+                    onValueChange = viewModel::onUsernameChange,
+                    label = { Text("Kullanıcı Adı") },
+                    singleLine = true,
+                    enabled = !submitting,
+                    modifier = Modifier.fillMaxWidth(),
+                )
 
-            SettingsSwitchRow(
-                title = "Gizli Hesap",
-                description = "Hesabın gizli olduğunda gönderilerini sadece onayladığın takipçilerin görebilir",
-                checked = isPrivate,
-                onCheckedChange = viewModel::onIsPrivateChange,
-                enabled = !submitting,
-            )
+                OutlinedTextField(
+                    value = bio,
+                    onValueChange = viewModel::onBioChange,
+                    label = { Text("Biyografi") },
+                    minLines = 3,
+                    enabled = !submitting,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
 
-            SettingsSwitchRow(
-                title = "Son Görülmeyi Gizle",
-                description = "Açıksa profilinde en son ne zaman aktif olduğun görünmez",
-                checked = hideLastSeen,
-                onCheckedChange = viewModel::onHideLastSeenChange,
-                enabled = !submitting,
-            )
+            HorizontalDivider()
+
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Text(
+                    text = "Gizlilik",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+
+                SettingsSwitchRow(
+                    title = "Gizli Hesap",
+                    description = "Hesabın gizli olduğunda gönderilerini sadece onayladığın takipçilerin görebilir",
+                    checked = isPrivate,
+                    onCheckedChange = viewModel::onIsPrivateChange,
+                    enabled = !submitting,
+                )
+
+                SettingsSwitchRow(
+                    title = "Son Görülmeyi Gizle",
+                    description = "Açıksa profilinde en son ne zaman aktif olduğun görünmez",
+                    checked = hideLastSeen,
+                    onCheckedChange = viewModel::onHideLastSeenChange,
+                    enabled = !submitting,
+                )
+            }
 
             if (error != null) {
                 Text(

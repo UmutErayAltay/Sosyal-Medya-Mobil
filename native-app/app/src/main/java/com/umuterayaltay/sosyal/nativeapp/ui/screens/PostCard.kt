@@ -1,7 +1,9 @@
 package com.umuterayaltay.sosyal.nativeapp.ui.screens
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
@@ -15,6 +17,8 @@ import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -41,7 +45,9 @@ import com.umuterayaltay.sosyal.nativeapp.repository.Post
  *
  * Faz 4: [onLikeClick]/[onCommentClick] ile artık gerçek aksiyona bağlı —
  * kalp ikonu [Post.likedByMe] true iken dolu/kırmızı (colorScheme.error),
- * değilse mevcut colorScheme.secondary rengiyle gösterilir.
+ * değilse nötr colorScheme.onSurfaceVariant rengiyle gösterilir (görsel cila
+ * turu, 2026-07-31: aktif/pasif ayrımını netleştirmek için secondary'den
+ * değiştirildi — sadece renk, [onLikeClick] mantığı AYNI).
  *
  * Hashtag+gündem (Faz 4 sonrası eksik giderme SONUNCUSU): içerikteki #etiket'ler
  * [onHashtagClick] ile tıklanabilir — app/hashtags.py HASHTAG_RE'nin (`#(\w+)`,
@@ -84,8 +90,11 @@ fun PostCard(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp),
+        shape = MaterialTheme.shapes.large,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
     ) {
-        Column(modifier = Modifier.padding(12.dp)) {
+        Column(modifier = Modifier.padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (!post.avatarUrl.isNullOrBlank()) {
                     AsyncImage(
@@ -93,21 +102,46 @@ fun PostCard(
                         contentDescription = null,
                         contentScale = ContentScale.Crop,
                         modifier = Modifier
-                            .size(36.dp)
+                            .size(40.dp)
                             .clip(CircleShape),
                     )
                 } else {
-                    Icon(
-                        imageVector = Icons.Filled.Person,
-                        contentDescription = null,
-                        modifier = Modifier.size(36.dp),
-                    )
+                    // Avatarsız kullanıcılar için de dolgusuz çıplak ikon yerine
+                    // dairesel bir zemin — böylece boş alan bir "boşluk" gibi
+                    // değil, bilinçli bir yer tutucu gibi görünür.
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.surfaceVariant),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Person,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(22.dp),
+                        )
+                    }
                 }
-                Text(
-                    text = post.username ?: "Bilinmeyen kullanıcı",
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.padding(start = 10.dp),
-                )
+                Column(
+                    modifier = Modifier
+                        .padding(start = 10.dp)
+                        .weight(1f),
+                ) {
+                    Text(
+                        text = post.username ?: "Bilinmeyen kullanıcı",
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    val timeLabel = formatClockTime(post.createdAt)
+                    if (timeLabel.isNotBlank()) {
+                        Text(
+                            text = timeLabel,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
             }
 
             if (!post.content.isNullOrBlank()) {
@@ -119,7 +153,7 @@ fun PostCard(
                 ClickableText(
                     text = annotatedContent,
                     style = MaterialTheme.typography.bodyLarge.copy(color = contentColor),
-                    modifier = Modifier.padding(top = 10.dp),
+                    modifier = Modifier.padding(top = 12.dp),
                     onClick = { offset ->
                         annotatedContent.getStringAnnotations(tag = "hashtag", start = offset, end = offset)
                             .firstOrNull()?.let { onHashtagClick(it.item) }
@@ -135,26 +169,31 @@ fun PostCard(
                     modifier = Modifier
                         .fillMaxWidth()
                         .aspectRatio(4f / 3f)
-                        .padding(top = 10.dp)
+                        .padding(top = 12.dp)
                         .clip(MaterialTheme.shapes.medium),
                 )
             }
 
+            HorizontalDivider(modifier = Modifier.padding(top = 12.dp))
+
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 10.dp),
-                horizontalArrangement = Arrangement.spacedBy(20.dp),
+                    .padding(top = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.clickable { onLikeClick(post) },
+                    modifier = Modifier
+                        .clip(MaterialTheme.shapes.small)
+                        .clickable { onLikeClick(post) }
+                        .padding(vertical = 6.dp, horizontal = 8.dp),
                 ) {
                     Icon(
                         imageVector = Icons.Filled.Favorite,
                         contentDescription = if (post.likedByMe) "Beğenmekten vazgeç" else "Beğen",
-                        tint = if (post.likedByMe) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.secondary,
+                        tint = if (post.likedByMe) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(18.dp),
                     )
                     Text(
@@ -164,11 +203,15 @@ fun PostCard(
                 }
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.clickable { onCommentClick(post) },
+                    modifier = Modifier
+                        .clip(MaterialTheme.shapes.small)
+                        .clickable { onCommentClick(post) }
+                        .padding(vertical = 6.dp, horizontal = 8.dp),
                 ) {
                     Icon(
                         imageVector = Icons.Filled.ChatBubbleOutline,
                         contentDescription = "Yorum",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(18.dp),
                     )
                     Text(

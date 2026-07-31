@@ -1,5 +1,6 @@
 package com.umuterayaltay.sosyal.nativeapp.ui.screens
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -8,14 +9,19 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.Tag
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -28,6 +34,8 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.umuterayaltay.sosyal.nativeapp.network.HashtagSearchDto
@@ -63,7 +71,17 @@ fun TrendingScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Gündem") },
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Filled.LocalFireDepartment,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(22.dp),
+                        )
+                        Text(text = "Gündem", modifier = Modifier.padding(start = 8.dp))
+                    }
+                },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Geri")
@@ -76,21 +94,48 @@ fun TrendingScreen(
             loading && tags.isEmpty() -> CenteredMessage(padding) { CircularProgressIndicator() }
             error != null && tags.isEmpty() -> CenteredMessage(padding) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(error ?: "")
+                    Icon(
+                        imageVector = Icons.Filled.ErrorOutline,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(36.dp),
+                    )
+                    Text(
+                        text = error ?: "",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
                     Button(onClick = { viewModel.load() }, modifier = Modifier.padding(top = 12.dp)) {
                         Text("Tekrar dene")
                     }
                 }
             }
-            tags.isEmpty() -> CenteredMessage(padding) { Text("Şu an gündemde bir şey yok") }
+            tags.isEmpty() -> CenteredMessage(padding) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(
+                        imageVector = Icons.Filled.LocalFireDepartment,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(36.dp),
+                    )
+                    Text(
+                        text = "Şu an gündemde bir şey yok",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                }
+            }
             else -> LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding),
                 contentPadding = PaddingValues(vertical = 8.dp),
             ) {
-                items(tags, key = { it.tag }) { tag ->
-                    TrendingRow(tag = tag, onClick = { onNavigateToHashtag(tag.tag) })
+                itemsIndexed(tags, key = { _, tag -> tag.tag }) { index, tag ->
+                    TrendingRow(rank = index + 1, tag = tag, onClick = { onNavigateToHashtag(tag.tag) })
+                    if (index < tags.lastIndex) {
+                        HorizontalDivider(modifier = Modifier.padding(start = 56.dp))
+                    }
                 }
             }
         }
@@ -115,9 +160,12 @@ private fun CenteredMessage(padding: PaddingValues, content: @Composable () -> U
 
 /** DiscoverScreen.kt'deki (file-private, tıklanamaz) HashtagResultRow ile GÖRSEL
  * olarak tutarlı — buradaki AYRI kopya tıklanabilir (onClick var), gündem
- * listesinde tıklamak artık HashtagScreen'e gider. */
+ * listesinde tıklamak artık HashtagScreen'e gider. Sıralama rozeti (1, 2, 3…)
+ * web'in arama kenar çubuğundaki `.trending-rank` numaralı gündem listesiyle
+ * AYNI görsel dili taşır (bkz. app/static/css/style.css .trending-rank/.trending-tag).
+ */
 @Composable
-private fun TrendingRow(tag: HashtagSearchDto, onClick: () -> Unit) {
+private fun TrendingRow(rank: Int, tag: HashtagSearchDto, onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -125,12 +173,33 @@ private fun TrendingRow(tag: HashtagSearchDto, onClick: () -> Unit) {
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(imageVector = Icons.Filled.Tag, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+        Box(
+            modifier = Modifier
+                .size(28.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.surfaceVariant),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = "$rank",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Icon(
+            imageVector = Icons.Filled.Tag,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(start = 12.dp),
+        )
         Text(
             text = "#${tag.tag}",
             style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary,
             modifier = Modifier
-                .padding(start = 12.dp)
+                .padding(start = 8.dp)
                 .weight(1f),
         )
         Text(

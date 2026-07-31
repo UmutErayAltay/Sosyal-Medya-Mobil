@@ -1,12 +1,16 @@
 package com.umuterayaltay.sosyal.nativeapp.ui.screens
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.pager.VerticalPager
@@ -14,8 +18,10 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChatBubbleOutline
+import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.SmartDisplay
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -31,8 +37,11 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -82,18 +91,61 @@ fun ReelsScreen(
         contentAlignment = Alignment.Center,
     ) {
         when {
-            posts.isEmpty() && loading -> CircularProgressIndicator()
-            posts.isEmpty() && error != null -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(error ?: "", color = MaterialTheme.colorScheme.onBackground)
+            posts.isEmpty() && loading -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                CircularProgressIndicator()
+                Text(
+                    text = "Reels yükleniyor…",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 16.dp),
+                )
+            }
+            posts.isEmpty() && error != null -> Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.padding(24.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.ErrorOutline,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(48.dp),
+                )
+                Text(
+                    text = error ?: "",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onBackground,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(top = 12.dp),
+                )
                 Button(
                     onClick = { viewModel.loadPage(1) },
-                    modifier = Modifier.padding(top = 12.dp),
+                    modifier = Modifier.padding(top = 16.dp),
                 ) { Text("Tekrar dene") }
             }
-            posts.isEmpty() -> Text(
-                text = "Henüz reels yok",
-                color = MaterialTheme.colorScheme.onBackground,
-            )
+            posts.isEmpty() -> Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.padding(24.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.SmartDisplay,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(56.dp),
+                )
+                Text(
+                    text = "Henüz reels yok",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onBackground,
+                    modifier = Modifier.padding(top = 16.dp),
+                )
+                Text(
+                    text = "Kısa videolar paylaşıldıkça burada akacak.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            }
             else -> {
                 val pagerState = rememberPagerState(pageCount = { posts.size })
 
@@ -177,6 +229,28 @@ private fun ReelPage(post: Post, isActive: Boolean, onLikeClick: (Post) -> Unit,
             )
         }
 
+        // Alt yarıda kademeli kararma — pill'lerin DIŞINDA kalan video alanı
+        // (ör. parlak/beyaz bir video karesi) de metin/ikon okunabilirliğini
+        // bozmasın diye. colorScheme.surface tonu KULLANILIYOR (siyah bir
+        // "scrim" yerine) — ReelOverlay'deki "onSurface HER ZAMAN surface'e
+        // karşı kontrastlı" garantisi bu gradyan için de geçerli kalsın diye,
+        // aksi halde light temada koyu onSurface metni neredeyse siyah bir
+        // zemine karşı OKUNMAZ hale gelirdi.
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.5f)
+                .align(Alignment.BottomCenter)
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            MaterialTheme.colorScheme.surface.copy(alpha = 0f),
+                            MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                        ),
+                    ),
+                ),
+        )
+
         ReelOverlay(post = post, onLikeClick = onLikeClick, onCommentClick = onCommentClick)
     }
 }
@@ -194,7 +268,7 @@ private fun ReelPage(post: Post, isActive: Boolean, onLikeClick: (Post) -> Unit,
  */
 @Composable
 private fun ReelOverlay(post: Post, onLikeClick: (Post) -> Unit, onCommentClick: (Post) -> Unit) {
-    val scrim = MaterialTheme.colorScheme.surface.copy(alpha = 0.55f)
+    val scrim = MaterialTheme.colorScheme.surface.copy(alpha = 0.6f)
 
     Row(
         modifier = Modifier
@@ -206,8 +280,8 @@ private fun ReelOverlay(post: Post, onLikeClick: (Post) -> Unit, onCommentClick:
         Column(
             modifier = Modifier
                 .weight(1f)
-                .background(scrim, MaterialTheme.shapes.medium)
-                .padding(12.dp),
+                .background(scrim, MaterialTheme.shapes.large)
+                .padding(14.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (!post.avatarUrl.isNullOrBlank()) {
@@ -246,11 +320,18 @@ private fun ReelOverlay(post: Post, onLikeClick: (Post) -> Unit, onCommentClick:
 
         Column(
             modifier = Modifier
-                .background(scrim, MaterialTheme.shapes.medium)
-                .padding(vertical = 12.dp, horizontal = 8.dp),
+                .background(scrim, MaterialTheme.shapes.large)
+                .padding(vertical = 14.dp, horizontal = 10.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+            verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
+            // Beğenildiğinde ikon hafifçe büyüyüp geri iniyor — SADECE görsel
+            // bir "delight" mikro-etkileşimi, [onLikeClick] mantığı DEĞİŞMEDİ.
+            val likeScale by animateFloatAsState(
+                targetValue = if (post.likedByMe) 1.15f else 1f,
+                animationSpec = spring(dampingRatio = 0.4f),
+                label = "reel-like-scale",
+            )
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier.clickable { onLikeClick(post) },
@@ -259,7 +340,9 @@ private fun ReelOverlay(post: Post, onLikeClick: (Post) -> Unit, onCommentClick:
                     imageVector = Icons.Filled.Favorite,
                     contentDescription = if (post.likedByMe) "Beğenmekten vazgeç" else "Beğen",
                     tint = if (post.likedByMe) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.secondary,
-                    modifier = Modifier.size(26.dp),
+                    modifier = Modifier
+                        .size(28.dp)
+                        .scale(likeScale),
                 )
                 Text(
                     text = "${post.likeCount}",

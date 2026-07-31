@@ -7,6 +7,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -19,9 +20,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.Group
+import androidx.compose.material.icons.filled.Public
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -38,6 +44,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -46,12 +53,12 @@ import coil.compose.AsyncImage
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.CreatePostEvent
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.CreatePostViewModel
 
-private data class VisibilityOption(val value: String, val label: String)
+private data class VisibilityOption(val value: String, val label: String, val icon: ImageVector)
 
 private val VISIBILITY_OPTIONS = listOf(
-    VisibilityOption("public", "Herkese Açık"),
-    VisibilityOption("followers", "Takipçiler"),
-    VisibilityOption("close_friends", "Yakın Arkadaşlar"),
+    VisibilityOption("public", "Herkese Açık", Icons.Filled.Public),
+    VisibilityOption("followers", "Takipçiler", Icons.Filled.Group),
+    VisibilityOption("close_friends", "Yakın Arkadaşlar", Icons.Filled.Star),
 )
 
 /**
@@ -124,9 +131,16 @@ fun CreatePostScreen(
                 .fillMaxSize()
                 .padding(padding)
                 .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            VisibilityFilterRow(selected = visibility, onSelect = viewModel::onVisibilityChange)
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    text = "Kimler görebilir?",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                VisibilityFilterRow(selected = visibility, onSelect = viewModel::onVisibilityChange)
+            }
 
             OutlinedTextField(
                 value = content,
@@ -135,14 +149,16 @@ fun CreatePostScreen(
                 placeholder = { Text("Ne düşünüyorsun?") },
                 minLines = 4,
                 enabled = !submitting,
+                shape = MaterialTheme.shapes.medium,
             )
 
             if (selectedImageUri != null) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(200.dp)
-                        .clip(RoundedCornerShape(12.dp)),
+                        .height(220.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant),
                 ) {
                     AsyncImage(
                         model = selectedImageUri,
@@ -155,10 +171,10 @@ fun CreatePostScreen(
                         enabled = !submitting,
                         modifier = Modifier
                             .align(Alignment.TopEnd)
-                            .padding(4.dp)
+                            .padding(8.dp)
                             .size(32.dp)
                             .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.8f)),
+                            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f)),
                     ) {
                         Icon(Icons.Filled.Close, contentDescription = "Görseli kaldır")
                     }
@@ -171,6 +187,7 @@ fun CreatePostScreen(
                         )
                     },
                     enabled = !submitting,
+                    shape = MaterialTheme.shapes.medium,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Icon(Icons.Filled.AddPhotoAlternate, contentDescription = null)
@@ -179,11 +196,26 @@ fun CreatePostScreen(
             }
 
             if (error != null) {
-                Text(
-                    text = error ?: "",
-                    color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodySmall,
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.errorContainer, MaterialTheme.shapes.small)
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.ErrorOutline,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onErrorContainer,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Text(
+                        text = error ?: "",
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(start = 8.dp),
+                    )
+                }
             }
         }
     }
@@ -196,10 +228,23 @@ private fun VisibilityFilterRow(selected: String, onSelect: (String) -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         items(VISIBILITY_OPTIONS, key = { it.value }) { option ->
+            val isSelected = selected == option.value
             FilterChip(
-                selected = selected == option.value,
+                selected = isSelected,
                 onClick = { onSelect(option.value) },
                 label = { Text(option.label) },
+                leadingIcon = {
+                    Icon(
+                        imageVector = option.icon,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = MaterialTheme.colorScheme.primary,
+                    selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
+                    selectedLeadingIconColor = MaterialTheme.colorScheme.onPrimary,
+                ),
             )
         }
     }

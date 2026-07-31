@@ -3,6 +3,7 @@ package com.umuterayaltay.sosyal.nativeapp.ui.screens
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -16,8 +17,11 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -87,14 +91,24 @@ fun NewMessageScreen(
                     .padding(12.dp),
                 placeholder = { Text("Kullanıcı adı ara") },
                 singleLine = true,
-                leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                shape = MaterialTheme.shapes.extraLarge,
+                leadingIcon = {
+                    Icon(
+                        Icons.Filled.Search,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                },
+                colors = OutlinedTextFieldDefaults.colors(
+                    unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+                ),
             )
 
             when {
                 loading && results.isEmpty() -> CenteredBox { CircularProgressIndicator() }
-                error != null && results.isEmpty() -> CenteredBox { Text(error ?: "") }
-                query.length < 2 -> CenteredBox { Text("Aramak için en az 2 karakter yaz") }
-                results.isEmpty() -> CenteredBox { Text("Kullanıcı bulunamadı") }
+                error != null && results.isEmpty() -> CenteredBox { MutedMessage(error ?: "") }
+                query.length < 2 -> CenteredBox { MutedMessage("Aramak için en az 2 karakter yaz") }
+                results.isEmpty() -> CenteredBox { MutedMessage("Kullanıcı bulunamadı") }
                 else -> LazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(vertical = 8.dp),
@@ -111,11 +125,25 @@ fun NewMessageScreen(
             }
 
             if (starting) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(12.dp),
-                ) { CircularProgressIndicator(modifier = Modifier.size(20.dp)) }
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                        Text(
+                            text = "Konuşma başlatılıyor...",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(start = 10.dp),
+                        )
+                    }
+                }
             }
         }
     }
@@ -131,4 +159,13 @@ private fun CenteredBox(content: @Composable () -> Unit) {
     ) {
         content()
     }
+}
+
+@Composable
+private fun MutedMessage(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.bodyLarge,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
 }
