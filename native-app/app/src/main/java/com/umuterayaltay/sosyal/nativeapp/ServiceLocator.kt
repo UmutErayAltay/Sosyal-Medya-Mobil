@@ -25,6 +25,8 @@ import com.umuterayaltay.sosyal.nativeapp.repository.ProfileRepository
 import com.umuterayaltay.sosyal.nativeapp.repository.RealtimeConnectionManager
 import com.umuterayaltay.sosyal.nativeapp.repository.ReelsRepository
 import com.umuterayaltay.sosyal.nativeapp.repository.SettingsRepository
+// FAZ5_IMPORTS_MARKER — her ajan kendi Api/Repository import'unu bu satırın
+// HEMEN ÜSTÜNE ekler (dalga başına ayrı ajan çakışmasın diye).
 
 /**
  * Bu MVP fazında Hilt/Dagger yerine elle (manual) DI — kotlinx.serialization'ı
@@ -57,6 +59,8 @@ object ServiceLocator {
         private set
     lateinit var realtimeConnectionManager: RealtimeConnectionManager
         private set
+    // FAZ5_LATEINIT_MARKER — her ajan kendi `lateinit var xxxRepository`'sini
+    // bu satırın HEMEN ÜSTÜNE ekler.
 
     private var initialized = false
 
@@ -91,6 +95,10 @@ object ServiceLocator {
         // authRepository'ye bağımlı — /realtime-token onun üzerinden çağrılıyor
         // (bkz. RealtimeConnectionManager sınıf yorumu).
         realtimeConnectionManager = RealtimeConnectionManager(authRepository)
+
+        // FAZ5_INIT_MARKER — her ajan kendi `val xxxApi = retrofit.create(...)`
+        // + `xxxRepository = XxxRepository(xxxApi)` satırlarını bu satırın
+        // HEMEN ÜSTÜNE ekler.
 
         initialized = true
     }

@@ -31,6 +31,8 @@ import com.umuterayaltay.sosyal.nativeapp.ui.screens.SettingsScreen
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.TrendingScreen
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.TwoFactorScreen
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.FollowListKind
+// FAZ5_IMPORTS_MARKER — her ajan kendi ekran import'unu bu satırın HEMEN
+// ÜSTÜNE ekler (dalga başına ayrı ajan çakışmasın diye).
 
 private const val ROUTE_LOGIN = "login"
 private const val ROUTE_MAIN = "main"
@@ -479,5 +481,9 @@ fun AppNavHost() {
                 },
             )
         }
+
+        // FAZ5_COMPOSABLE_MARKER — her ajan kendi composable("route") { ... }
+        // bloğunu bu satırın HEMEN ÜSTÜNE ekler (dalga başına ayrı ajan
+        // çakışmasın diye).
     }
 }

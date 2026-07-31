@@ -772,6 +772,31 @@ data class HashtagPostsResponse(
     val error: String? = null,
 )
 
+// ============================================================
+// Faz 5 (2026-07-31) — aşağıdaki bölge işaretleri, paralel ajanların AYNI dosyada
+// çakışmadan çalışabilmesi için ayrıldı. Her ajan SADECE kendi işaretli bölgesine
+// ekleme yapar; ana oturum dalga kapanışında birleştirir. Bölgeler geniş
+// aralıklı bırakıldı (Git diff'lerinin ayrı hunk olarak temiz birleşmesi için).
+// ============================================================
+
+// ---- FAZ5: Anket oy verme (Dalga 1A) ----
+
+// ---- FAZ5: Mesaj gelişmiş işlemleri (Dalga 1B) ----
+
+// ---- FAZ5: Şifre sıfırlama + Sticker backend/API (Dalga 1C) ----
+
+// ---- FAZ5: Sessize alma (Dalga 2A) ----
+
+// ---- FAZ5: Video/Reel paylaşma (Dalga 2B) ----
+
+// ---- FAZ5: Hikayeler (Dalga 2C) ----
+
+// ---- FAZ5: Bookmark + Koleksiyon (Dalga 3A) ----
+
+// ---- FAZ5: GIF + Sticker tüketicileri (Dalga 3B) ----
+
+// ---- FAZ5: Push/FCM (Dalga 4A) ----
+
 data class ToggleHashtagFollowResponse(
     val following: Boolean = false,
     val error: String? = null,
