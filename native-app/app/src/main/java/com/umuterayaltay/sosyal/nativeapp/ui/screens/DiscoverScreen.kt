@@ -72,6 +72,7 @@ fun DiscoverScreen(
     onSessionExpired: () -> Unit,
     onUserClick: (String) -> Unit,
     onNavigateToPostDetail: (String) -> Unit,
+    onNavigateToHashtag: (String) -> Unit,
     viewModel: DiscoverViewModel = viewModel(),
 ) {
     val query by viewModel.searchQuery.collectAsState()
@@ -177,7 +178,9 @@ fun DiscoverScreen(
                         if (searchType == SearchType.All || searchType == SearchType.Hashtags) {
                             if (searchHashtags.isNotEmpty()) {
                                 item { SectionHeader("Hashtag'ler") }
-                                items(searchHashtags, key = { "tag_${it.tag}" }) { tag -> HashtagResultRow(tag) }
+                                items(searchHashtags, key = { "tag_${it.tag}" }) { tag ->
+                                    HashtagResultRow(tag, onClick = { onNavigateToHashtag(tag.tag) })
+                                }
                             }
                         }
                         if (searchType == SearchType.All || searchType == SearchType.Posts) {
@@ -188,6 +191,7 @@ fun DiscoverScreen(
                                         post = post,
                                         onLikeClick = { viewModel.toggleLike(it.id) },
                                         onCommentClick = { onNavigateToPostDetail(it.id) },
+                                        onHashtagClick = onNavigateToHashtag,
                                     )
                                 }
                             }
@@ -245,6 +249,7 @@ fun DiscoverScreen(
                                 post = post,
                                 onLikeClick = { viewModel.toggleLike(it.id) },
                                 onCommentClick = { onNavigateToPostDetail(it.id) },
+                                onHashtagClick = onNavigateToHashtag,
                             )
                         }
                         item {
@@ -483,12 +488,14 @@ private fun UserResultRow(user: UserSearchDto, onClick: () -> Unit) {
     )
 }
 
-/** Hashtag detay ekranı henüz yok — tıklanınca kasıtlı olarak hiçbir şey yapmaz. */
+/** Faz 4 sonrası eksik giderme SONUNCUSU: hashtag detay ekranı eklendi,
+ * tıklanınca artık [onClick] ile "hashtag/{tag}" route'una gidilir. */
 @Composable
-private fun HashtagResultRow(hashtag: HashtagSearchDto) {
+private fun HashtagResultRow(hashtag: HashtagSearchDto, onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

@@ -51,9 +51,11 @@ import com.umuterayaltay.sosyal.nativeapp.viewmodel.NotificationsViewModel
  * Backend sözleşmesi: app/api_v1.py api_list_notifications() — GET
  * /api/v1/notifications?page=N (bkz. ApiModels.kt NotificationDto yorumu).
  *
- * Navigasyon 4 ayrı callback'e bölündü — bu ekran navController'ı BİLMEZ,
+ * Navigasyon 5 ayrı callback'e bölündü — bu ekran navController'ı BİLMEZ,
  * kararı [resolveNotificationTarget] verir, gerçek navigate() çağrısı
  * AppNavHost.kt'de yapılır (ConversationScreen/ProfileScreen ile AYNI desen).
+ * hashtag_post (Faz 4 sonrası eksik giderme SONUNCUSU: hashtag sayfası eklendi)
+ * artık [onNavigateToHashtag] ile "hashtag/{tag}" route'una gider.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -63,6 +65,7 @@ fun NotificationsScreen(
     onNavigateToProfile: (String) -> Unit,
     onNavigateToConversation: (String) -> Unit,
     onNavigateToFollowRequests: () -> Unit,
+    onNavigateToHashtag: (String) -> Unit,
     onSessionExpired: () -> Unit,
     viewModel: NotificationsViewModel = viewModel(),
 ) {
@@ -119,6 +122,7 @@ fun NotificationsScreen(
                                     is NotificationTarget.Post -> onNavigateToPost(it.postId)
                                     is NotificationTarget.Profile -> onNavigateToProfile(it.username)
                                     is NotificationTarget.Conversation -> onNavigateToConversation(it.conversationId)
+                                    is NotificationTarget.Hashtag -> onNavigateToHashtag(it.tag)
                                     NotificationTarget.FollowRequests -> onNavigateToFollowRequests()
                                 }
                             }
@@ -151,20 +155,20 @@ fun NotificationsScreen(
 /** Bir bildirim satırına tıklanınca gidilecek yer — görev tanımındaki "Native
  * navigasyon karşılıkları" tablosunun BİREBİR Kotlin karşılığı. Tip bazlı
  * kontrol EDİLİR (sadece alan doluluğuna bakılmaz): `hashtag_post` backend'de
- * post_id de doldursa BİLİNÇLİ olarak tıklanamaz bırakıldı (native'de hashtag
- * sayfası yok — bkz. görev tanımı kısıtları), bu yüzden post_id kontrolünden
- * ÖNCE type kontrolü yapılır. */
+ * hem post_id HEM hashtag doldurur, ama etikete gitmek (postun kendisine değil)
+ * kullanıcının "bu etiketi takip ediyorum" bağlamına daha uygun — bu yüzden
+ * post_id kontrolünden ÖNCE type kontrolü yapılır. */
 private sealed class NotificationTarget {
     data class Post(val postId: String) : NotificationTarget()
     data class Profile(val username: String) : NotificationTarget()
     data class Conversation(val conversationId: String) : NotificationTarget()
+    data class Hashtag(val tag: String) : NotificationTarget()
     data object FollowRequests : NotificationTarget()
 }
 
 private fun resolveNotificationTarget(notification: NotificationDto): NotificationTarget? = when {
     notification.type == "follow_request" -> NotificationTarget.FollowRequests
-    // native'de hashtag sayfası YOK — post_id dolu olsa bile bu tip tıklanamaz.
-    notification.type == "hashtag_post" -> null
+    notification.type == "hashtag_post" -> notification.hashtag?.takeIf { it.isNotBlank() }?.let { NotificationTarget.Hashtag(it) }
     !notification.username.isNullOrBlank() -> NotificationTarget.Profile(notification.username)
     !notification.postId.isNullOrBlank() -> NotificationTarget.Post(notification.postId)
     !notification.conversationId.isNullOrBlank() -> NotificationTarget.Conversation(notification.conversationId)

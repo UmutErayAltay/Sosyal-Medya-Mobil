@@ -68,11 +68,14 @@ fun MainScaffold(navController: NavHostController, onSessionExpired: () -> Unit)
                     onNavigateToPostDetail = { postId -> navController.navigate("postDetail/$postId") },
                     onNewPostClick = { navController.navigate("createPost") },
                     onNotificationsClick = { navController.navigate("notifications") },
+                    onTrendingClick = { navController.navigate("trending") },
+                    onNavigateToHashtag = { tag -> navController.navigate("hashtag/$tag") },
                 )
                 MainTab.Discover -> DiscoverScreen(
                     onSessionExpired = onSessionExpired,
                     onUserClick = { username -> navController.navigate("profile/$username") },
                     onNavigateToPostDetail = { postId -> navController.navigate("postDetail/$postId") },
+                    onNavigateToHashtag = { tag -> navController.navigate("hashtag/$tag") },
                 )
                 MainTab.Reels -> ReelsScreen(
                     onSessionExpired = onSessionExpired,
@@ -93,6 +96,7 @@ fun MainScaffold(navController: NavHostController, onSessionExpired: () -> Unit)
                     onNavigateToFollowRequests = { navController.navigate("followRequests") },
                     onNavigateToPostDetail = { postId -> navController.navigate("postDetail/$postId") },
                     onNavigateToSettings = { navController.navigate("settings") },
+                    onNavigateToHashtag = { tag -> navController.navigate("hashtag/$tag") },
                     onSessionExpired = onSessionExpired,
                     // onNavigateBack YOK: bu, alt navigasyondaki KOK "Profil" sekmesi
                     // - geri tusu YOK (push edilmis bir route degil).

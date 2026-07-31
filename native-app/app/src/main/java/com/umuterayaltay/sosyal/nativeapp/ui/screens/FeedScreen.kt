@@ -14,6 +14,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Tag
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -44,6 +45,8 @@ fun FeedScreen(
     onNavigateToPostDetail: (String) -> Unit,
     onNewPostClick: () -> Unit,
     onNotificationsClick: () -> Unit,
+    onTrendingClick: () -> Unit,
+    onNavigateToHashtag: (String) -> Unit,
     viewModel: FeedViewModel = viewModel(),
 ) {
     val posts by viewModel.posts.collectAsState()
@@ -81,6 +84,11 @@ fun FeedScreen(
                                 )
                             }
                         }
+                    }
+                    // Gündem (Faz 4 sonrası eksik giderme SONUNCUSU) - bildirim
+                    // zilinin YANINA, var olan ikonların yerine geçmeden eklendi.
+                    IconButton(onClick = onTrendingClick) {
+                        Icon(Icons.Filled.Tag, contentDescription = "Gündem")
                     }
                     IconButton(onClick = onNewPostClick) {
                         Icon(Icons.Filled.Add, contentDescription = "Yeni Gönderi")
@@ -121,6 +129,7 @@ fun FeedScreen(
                             post = post,
                             onLikeClick = { viewModel.toggleLike(it.id) },
                             onCommentClick = { onNavigateToPostDetail(it.id) },
+                            onHashtagClick = onNavigateToHashtag,
                         )
                     }
                 }

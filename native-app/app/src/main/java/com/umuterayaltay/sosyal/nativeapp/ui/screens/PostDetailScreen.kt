@@ -66,6 +66,7 @@ import com.umuterayaltay.sosyal.nativeapp.viewmodel.PostDetailViewModelFactory
 fun PostDetailScreen(
     postId: String,
     onNavigateBack: () -> Unit,
+    onNavigateToHashtag: (String) -> Unit,
     onSessionExpired: () -> Unit,
     viewModel: PostDetailViewModel = viewModel(factory = PostDetailViewModelFactory(postId)),
 ) {
@@ -130,6 +131,7 @@ fun PostDetailScreen(
                         post = post!!,
                         onLikeClick = { viewModel.toggleLike() },
                         onCommentClick = {},
+                        onHashtagClick = onNavigateToHashtag,
                     )
                 }
 

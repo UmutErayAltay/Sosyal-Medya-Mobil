@@ -91,6 +91,7 @@ fun ProfileScreen(
     onNavigateToFollowRequests: () -> Unit,
     onNavigateToPostDetail: (String) -> Unit,
     onNavigateToSettings: () -> Unit,
+    onNavigateToHashtag: (String) -> Unit,
     onSessionExpired: () -> Unit,
     onNavigateBack: (() -> Unit)? = null,
     viewModel: ProfileViewModel = viewModel(factory = ProfileViewModelFactory(username)),
@@ -204,6 +205,7 @@ fun ProfileScreen(
                 onNavigateToFollowing = { profile?.username?.let(onNavigateToFollowing) },
                 onLikeClick = { viewModel.toggleLike(it.id) },
                 onCommentClick = { onNavigateToPostDetail(it.id) },
+                onHashtagClick = onNavigateToHashtag,
             )
         }
     }
@@ -307,6 +309,7 @@ private fun ProfileContent(
     onNavigateToFollowing: () -> Unit,
     onLikeClick: (Post) -> Unit,
     onCommentClick: (Post) -> Unit,
+    onHashtagClick: (String) -> Unit,
 ) {
     var selectedTab by remember { mutableStateOf(ProfileTab.Posts) }
     val hidden = isPrivate && !isSelf && !isFollowing
@@ -390,7 +393,12 @@ private fun ProfileContent(
                 }
             } else {
                 items(currentPosts, key = { "${selectedTab.name}_${it.id}" }) { post ->
-                    PostCard(post = post, onLikeClick = onLikeClick, onCommentClick = onCommentClick)
+                    PostCard(
+                        post = post,
+                        onLikeClick = onLikeClick,
+                        onCommentClick = onCommentClick,
+                        onHashtagClick = onHashtagClick,
+                    )
                 }
             }
         }

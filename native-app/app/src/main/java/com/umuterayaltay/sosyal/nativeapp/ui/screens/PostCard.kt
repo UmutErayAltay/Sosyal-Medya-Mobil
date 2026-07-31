@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.ClickableText
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material.icons.filled.Favorite
@@ -18,10 +19,15 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.umuterayaltay.sosyal.nativeapp.repository.Post
@@ -36,9 +42,44 @@ import com.umuterayaltay.sosyal.nativeapp.repository.Post
  * Faz 4: [onLikeClick]/[onCommentClick] ile artık gerçek aksiyona bağlı —
  * kalp ikonu [Post.likedByMe] true iken dolu/kırmızı (colorScheme.error),
  * değilse mevcut colorScheme.secondary rengiyle gösterilir.
+ *
+ * Hashtag+gündem (Faz 4 sonrası eksik giderme SONUNCUSU): içerikteki #etiket'ler
+ * [onHashtagClick] ile tıklanabilir — app/hashtags.py HASHTAG_RE'nin (`#(\w+)`,
+ * Unicode farkında) AYNI davranışı burada `\p{L}`/`\p{N}` Unicode kategori
+ * kaçışlarıyla kopyalanır (Kotlin/Java `\w` VARSAYILAN olarak Unicode farkında
+ * DEĞİL — düz `\w` kullansaydık ç/ğ/ı/ö/ş/ü içeren etiketler yanlış
+ * ayrıştırılırdı; `\p{L}`/`\p{N}` ise HER ZAMAN Unicode farkında, ekstra bayrak
+ * gerekmez).
  */
+private val HASHTAG_REGEX = Regex("#([\\p{L}\\p{N}_]+)")
+
+private fun buildContentAnnotatedString(content: String, hashtagColor: androidx.compose.ui.graphics.Color): AnnotatedString =
+    buildAnnotatedString {
+        var lastEnd = 0
+        for (match in HASHTAG_REGEX.findAll(content)) {
+            append(content.substring(lastEnd, match.range.first))
+            val start = length
+            withStyle(SpanStyle(color = hashtagColor)) {
+                append(match.value)
+            }
+            addStringAnnotation(
+                tag = "hashtag",
+                annotation = match.groupValues[1].lowercase(),
+                start = start,
+                end = length,
+            )
+            lastEnd = match.range.last + 1
+        }
+        append(content.substring(lastEnd))
+    }
+
 @Composable
-fun PostCard(post: Post, onLikeClick: (Post) -> Unit, onCommentClick: (Post) -> Unit) {
+fun PostCard(
+    post: Post,
+    onLikeClick: (Post) -> Unit,
+    onCommentClick: (Post) -> Unit,
+    onHashtagClick: (String) -> Unit = {},
+) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -70,10 +111,19 @@ fun PostCard(post: Post, onLikeClick: (Post) -> Unit, onCommentClick: (Post) -> 
             }
 
             if (!post.content.isNullOrBlank()) {
-                Text(
-                    text = post.content,
-                    style = MaterialTheme.typography.bodyLarge,
+                val hashtagColor = MaterialTheme.colorScheme.primary
+                val contentColor = MaterialTheme.colorScheme.onSurface
+                val annotatedContent = remember(post.content, hashtagColor) {
+                    buildContentAnnotatedString(post.content, hashtagColor)
+                }
+                ClickableText(
+                    text = annotatedContent,
+                    style = MaterialTheme.typography.bodyLarge.copy(color = contentColor),
                     modifier = Modifier.padding(top = 10.dp),
+                    onClick = { offset ->
+                        annotatedContent.getStringAnnotations(tag = "hashtag", start = offset, end = offset)
+                            .firstOrNull()?.let { onHashtagClick(it.item) }
+                    },
                 )
             }
 

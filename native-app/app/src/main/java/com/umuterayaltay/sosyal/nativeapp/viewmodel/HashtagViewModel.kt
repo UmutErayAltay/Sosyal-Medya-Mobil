@@ -1,0 +1,114 @@
+package com.umuterayaltay.sosyal.nativeapp.viewmodel
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewModelScope
+import com.umuterayaltay.sosyal.nativeapp.ServiceLocator
+import com.umuterayaltay.sosyal.nativeapp.repository.HashtagPostsResult
+import com.umuterayaltay.sosyal.nativeapp.repository.Post
+import com.umuterayaltay.sosyal.nativeapp.repository.ToggleHashtagFollowResult
+import com.umuterayaltay.sosyal.nativeapp.repository.ToggleLikeResult
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+
+sealed class HashtagEvent {
+    data object SessionExpired : HashtagEvent()
+}
+
+/**
+ * Hashtag detay ekranı için ViewModel — DiscoverViewModel'in arama-sonucu
+ * postlarındaki AYNI toggleLike deseni (interactionsRepository üzerinden).
+ * `tag` constructor parametresi (ProfileViewModel'in username alışıyla AYNI —
+ * [HashtagViewModelFactory] gerekir, Compose'un varsayılan parametresiz
+ * fabrikası yetmez).
+ */
+class HashtagViewModel(private val tag: String) : ViewModel() {
+
+    private val hashtagRepository = ServiceLocator.hashtagRepository
+    private val interactionsRepository = ServiceLocator.interactionsRepository
+    private val tokenStore = ServiceLocator.tokenStore
+
+    private val _posts = MutableStateFlow<List<Post>>(emptyList())
+    val posts: StateFlow<List<Post>> = _posts.asStateFlow()
+
+    private val _isFollowing = MutableStateFlow(false)
+    val isFollowing: StateFlow<Boolean> = _isFollowing.asStateFlow()
+
+    private val _loading = MutableStateFlow(true)
+    val loading: StateFlow<Boolean> = _loading.asStateFlow()
+
+    private val _error = MutableStateFlow<String?>(null)
+    val error: StateFlow<String?> = _error.asStateFlow()
+
+    private val _events = MutableSharedFlow<HashtagEvent>()
+    val events: SharedFlow<HashtagEvent> = _events
+
+    init {
+        load()
+    }
+
+    fun load() {
+        viewModelScope.launch {
+            _loading.value = true
+            _error.value = null
+            when (val result = hashtagRepository.getHashtagPosts(tag)) {
+                is HashtagPostsResult.Success -> {
+                    _posts.value = result.posts
+                    _isFollowing.value = result.isFollowing
+                }
+                is HashtagPostsResult.Error -> handleError(result.code)
+            }
+            _loading.value = false
+        }
+    }
+
+    fun toggleFollow() {
+        viewModelScope.launch {
+            when (val result = hashtagRepository.toggleFollow(tag)) {
+                is ToggleHashtagFollowResult.Success -> _isFollowing.value = result.following
+                is ToggleHashtagFollowResult.Error -> handleError(result.code, silent = true)
+            }
+        }
+    }
+
+    /** DiscoverViewModel.toggleLike() ile AYNI gerekçe: kalp ikonuna tıklanınca çağrılır. */
+    fun toggleLike(postId: String) {
+        viewModelScope.launch {
+            when (val result = interactionsRepository.toggleLike(postId)) {
+                is ToggleLikeResult.Success -> {
+                    _posts.value = _posts.value.map { post ->
+                        if (post.id == postId) post.copy(likeCount = result.count, likedByMe = result.liked) else post
+                    }
+                }
+                is ToggleLikeResult.Error -> handleError(result.code, silent = true)
+            }
+        }
+    }
+
+    private suspend fun handleError(code: String?, silent: Boolean = false) {
+        if (code == "unauthorized") {
+            tokenStore.clearToken()
+            _events.emit(HashtagEvent.SessionExpired)
+            return
+        }
+        if (silent) return
+        _error.value = when (code) {
+            "network_error" -> "Bağlantı hatası — internet bağlantınızı kontrol edin"
+            else -> "Yüklenemedi, lütfen tekrar deneyin"
+        }
+    }
+}
+
+/** HashtagViewModel constructor'ı tag parametresi aldığı için Compose'un
+ * varsayılan (parametresiz) factory'si yetmez — ProfileViewModelFactory ile
+ * AYNI desen. */
+class HashtagViewModelFactory(private val tag: String) : ViewModelProvider.Factory {
+    @Suppress("UNCHECKED_CAST")
+    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+        return HashtagViewModel(tag) as T
+    }
+}

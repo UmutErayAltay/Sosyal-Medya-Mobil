@@ -728,11 +728,11 @@ data class TwoFactorDisableRequest(
 // post_id -> like/comment/reply/comment_like/comment_reaction/hashtag_post/
 // repost/mention(post'a aitse); username -> SADECE follow/follow_accept/
 // story_reaction (profile'a gidilecek türler); conversation_id -> message/
-// mention(post'a ait değilse); hashtag -> hashtag_post (etiket adı, native'de
-// hashtag sayfası YOK, bu tip BİLİNÇLİ olarak tıklanamaz bırakıldı - post_id
-// dolu olsa bile, bkz. NotificationsScreen.kt resolveTarget()); follow_request
-// tipinde yukarıdakilerin HİÇBİRİ dolu değil, tıklanınca native'in zaten var
-// olan "followRequests" route'una gidilir.
+// mention(post'a ait değilse); hashtag -> hashtag_post (etiket adı — hashtag
+// sayfası eklendiğinden beri bu tip "hashtag/{tag}" route'una gider, bkz.
+// NotificationsScreen.kt resolveNotificationTarget()); follow_request tipinde
+// yukarıdakilerin HİÇBİRİ dolu değil, tıklanınca native'in zaten var olan
+// "followRequests" route'una gidilir.
 data class NotificationDto(
     val type: String,
     @SerializedName("actor_summary") val actorSummary: String? = null,
@@ -758,5 +758,28 @@ data class NotificationsResponse(
  * şekil tutarlılığı için burada da tutuldu. */
 data class UnreadCountResponse(
     val count: Int = 0,
+    val error: String? = null,
+)
+
+// ---- Hashtag detay + gündem (Faz 4 sonrası eksik giderme SONUNCUSU, native
+// Android) — app/api_v1.py api_hashtag_posts()/api_toggle_hashtag_follow()/
+// api_trending() ile birebir eşleşir. Postlar PostDto ile AYNI şekil (feed/
+// discover sözleşmesi), ayrı bir model YOK. ----
+
+data class HashtagPostsResponse(
+    val posts: List<PostDto>? = null,
+    @SerializedName("is_following") val isFollowing: Boolean = false,
+    val error: String? = null,
+)
+
+data class ToggleHashtagFollowResponse(
+    val following: Boolean = false,
+    val error: String? = null,
+)
+
+/** GET /trending — {tag, count} şekli HashtagSearchDto (arama sonuçlarındaki)
+ * ile AYNI, ayrı bir DTO İCAT EDİLMEDİ. */
+data class TrendingResponse(
+    val tags: List<HashtagSearchDto>? = null,
     val error: String? = null,
 )

@@ -17,6 +17,7 @@ import com.umuterayaltay.sosyal.nativeapp.ui.screens.FollowListScreen
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.FollowRequestsScreen
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.GroupCreateScreen
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.GroupManageScreen
+import com.umuterayaltay.sosyal.nativeapp.ui.screens.HashtagScreen
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.InsightsScreen
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.LoginScreen
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.MainScaffold
@@ -27,6 +28,7 @@ import com.umuterayaltay.sosyal.nativeapp.ui.screens.PostDetailScreen
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.ProfileScreen
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.RegisterScreen
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.SettingsScreen
+import com.umuterayaltay.sosyal.nativeapp.ui.screens.TrendingScreen
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.TwoFactorScreen
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.FollowListKind
 
@@ -113,12 +115,18 @@ private const val ROUTE_MAIN = "main"
  * Bildirimler ekranı (native Android liste görüntüleme - backend zaten
  * commit 55833b2'de tamamlandı): "notifications" - "followRequests"/"insights"
  * ile AYNI basit PUSH deseniyle FeedScreen'in TopAppBar'ındaki zil ikonundan
- * erişilir. NotificationsScreen'in 4 navigasyon callback'i burada gerçek
+ * erişilir. NotificationsScreen'in 5 navigasyon callback'i burada gerçek
  * route'lara bağlanır: post_id -> "postDetail/{id}", username -> "profile/
- * {username}", conversation_id -> "conversation/{id}", type=="follow_request"
- * -> ZATEN VAR olan "followRequests". hashtag_post BİLİNÇLİ olarak tıklanamaz
- * bırakıldı (native'de hashtag sayfası yok) - bkz. NotificationsScreen.kt
- * resolveNotificationTarget().
+ * {username}", conversation_id -> "conversation/{id}", hashtag -> "hashtag/
+ * {tag}", type=="follow_request" -> ZATEN VAR olan "followRequests".
+ *
+ * Hashtag detay + gündem (Faz 4 sonrası eksik giderme SONUNCUSU, native
+ * Android): "hashtag/{tag}" - Feed/Discover/Profil/PostDetail'deki PostCard'ın
+ * içeriğindeki #etiket'lere, DiscoverScreen'in hashtag arama sonuçlarına,
+ * NotificationsScreen'in hashtag_post satırlarına ve TrendingScreen'in etiket
+ * satırlarına tıklanınca ROUTE_MAIN üstüne PUSH edilir (postDetail/{postId}
+ * ile AYNI basit desen). "trending" - FeedScreen'in TopAppBar'ındaki yeni "#"
+ * ikonundan erişilir, bir etikete tıklanınca "hashtag/{tag}"e gider.
  */
 @Composable
 fun AppNavHost() {
@@ -170,6 +178,7 @@ fun AppNavHost() {
                 onNavigateToFollowRequests = { navController.navigate("followRequests") },
                 onNavigateToPostDetail = { postId -> navController.navigate("postDetail/$postId") },
                 onNavigateToSettings = { navController.navigate("settings") },
+                onNavigateToHashtag = { tag -> navController.navigate("hashtag/$tag") },
                 onNavigateBack = { navController.navigateUp() },
                 onSessionExpired = {
                     navController.navigate(ROUTE_LOGIN) {
@@ -239,6 +248,7 @@ fun AppNavHost() {
                 onNavigateToProfile = { username -> navController.navigate("profile/$username") },
                 onNavigateToConversation = { conversationId -> navController.navigate("conversation/$conversationId") },
                 onNavigateToFollowRequests = { navController.navigate("followRequests") },
+                onNavigateToHashtag = { tag -> navController.navigate("hashtag/$tag") },
                 onSessionExpired = {
                     navController.navigate(ROUTE_LOGIN) {
                         popUpTo(ROUTE_MAIN) { inclusive = true }
@@ -328,6 +338,7 @@ fun AppNavHost() {
             PostDetailScreen(
                 postId = postId,
                 onNavigateBack = { navController.navigateUp() },
+                onNavigateToHashtag = { tag -> navController.navigate("hashtag/$tag") },
                 onSessionExpired = {
                     navController.navigate(ROUTE_LOGIN) {
                         popUpTo(ROUTE_MAIN) { inclusive = true }
@@ -434,6 +445,33 @@ fun AppNavHost() {
         composable("activeSessions") {
             ActiveSessionsScreen(
                 onNavigateBack = { navController.navigateUp() },
+                onSessionExpired = {
+                    navController.navigate(ROUTE_LOGIN) {
+                        popUpTo(ROUTE_MAIN) { inclusive = true }
+                    }
+                },
+            )
+        }
+        composable(
+            route = "hashtag/{tag}",
+            arguments = listOf(navArgument("tag") { type = NavType.StringType }),
+        ) { backStackEntry ->
+            val tag = backStackEntry.arguments?.getString("tag") ?: return@composable
+            HashtagScreen(
+                tag = tag,
+                onNavigateBack = { navController.navigateUp() },
+                onNavigateToPostDetail = { postId -> navController.navigate("postDetail/$postId") },
+                onSessionExpired = {
+                    navController.navigate(ROUTE_LOGIN) {
+                        popUpTo(ROUTE_MAIN) { inclusive = true }
+                    }
+                },
+            )
+        }
+        composable("trending") {
+            TrendingScreen(
+                onNavigateBack = { navController.navigateUp() },
+                onNavigateToHashtag = { tag -> navController.navigate("hashtag/$tag") },
                 onSessionExpired = {
                     navController.navigate(ROUTE_LOGIN) {
                         popUpTo(ROUTE_MAIN) { inclusive = true }

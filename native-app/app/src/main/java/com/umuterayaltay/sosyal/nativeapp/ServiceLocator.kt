@@ -6,6 +6,7 @@ import com.umuterayaltay.sosyal.nativeapp.data.local.AppDatabase
 import com.umuterayaltay.sosyal.nativeapp.network.AuthApi
 import com.umuterayaltay.sosyal.nativeapp.network.DiscoverApi
 import com.umuterayaltay.sosyal.nativeapp.network.FeedApi
+import com.umuterayaltay.sosyal.nativeapp.network.HashtagApi
 import com.umuterayaltay.sosyal.nativeapp.network.InteractionsApi
 import com.umuterayaltay.sosyal.nativeapp.network.MessagingApi
 import com.umuterayaltay.sosyal.nativeapp.network.NotificationsApi
@@ -16,6 +17,7 @@ import com.umuterayaltay.sosyal.nativeapp.network.SettingsApi
 import com.umuterayaltay.sosyal.nativeapp.repository.AuthRepository
 import com.umuterayaltay.sosyal.nativeapp.repository.DiscoverRepository
 import com.umuterayaltay.sosyal.nativeapp.repository.FeedRepository
+import com.umuterayaltay.sosyal.nativeapp.repository.HashtagRepository
 import com.umuterayaltay.sosyal.nativeapp.repository.InteractionsRepository
 import com.umuterayaltay.sosyal.nativeapp.repository.MessagingRepository
 import com.umuterayaltay.sosyal.nativeapp.repository.NotificationsRepository
@@ -49,6 +51,8 @@ object ServiceLocator {
         private set
     lateinit var interactionsRepository: InteractionsRepository
         private set
+    lateinit var hashtagRepository: HashtagRepository
+        private set
     lateinit var settingsRepository: SettingsRepository
         private set
     lateinit var realtimeConnectionManager: RealtimeConnectionManager
@@ -71,6 +75,7 @@ object ServiceLocator {
         val notificationsApi = retrofit.create(NotificationsApi::class.java)
         val interactionsApi = retrofit.create(InteractionsApi::class.java)
         val settingsApi = retrofit.create(SettingsApi::class.java)
+        val hashtagApi = retrofit.create(HashtagApi::class.java)
         val database = AppDatabase.getInstance(appContext)
 
         authRepository = AuthRepository(authApi, tokenStore)
@@ -82,6 +87,7 @@ object ServiceLocator {
         notificationsRepository = NotificationsRepository(notificationsApi)
         interactionsRepository = InteractionsRepository(interactionsApi)
         settingsRepository = SettingsRepository(settingsApi)
+        hashtagRepository = HashtagRepository(hashtagApi)
         // authRepository'ye bağımlı — /realtime-token onun üzerinden çağrılıyor
         // (bkz. RealtimeConnectionManager sınıf yorumu).
         realtimeConnectionManager = RealtimeConnectionManager(authRepository)
