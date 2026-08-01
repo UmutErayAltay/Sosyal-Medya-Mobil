@@ -11,6 +11,8 @@ import com.umuterayaltay.sosyal.nativeapp.repository.ProfileResult
 import com.umuterayaltay.sosyal.nativeapp.repository.ToggleBlockResult
 import com.umuterayaltay.sosyal.nativeapp.repository.ToggleFollowResult
 import com.umuterayaltay.sosyal.nativeapp.repository.ToggleLikeResult
+import com.umuterayaltay.sosyal.nativeapp.repository.VotePollResult
+import com.umuterayaltay.sosyal.nativeapp.repository.applyVote
 import com.umuterayaltay.sosyal.nativeapp.repository.toDomain
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -35,6 +37,7 @@ class ProfileViewModel(private val requestedUsername: String?) : ViewModel() {
     private val profileRepository = ServiceLocator.profileRepository
     private val authRepository = ServiceLocator.authRepository
     private val interactionsRepository = ServiceLocator.interactionsRepository
+    private val pollsRepository = ServiceLocator.pollsRepository
     private val tokenStore = ServiceLocator.tokenStore
 
     private var resolvedUsername: String? = requestedUsername
@@ -213,6 +216,31 @@ class ProfileViewModel(private val requestedUsername: String?) : ViewModel() {
                     _archivedPosts.value = apply(_archivedPosts.value)
                 }
                 is ToggleLikeResult.Error -> {
+                    if (result.code == "unauthorized") {
+                        tokenStore.clearToken()
+                        _events.emit(ProfileEvent.SessionExpired)
+                    }
+                }
+            }
+        }
+    }
+
+    /** Anket seçeneğine tıklanınca — toggleLike() ile AYNI gerekçeyle
+     * posts/likedPosts/archivedPosts'ın HEPSİ güncellenir (aynı post birden
+     * fazla sekmede görünebilir). Sunucudan dönen GÜNCEL durum yazılır,
+     * optimistic tahmin YAPILMAZ (DiscoverViewModel.votePoll() ile AYNI desen). */
+    fun votePoll(postId: String, optionId: String) {
+        val pollId = (_posts.value + _likedPosts.value + _archivedPosts.value)
+            .firstOrNull { it.id == postId }?.poll?.id ?: return
+        viewModelScope.launch {
+            when (val result = pollsRepository.vote(pollId, optionId)) {
+                is VotePollResult.Success -> {
+                    fun apply(list: List<Post>): List<Post> = list.map { it.applyVote(postId, result) }
+                    _posts.value = apply(_posts.value)
+                    _likedPosts.value = apply(_likedPosts.value)
+                    _archivedPosts.value = apply(_archivedPosts.value)
+                }
+                is VotePollResult.Error -> {
                     if (result.code == "unauthorized") {
                         tokenStore.clearToken()
                         _events.emit(ProfileEvent.SessionExpired)

@@ -8,6 +8,8 @@ import com.umuterayaltay.sosyal.nativeapp.repository.HashtagPostsResult
 import com.umuterayaltay.sosyal.nativeapp.repository.Post
 import com.umuterayaltay.sosyal.nativeapp.repository.ToggleHashtagFollowResult
 import com.umuterayaltay.sosyal.nativeapp.repository.ToggleLikeResult
+import com.umuterayaltay.sosyal.nativeapp.repository.VotePollResult
+import com.umuterayaltay.sosyal.nativeapp.repository.applyVote
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -30,6 +32,7 @@ class HashtagViewModel(private val tag: String) : ViewModel() {
 
     private val hashtagRepository = ServiceLocator.hashtagRepository
     private val interactionsRepository = ServiceLocator.interactionsRepository
+    private val pollsRepository = ServiceLocator.pollsRepository
     private val tokenStore = ServiceLocator.tokenStore
 
     private val _posts = MutableStateFlow<List<Post>>(emptyList())
@@ -85,6 +88,20 @@ class HashtagViewModel(private val tag: String) : ViewModel() {
                     }
                 }
                 is ToggleLikeResult.Error -> handleError(result.code, silent = true)
+            }
+        }
+    }
+
+    /** DiscoverViewModel.votePoll() ile AYNI desen: sunucudan dönen GÜNCEL
+     * anket durumu doğrudan ilgili posta yazılır, optimistic tahmin YAPILMAZ. */
+    fun votePoll(postId: String, optionId: String) {
+        val pollId = _posts.value.firstOrNull { it.id == postId }?.poll?.id ?: return
+        viewModelScope.launch {
+            when (val result = pollsRepository.vote(pollId, optionId)) {
+                is VotePollResult.Success -> {
+                    _posts.value = _posts.value.map { it.applyVote(postId, result) }
+                }
+                is VotePollResult.Error -> handleError(result.code, silent = true)
             }
         }
     }

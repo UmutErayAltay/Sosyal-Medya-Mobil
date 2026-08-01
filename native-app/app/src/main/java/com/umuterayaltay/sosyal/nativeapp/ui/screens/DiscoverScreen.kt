@@ -204,6 +204,7 @@ fun DiscoverScreen(
                                         onLikeClick = { viewModel.toggleLike(it.id) },
                                         onCommentClick = { onNavigateToPostDetail(it.id) },
                                         onHashtagClick = onNavigateToHashtag,
+                                        onPollVote = { postId, optionId -> viewModel.votePoll(postId, optionId) },
                                     )
                                 }
                             }
@@ -266,6 +267,7 @@ fun DiscoverScreen(
                                 onLikeClick = { viewModel.toggleLike(it.id) },
                                 onCommentClick = { onNavigateToPostDetail(it.id) },
                                 onHashtagClick = onNavigateToHashtag,
+                                onPollVote = { postId, optionId -> viewModel.votePoll(postId, optionId) },
                             )
                         }
                         item {

@@ -85,4 +85,52 @@ interface MessagingApi {
 
     @POST("messages/group/{id}/leave")
     suspend fun leaveGroup(@Path("id") id: String): Response<SimpleOkResponse>
+
+    // ---- Mesaj gelişmiş işlemleri (Faz 5 Dalga 1B) — app/api_v1/messaging.py
+    // "Mesaj gelişmiş işlemleri" bölümü ile birebir eşleşir (bkz. ApiModels.kt
+    // yorumları). Sohbeti sessize alma da AYNI dalgada (backend'de aynı dosya/
+    // bölümde) olduğu için burada, ayrı bir dosya İCAT EDİLMEDİ.
+
+    @POST("messages/{id}/delete")
+    suspend fun deleteMessage(@Path("id") messageId: String): Response<SimpleOkResponse>
+
+    @POST("messages/{id}/edit")
+    suspend fun editMessage(
+        @Path("id") messageId: String,
+        @Body request: EditMessageRequest,
+    ): Response<EditMessageResponse>
+
+    @POST("messages/{id}/react")
+    suspend fun reactToMessage(
+        @Path("id") messageId: String,
+        @Body request: ReactRequest,
+    ): Response<ReactResponse>
+
+    @POST("messages/{id}/pin")
+    suspend fun pinMessage(@Path("id") messageId: String): Response<PinResponse>
+
+    @GET("messages/forward-targets")
+    suspend fun getForwardTargets(): Response<ForwardTargetsResponse>
+
+    @POST("messages/{id}/forward")
+    suspend fun forwardMessage(
+        @Path("id") messageId: String,
+        @Body request: ForwardMessageRequest,
+    ): Response<ForwardMessageResponse>
+
+    @POST("messages/conversations/{id}/mute")
+    suspend fun muteConversation(@Path("id") conversationId: String): Response<MuteConversationResponse>
+
+    @GET("messages/conversations/{id}/search")
+    suspend fun searchInConversation(
+        @Path("id") conversationId: String,
+        @Query("q") query: String,
+        @Query("offset") offset: Int,
+    ): Response<MessageSearchResponse>
+
+    @GET("messages/search")
+    suspend fun searchAllMessages(
+        @Query("q") query: String,
+        @Query("offset") offset: Int,
+    ): Response<MessageSearchResponse>
 }

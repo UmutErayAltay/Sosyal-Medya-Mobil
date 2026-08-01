@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "538093631693",
+    "project_id": "gen-lang-client-07070261-4a9fa",
+    "storage_bucket": "gen-lang-client-07070261-4a9fa.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:538093631693:android:0965e7e50d87db219e1184",
+        "android_client_info": {
+          "package_name": "com.umuterayaltay.sosyal.native"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAgjm9nJmwPyog7YRpBCf57FB1fJP3EprM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -25,6 +25,10 @@ import com.umuterayaltay.sosyal.nativeapp.repository.ProfileRepository
 import com.umuterayaltay.sosyal.nativeapp.repository.RealtimeConnectionManager
 import com.umuterayaltay.sosyal.nativeapp.repository.ReelsRepository
 import com.umuterayaltay.sosyal.nativeapp.repository.SettingsRepository
+import com.umuterayaltay.sosyal.nativeapp.network.PollsApi
+import com.umuterayaltay.sosyal.nativeapp.repository.PollsRepository
+import com.umuterayaltay.sosyal.nativeapp.network.StickersApi
+import com.umuterayaltay.sosyal.nativeapp.repository.StickersRepository
 // FAZ5_IMPORTS_MARKER — her ajan kendi Api/Repository import'unu bu satırın
 // HEMEN ÜSTÜNE ekler (dalga başına ayrı ajan çakışmasın diye).
 
@@ -58,6 +62,10 @@ object ServiceLocator {
     lateinit var settingsRepository: SettingsRepository
         private set
     lateinit var realtimeConnectionManager: RealtimeConnectionManager
+        private set
+    lateinit var pollsRepository: PollsRepository
+        private set
+    lateinit var stickersRepository: StickersRepository
         private set
     // FAZ5_LATEINIT_MARKER — her ajan kendi `lateinit var xxxRepository`'sini
     // bu satırın HEMEN ÜSTÜNE ekler.
@@ -95,6 +103,12 @@ object ServiceLocator {
         // authRepository'ye bağımlı — /realtime-token onun üzerinden çağrılıyor
         // (bkz. RealtimeConnectionManager sınıf yorumu).
         realtimeConnectionManager = RealtimeConnectionManager(authRepository)
+
+        val pollsApi = retrofit.create(PollsApi::class.java)
+        pollsRepository = PollsRepository(pollsApi)
+
+        val stickersApi = retrofit.create(StickersApi::class.java)
+        stickersRepository = StickersRepository(stickersApi)
 
         // FAZ5_INIT_MARKER — her ajan kendi `val xxxApi = retrofit.create(...)`
         // + `xxxRepository = XxxRepository(xxxApi)` satırlarını bu satırın

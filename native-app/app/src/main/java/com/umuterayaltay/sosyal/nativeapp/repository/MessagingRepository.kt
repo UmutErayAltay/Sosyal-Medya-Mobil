@@ -3,9 +3,14 @@ package com.umuterayaltay.sosyal.nativeapp.repository
 import com.umuterayaltay.sosyal.nativeapp.network.AddGroupMembersRequest
 import com.umuterayaltay.sosyal.nativeapp.network.ConversationInfoDto
 import com.umuterayaltay.sosyal.nativeapp.network.CreateGroupRequest
+import com.umuterayaltay.sosyal.nativeapp.network.EditMessageRequest
+import com.umuterayaltay.sosyal.nativeapp.network.ForwardMessageRequest
+import com.umuterayaltay.sosyal.nativeapp.network.ForwardTargetDto
 import com.umuterayaltay.sosyal.nativeapp.network.GroupMemberDto
 import com.umuterayaltay.sosyal.nativeapp.network.MessageDto
+import com.umuterayaltay.sosyal.nativeapp.network.MessageSearchResultDto
 import com.umuterayaltay.sosyal.nativeapp.network.MessagingApi
+import com.umuterayaltay.sosyal.nativeapp.network.ReactRequest
 import com.umuterayaltay.sosyal.nativeapp.network.RenameGroupRequest
 import com.umuterayaltay.sosyal.nativeapp.network.RetrofitClient
 import com.umuterayaltay.sosyal.nativeapp.network.ConversationSummaryDto
@@ -86,6 +91,59 @@ sealed class ToggleAdminResult {
 sealed class LeaveGroupResult {
     data object Success : LeaveGroupResult()
     data class Error(val code: String?) : LeaveGroupResult()
+}
+
+// ---- Mesaj gelişmiş işlemleri (Faz 5 Dalga 1B) — her endpoint için AYRI, dar
+// bir sonuç tipi (yukarıdaki grup yönetimi sonuçlarıyla AYNI granülerlik
+// geleneği). Sessize alma (mute) da AYNI dalgada (backend'de aynı dosyada)
+// olduğu için burada.
+
+sealed class DeleteMessageResult {
+    data object Success : DeleteMessageResult()
+    data class Error(val code: String?) : DeleteMessageResult()
+}
+
+sealed class EditMessageResult {
+    data class Success(val content: String, val editedAt: String?) : EditMessageResult()
+    data class Error(val code: String?) : EditMessageResult()
+}
+
+/** [reaction] null ise tepki KALDIRILDI (3'lü toggle'ın "sil" dalı) — bkz.
+ * ApiModels.kt ReactResponse yorumu. */
+sealed class ReactToMessageResult {
+    data class Success(val reaction: String?) : ReactToMessageResult()
+    data class Error(val code: String?) : ReactToMessageResult()
+}
+
+sealed class PinMessageResult {
+    data class Success(val pinned: Boolean) : PinMessageResult()
+    data class Error(val code: String?) : PinMessageResult()
+}
+
+sealed class MuteConversationResult {
+    data class Success(val muted: Boolean) : MuteConversationResult()
+    data class Error(val code: String?) : MuteConversationResult()
+}
+
+sealed class ForwardTargetsResult {
+    data class Success(val targets: List<ForwardTargetDto>) : ForwardTargetsResult()
+    data class Error(val code: String?) : ForwardTargetsResult()
+}
+
+sealed class ForwardMessageResult {
+    data class Success(val conversationId: String) : ForwardMessageResult()
+    data class Error(val code: String?) : ForwardMessageResult()
+}
+
+/** Sohbet-içi VE global arama AYNI sonuç tipini paylaşır — ikisi de AYNI
+ * şekli (results/hasNext/nextOffset) döner, ayrı bir tip İCAT EDİLMEDİ. */
+sealed class MessageSearchResult {
+    data class Success(
+        val results: List<MessageSearchResultDto>,
+        val hasNext: Boolean,
+        val nextOffset: Int?,
+    ) : MessageSearchResult()
+    data class Error(val code: String?) : MessageSearchResult()
 }
 
 /**
@@ -326,6 +384,165 @@ class MessagingRepository(
             LeaveGroupResult.Error("network_error")
         } catch (e: Exception) {
             LeaveGroupResult.Error("unknown_error")
+        }
+    }
+
+    // ---- Mesaj gelişmiş işlemleri (Faz 5 Dalga 1B) ----
+
+    /** Backend HER ZAMAN {ok:true} döner (hiçbir satır eşleşmese bile — bkz.
+     * api_delete_message() docstring'i, "bu id'li mesaj var mı" sorusuna cevap
+     * sızdırmama amacı da var), bu yüzden pratikte Error yalnızca ağ/HTTP
+     * seviyesinde oluşur. */
+    suspend fun deleteMessage(messageId: String): DeleteMessageResult = withContext(Dispatchers.IO) {
+        try {
+            val response = messagingApi.deleteMessage(messageId)
+            val body = response.body()
+            if (response.isSuccessful && body?.ok == true) {
+                DeleteMessageResult.Success
+            } else {
+                DeleteMessageResult.Error(body?.error ?: RetrofitClient.parseErrorCode(response))
+            }
+        } catch (e: IOException) {
+            DeleteMessageResult.Error("network_error")
+        } catch (e: Exception) {
+            DeleteMessageResult.Error("unknown_error")
+        }
+    }
+
+    suspend fun editMessage(messageId: String, content: String): EditMessageResult = withContext(Dispatchers.IO) {
+        try {
+            val response = messagingApi.editMessage(messageId, EditMessageRequest(content = content))
+            val body = response.body()
+            if (response.isSuccessful && body?.ok == true && body.content != null) {
+                EditMessageResult.Success(body.content, body.editedAt)
+            } else {
+                EditMessageResult.Error(body?.error ?: RetrofitClient.parseErrorCode(response))
+            }
+        } catch (e: IOException) {
+            EditMessageResult.Error("network_error")
+        } catch (e: Exception) {
+            EditMessageResult.Error("unknown_error")
+        }
+    }
+
+    /** ok=true iken reaction null OLABİLİR (tepki kaldırıldı) — bu yüzden
+     * başarı kontrolü body.reaction'ın doluluğuna değil SADECE body.ok'a
+     * bakar (ForwardMessageResult/PinMessageResult'taki AYNI desen). */
+    suspend fun reactToMessage(messageId: String, reaction: String): ReactToMessageResult =
+        withContext(Dispatchers.IO) {
+            try {
+                val response = messagingApi.reactToMessage(messageId, ReactRequest(reaction = reaction))
+                val body = response.body()
+                if (response.isSuccessful && body?.ok == true) {
+                    ReactToMessageResult.Success(body.reaction)
+                } else {
+                    ReactToMessageResult.Error(body?.error ?: RetrofitClient.parseErrorCode(response))
+                }
+            } catch (e: IOException) {
+                ReactToMessageResult.Error("network_error")
+            } catch (e: Exception) {
+                ReactToMessageResult.Error("unknown_error")
+            }
+        }
+
+    suspend fun pinMessage(messageId: String): PinMessageResult = withContext(Dispatchers.IO) {
+        try {
+            val response = messagingApi.pinMessage(messageId)
+            val body = response.body()
+            if (response.isSuccessful && body?.ok == true) {
+                PinMessageResult.Success(body.pinned)
+            } else {
+                PinMessageResult.Error(body?.error ?: RetrofitClient.parseErrorCode(response))
+            }
+        } catch (e: IOException) {
+            PinMessageResult.Error("network_error")
+        } catch (e: Exception) {
+            PinMessageResult.Error("unknown_error")
+        }
+    }
+
+    suspend fun getForwardTargets(): ForwardTargetsResult = withContext(Dispatchers.IO) {
+        try {
+            val response = messagingApi.getForwardTargets()
+            val body = response.body()
+            if (response.isSuccessful && body != null && body.error == null) {
+                ForwardTargetsResult.Success(body.targets ?: emptyList())
+            } else {
+                ForwardTargetsResult.Error(body?.error ?: RetrofitClient.parseErrorCode(response))
+            }
+        } catch (e: IOException) {
+            ForwardTargetsResult.Error("network_error")
+        } catch (e: Exception) {
+            ForwardTargetsResult.Error("unknown_error")
+        }
+    }
+
+    suspend fun forwardMessage(messageId: String, targetConversationId: String): ForwardMessageResult =
+        withContext(Dispatchers.IO) {
+            try {
+                val response = messagingApi.forwardMessage(
+                    messageId,
+                    ForwardMessageRequest(targetConversationId = targetConversationId),
+                )
+                val body = response.body()
+                if (response.isSuccessful && body?.ok == true && body.conversationId != null) {
+                    ForwardMessageResult.Success(body.conversationId)
+                } else {
+                    ForwardMessageResult.Error(body?.error ?: RetrofitClient.parseErrorCode(response))
+                }
+            } catch (e: IOException) {
+                ForwardMessageResult.Error("network_error")
+            } catch (e: Exception) {
+                ForwardMessageResult.Error("unknown_error")
+            }
+        }
+
+    suspend fun muteConversation(conversationId: String): MuteConversationResult = withContext(Dispatchers.IO) {
+        try {
+            val response = messagingApi.muteConversation(conversationId)
+            val body = response.body()
+            if (response.isSuccessful && body?.ok == true) {
+                MuteConversationResult.Success(body.muted)
+            } else {
+                MuteConversationResult.Error(body?.error ?: RetrofitClient.parseErrorCode(response))
+            }
+        } catch (e: IOException) {
+            MuteConversationResult.Error("network_error")
+        } catch (e: Exception) {
+            MuteConversationResult.Error("unknown_error")
+        }
+    }
+
+    suspend fun searchInConversation(conversationId: String, query: String, offset: Int): MessageSearchResult =
+        withContext(Dispatchers.IO) {
+            try {
+                val response = messagingApi.searchInConversation(conversationId, query, offset)
+                val body = response.body()
+                if (response.isSuccessful && body != null && body.error == null) {
+                    MessageSearchResult.Success(body.results ?: emptyList(), body.hasNext, body.nextOffset)
+                } else {
+                    MessageSearchResult.Error(body?.error ?: RetrofitClient.parseErrorCode(response))
+                }
+            } catch (e: IOException) {
+                MessageSearchResult.Error("network_error")
+            } catch (e: Exception) {
+                MessageSearchResult.Error("unknown_error")
+            }
+        }
+
+    suspend fun searchAllMessages(query: String, offset: Int): MessageSearchResult = withContext(Dispatchers.IO) {
+        try {
+            val response = messagingApi.searchAllMessages(query, offset)
+            val body = response.body()
+            if (response.isSuccessful && body != null && body.error == null) {
+                MessageSearchResult.Success(body.results ?: emptyList(), body.hasNext, body.nextOffset)
+            } else {
+                MessageSearchResult.Error(body?.error ?: RetrofitClient.parseErrorCode(response))
+            }
+        } catch (e: IOException) {
+            MessageSearchResult.Error("network_error")
+        } catch (e: Exception) {
+            MessageSearchResult.Error("unknown_error")
         }
     }
 }

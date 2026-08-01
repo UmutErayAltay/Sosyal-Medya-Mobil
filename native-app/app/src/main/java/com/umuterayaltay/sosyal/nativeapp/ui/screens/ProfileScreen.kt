@@ -228,6 +228,7 @@ fun ProfileScreen(
                 onLikeClick = { viewModel.toggleLike(it.id) },
                 onCommentClick = { onNavigateToPostDetail(it.id) },
                 onHashtagClick = onNavigateToHashtag,
+                onPollVote = { postId, optionId -> viewModel.votePoll(postId, optionId) },
             )
         }
     }
@@ -350,6 +351,7 @@ private fun ProfileContent(
     onLikeClick: (Post) -> Unit,
     onCommentClick: (Post) -> Unit,
     onHashtagClick: (String) -> Unit,
+    onPollVote: (String, String) -> Unit,
 ) {
     var selectedTab by remember { mutableStateOf(ProfileTab.Posts) }
     val hidden = isPrivate && !isSelf && !isFollowing
@@ -460,6 +462,7 @@ private fun ProfileContent(
                         onLikeClick = onLikeClick,
                         onCommentClick = onCommentClick,
                         onHashtagClick = onHashtagClick,
+                        onPollVote = onPollVote,
                     )
                 }
             }

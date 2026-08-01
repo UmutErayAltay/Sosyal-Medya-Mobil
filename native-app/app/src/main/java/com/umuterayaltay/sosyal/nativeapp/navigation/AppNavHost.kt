@@ -31,6 +31,8 @@ import com.umuterayaltay.sosyal.nativeapp.ui.screens.SettingsScreen
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.TrendingScreen
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.TwoFactorScreen
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.FollowListKind
+import com.umuterayaltay.sosyal.nativeapp.ui.screens.ForgotPasswordScreen
+import com.umuterayaltay.sosyal.nativeapp.ui.screens.MessageSearchScreen
 // FAZ5_IMPORTS_MARKER — her ajan kendi ekran import'unu bu satırın HEMEN
 // ÜSTÜNE ekler (dalga başına ayrı ajan çakışmasın diye).
 
@@ -144,6 +146,7 @@ fun AppNavHost() {
                     }
                 },
                 onNavigateToRegister = { navController.navigate("register") },
+                onNavigateToForgotPassword = { navController.navigate("forgotPassword") },
             )
         }
         composable("register") {
@@ -267,6 +270,9 @@ fun AppNavHost() {
                 conversationId = conversationId,
                 onNavigateBack = { navController.navigateUp() },
                 onManageGroupClick = { navController.navigate("groupManage/$conversationId") },
+                // Faz 5 Dalga 1B: ConversationScreen'in taşma menüsündeki
+                // "Tüm sohbetlerde ara" öğesinden GLOBAL arama ekranına gider.
+                onNavigateToMessageSearch = { navController.navigate("messageSearch") },
                 onSessionExpired = {
                     navController.navigate(ROUTE_LOGIN) {
                         popUpTo(ROUTE_MAIN) { inclusive = true }
@@ -474,6 +480,26 @@ fun AppNavHost() {
             TrendingScreen(
                 onNavigateBack = { navController.navigateUp() },
                 onNavigateToHashtag = { tag -> navController.navigate("hashtag/$tag") },
+                onSessionExpired = {
+                    navController.navigate(ROUTE_LOGIN) {
+                        popUpTo(ROUTE_MAIN) { inclusive = true }
+                    }
+                },
+            )
+        }
+
+        composable("forgotPassword") {
+            ForgotPasswordScreen(
+                onNavigateBack = { navController.navigateUp() },
+            )
+        }
+
+        composable("messageSearch") {
+            MessageSearchScreen(
+                onNavigateBack = { navController.navigateUp() },
+                onNavigateToConversation = { conversationId ->
+                    navController.navigate("conversation/$conversationId")
+                },
                 onSessionExpired = {
                     navController.navigate(ROUTE_LOGIN) {
                         popUpTo(ROUTE_MAIN) { inclusive = true }

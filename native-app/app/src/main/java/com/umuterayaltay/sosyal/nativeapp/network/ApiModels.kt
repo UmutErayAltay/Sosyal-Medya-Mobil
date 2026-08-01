@@ -120,6 +120,9 @@ data class PostDto(
     @SerializedName("bookmarked_by_me") val bookmarkedByMe: Boolean = false,
     @SerializedName("muted_by_me") val mutedByMe: Boolean = false,
     @SerializedName("repost_of") val repostOf: RepostOfDto? = null,
+    // attach_polls() her post'a ekliyor (anketi olmayan postta null) — bu alan
+    // eklenene kadar Gson JSON'daki `poll`u SESSİZCE atıyordu (Faz 5, Dalga 1A).
+    val poll: PollDto? = null,
 )
 
 data class FeedResponse(
@@ -418,6 +421,12 @@ data class MessageDto(
     val reactions: List<MessageReactionDto>? = null,
     val sticker: Any? = null,
     @SerializedName("image_url") val imageUrl: String? = null,
+    // Faz 5 Dalga 1B: düzenle/sabitle/ilet — okuma yolunda backend değişikliği
+    // GEREKMEDİ (api_message_conversation_detail() zaten select("*") kullanıyor),
+    // burada alan eklemek yeterli (bkz. app/api_v1/messaging.py yorumu).
+    @SerializedName("edited_at") val editedAt: String? = null,
+    @SerializedName("pinned_at") val pinnedAt: String? = null,
+    @SerializedName("is_forwarded") val isForwarded: Boolean = false,
 )
 
 /** api_message_conversation_detail()'in "conversation" alanı — özet DTO'dan
@@ -781,9 +790,175 @@ data class HashtagPostsResponse(
 
 // ---- FAZ5: Anket oy verme (Dalga 1A) ----
 
+/** app/polls.py attach_polls()'un ürettiği options[] elemanı — `pct` backend'de
+ * ZATEN yuvarlanmış int (round(votes/total*100)), client yeniden HESAPLAMAZ. */
+data class PollOptionDto(
+    val id: String,
+    val text: String,
+    val votes: Int = 0,
+    val pct: Int = 0,
+)
+
+/** attach_polls()'un post'a eklediği `poll` alanı (anketi olmayan postta null).
+ * enrich_post_json() RPC yolu da BİREBİR aynı şekli üretir. */
+data class PollDto(
+    val id: String,
+    val options: List<PollOptionDto>? = null,
+    @SerializedName("total_votes") val totalVotes: Int = 0,
+    @SerializedName("my_vote") val myVote: String? = null,
+)
+
+/** POST /polls/{id}/vote yanıtı — `poll` sarmalayıcısı YOK, alanlar düz gelir
+ * (api_v1/polls.py `jsonify(options=..., total_votes=..., my_vote=...)`). */
+data class VotePollResponse(
+    val options: List<PollOptionDto>? = null,
+    @SerializedName("total_votes") val totalVotes: Int = 0,
+    @SerializedName("my_vote") val myVote: String? = null,
+    val error: String? = null,
+)
+
+/** POST /polls/{id}/vote gövdesi — web form-encoded, api_v1 JSON (tek sapma). */
+data class VotePollRequest(
+    @SerializedName("option_id") val optionId: String,
+)
+
 // ---- FAZ5: Mesaj gelişmiş işlemleri (Dalga 1B) ----
+// app/api_v1/messaging.py "Mesaj gelişmiş işlemleri (Faz 5 Dalga 1B)" bölümü
+// (delete/edit/react/pin/forward-targets/forward/mute/search) ile birebir
+// eşleşir — durum kodları/hata metinleri o dosyanın docstring'lerinde
+// belgelendi, burada TEKRARLANMADI. Konuşma sessize alma (mute) BİLİNÇLİ
+// olarak burada (ayrı bir "Dalga 2A" bölgesi değil) — backend'de AYNI dosya/
+// dalgada uygulandığı için native tarafta da birlikte taşındı.
+
+/** POST /messages/{id}/edit gövdesi. */
+data class EditMessageRequest(
+    val content: String,
+)
+
+/** POST /messages/{id}/edit yanıtı — ok=false ise error dolu (empty/too_long/
+ * not_found), ok=true ise content/editedAt her zaman dolu (editedAt SADECE
+ * migration uygulanmamışsa null kalabilir, bkz. backend docstring'i). */
+data class EditMessageResponse(
+    val ok: Boolean = false,
+    val content: String? = null,
+    @SerializedName("edited_at") val editedAt: String? = null,
+    val error: String? = null,
+)
+
+/** POST /messages/{id}/react gövdesi. */
+data class ReactRequest(
+    val reaction: String,
+)
+
+/** POST /messages/{id}/react yanıtı — `reaction` null ise tepki KALDIRILDI
+ * (aynı emoji tekrar gönderilince 3'lü toggle'ın "sil" dalı), dolu ise
+ * eklendi/değiştirildi demektir. Katılımcı olmayana/yoksa 403 DEĞİL 404
+ * döner (bkz. backend docstring'i — bilinçli enumeration koruması, native
+ * tarafta SADECE hata metnine çevrilir, "düzeltilmez"). */
+data class ReactResponse(
+    val ok: Boolean = false,
+    val reaction: String? = null,
+    val error: String? = null,
+)
+
+/** POST /messages/{id}/pin yanıtı — yetki GÖNDEREN değil konuşmanın HERHANGİ
+ * bir katılımcısı (bkz. backend docstring'i). */
+data class PinResponse(
+    val ok: Boolean = false,
+    val pinned: Boolean = false,
+    val error: String? = null,
+)
+
+/** POST /messages/conversations/{id}/mute yanıtı — SADECE çağıranın kendi
+ * katılımcı satırını değiştirir (başkasını sessize almak diye bir şey yok). */
+data class MuteConversationResponse(
+    val ok: Boolean = false,
+    val muted: Boolean = false,
+    val error: String? = null,
+)
+
+/** GET /messages/forward-targets satırı — name grup adı / karşı kullanıcı
+ * adı / "Bilinmeyen" (backend _build_convos() üzerinden türetilir). */
+data class ForwardTargetDto(
+    val id: String,
+    val name: String?,
+)
+
+data class ForwardTargetsResponse(
+    val targets: List<ForwardTargetDto>? = null,
+    val error: String? = null,
+)
+
+/** POST /messages/{id}/forward gövdesi. */
+data class ForwardMessageRequest(
+    @SerializedName("target_conversation_id") val targetConversationId: String,
+)
+
+/** POST /messages/{id}/forward yanıtı — SimpleOkResponse'tan FARKLI olarak
+ * conversation_id de döner (native, iletilen hedef sohbete gidebilsin diye) —
+ * bu yüzden ayrı bir DTO. */
+data class ForwardMessageResponse(
+    val ok: Boolean = false,
+    @SerializedName("conversation_id") val conversationId: String? = null,
+    val error: String? = null,
+)
+
+/** Sohbet-içi (GET /messages/conversations/{id}/search) VE global (GET
+ * /messages/search) arama satırı — AYNI şekil, TEK FARK: conversationId
+ * SADECE global aramada dolu gelir (backend _serialize_search_row()'un
+ * with_conversation bayrağı), sohbet-içi aramada hiç yoktur -> nullable. */
+data class MessageSearchResultDto(
+    val id: String,
+    @SerializedName("conversation_id") val conversationId: String? = null,
+    val content: String?,
+    @SerializedName("created_at") val createdAt: String?,
+    val mine: Boolean = false,
+    val sender: String?,
+)
+
+data class MessageSearchResponse(
+    val results: List<MessageSearchResultDto>? = null,
+    @SerializedName("has_next") val hasNext: Boolean = false,
+    @SerializedName("next_offset") val nextOffset: Int? = null,
+    val error: String? = null,
+)
 
 // ---- FAZ5: Şifre sıfırlama + Sticker backend/API (Dalga 1C) ----
+
+/** POST /auth/forgot-password gövdesi — yanıt HER ZAMAN {"ok":true}
+ * (kullanıcı-enumeration koruması, bkz. api_v1/auth.py api_forgot_password),
+ * bu yüzden AYRI bir yanıt DTO'su YOK: SimpleOkResponse reuse edilir.
+ * Kullanıcı sıfırlamayı e-postadaki linkle MEVCUT WEB SAYFASINDA (mobil
+ * tarayıcı) tamamlar — uygulama-içi sıfırlama (deep link) kapsam DIŞI. */
+data class ForgotPasswordRequest(
+    val email: String,
+)
+
+/** GET /stickers/mine elemanı. `mine_created` SUNUCUDA hesaplanır
+ * (creator_id == me) — client creator_id'yi hiç görmez. GET /stickers/{id}
+ * de AYNI tipe parse edilir, orada `mine_created` gelmez (false kalır —
+ * o uç nokta sadece {id, image_url} döner). */
+data class StickerDto(
+    val id: String,
+    @SerializedName("image_url") val imageUrl: String,
+    @SerializedName("mine_created") val mineCreated: Boolean = false,
+)
+
+data class StickersResponse(
+    val stickers: List<StickerDto>? = null,
+    val error: String? = null,
+)
+
+/** POST /stickers/new yanıtı (201) — {"id","image_url"}; `mine_created` YOK
+ * (oluşturan zaten sensin), bu yüzden StickerDto'ya parse EDİLMEZ. */
+data class CreateStickerResponse(
+    val id: String? = null,
+    @SerializedName("image_url") val imageUrl: String? = null,
+    val error: String? = null,
+)
+
+// NOT: save/remove {"ok":true}/{"error":"..."} şekli döner — SimpleOkResponse
+// (yukarıda tanımlı) reuse edilir, ayrı bir yanıt DTO'su İCAT EDİLMEDİ.
 
 // ---- FAZ5: Sessize alma (Dalga 2A) ----
 

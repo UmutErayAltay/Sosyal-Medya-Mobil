@@ -2,6 +2,7 @@ package com.umuterayaltay.sosyal.nativeapp.repository
 
 import com.umuterayaltay.sosyal.nativeapp.data.TokenStore
 import com.umuterayaltay.sosyal.nativeapp.network.AuthApi
+import com.umuterayaltay.sosyal.nativeapp.network.ForgotPasswordRequest
 import com.umuterayaltay.sosyal.nativeapp.network.GoogleLoginRequest
 import com.umuterayaltay.sosyal.nativeapp.network.LoginRequest
 import com.umuterayaltay.sosyal.nativeapp.network.LoginResponse
@@ -30,6 +31,15 @@ sealed class RealtimeTokenResult {
         val supabasePublishableKey: String,
     ) : RealtimeTokenResult()
     data class Error(val code: String?) : RealtimeTokenResult()
+}
+
+/** POST /auth/forgot-password sonucu. Backend HER DURUMDA {"ok":true} döner
+ * (kullanıcı-enumeration koruması) — bu yüzden Success burada SADECE "istek
+ * ağ/sunucu seviyesinde başarıyla ulaştı" anlamına gelir, "e-posta var mıydı"
+ * bilgisini TAŞIMAZ (bkz. ForgotPasswordRequest yorumu, ApiModels.kt). */
+sealed class ForgotPasswordResult {
+    data object Success : ForgotPasswordResult()
+    data class Error(val code: String?) : ForgotPasswordResult()
 }
 
 class AuthRepository(
@@ -151,6 +161,27 @@ class AuthRepository(
             RealtimeTokenResult.Error("network_error")
         } catch (e: Exception) {
             RealtimeTokenResult.Error("unknown_error")
+        }
+    }
+
+    /** [email] enumeration koruması backend'de zaten var — bu yüzden burada
+     * "e-posta bulunamadı" gibi bir dal YOK, sadece ağ/sunucu hatası ayrımı var
+     * (rate_limited/network_error/unknown_error). Backend başarılı yanıtta
+     * HER ZAMAN {"ok":true} döndüğü için ok==true DIŞINDA bir gövde gelirse de
+     * güvenli tarafta kalınıp Error("unknown_error") döndürülür. */
+    suspend fun forgotPassword(email: String): ForgotPasswordResult = withContext(Dispatchers.IO) {
+        try {
+            val response = authApi.forgotPassword(ForgotPasswordRequest(email = email))
+            val body = response.body()
+            if (response.isSuccessful && body?.ok == true) {
+                ForgotPasswordResult.Success
+            } else {
+                ForgotPasswordResult.Error(body?.error ?: RetrofitClient.parseErrorCode(response))
+            }
+        } catch (e: IOException) {
+            ForgotPasswordResult.Error("network_error")
+        } catch (e: Exception) {
+            ForgotPasswordResult.Error("unknown_error")
         }
     }
 

@@ -12,6 +12,8 @@ import com.umuterayaltay.sosyal.nativeapp.repository.Post
 import com.umuterayaltay.sosyal.nativeapp.repository.SearchActionResult
 import com.umuterayaltay.sosyal.nativeapp.repository.SearchResult
 import com.umuterayaltay.sosyal.nativeapp.repository.ToggleLikeResult
+import com.umuterayaltay.sosyal.nativeapp.repository.VotePollResult
+import com.umuterayaltay.sosyal.nativeapp.repository.applyVote
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -48,6 +50,7 @@ class DiscoverViewModel : ViewModel() {
 
     private val discoverRepository = ServiceLocator.discoverRepository
     private val interactionsRepository = ServiceLocator.interactionsRepository
+    private val pollsRepository = ServiceLocator.pollsRepository
     private val tokenStore = ServiceLocator.tokenStore
 
     // ---- Keşfet akışı ----
@@ -271,6 +274,28 @@ class DiscoverViewModel : ViewModel() {
                     }
                 }
                 is ToggleLikeResult.Error -> {
+                    if (result.code == "unauthorized") {
+                        tokenStore.clearToken()
+                        _events.emit(DiscoverEvent.SessionExpired)
+                    }
+                }
+            }
+        }
+    }
+
+    /** Anket seçeneğine tıklanınca — toggleLike ile AYNI desen: sunucudan dönen
+     * GÜNCEL durum hem keşfet akışına hem arama sonuçlarına yazılır. Optimistic
+     * güncelleme YOK (3-yönlü toggle'da yüzdeleri client'ta hesaplamak hatalı olur). */
+    fun votePoll(postId: String, optionId: String) {
+        val pollId = (_discoverPosts.value + _searchPosts.value)
+            .firstOrNull { it.id == postId }?.poll?.id ?: return
+        viewModelScope.launch {
+            when (val result = pollsRepository.vote(pollId, optionId)) {
+                is VotePollResult.Success -> {
+                    _discoverPosts.value = _discoverPosts.value.map { it.applyVote(postId, result) }
+                    _searchPosts.value = _searchPosts.value.map { it.applyVote(postId, result) }
+                }
+                is VotePollResult.Error -> {
                     if (result.code == "unauthorized") {
                         tokenStore.clearToken()
                         _events.emit(DiscoverEvent.SessionExpired)

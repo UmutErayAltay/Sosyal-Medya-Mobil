@@ -85,6 +85,9 @@ fun PostCard(
     onLikeClick: (Post) -> Unit,
     onCommentClick: (Post) -> Unit,
     onHashtagClick: (String) -> Unit = {},
+    // Faz 5 (Dalga 1A): VARSAYILAN DEĞERLİ — anket bağlamayan çağrı yerleri
+    // (henüz bağlanmamış ekranlar) değişmeden derlenmeye devam eder.
+    onPollVote: (postId: String, optionId: String) -> Unit = { _, _ -> },
 ) {
     Card(
         modifier = Modifier
@@ -158,6 +161,17 @@ fun PostCard(
                         annotatedContent.getStringAnnotations(tag = "hashtag", start = offset, end = offset)
                             .firstOrNull()?.let { onHashtagClick(it.item) }
                     },
+                )
+            }
+
+            // Anket — web'in _post_card.html'indeki AYNI konum: içerikten SONRA,
+            // görselden ÖNCE. Room cache'inden gelen postta poll null olduğu için
+            // offline'da widget hiç çizilmez (bkz. PostEntity.toDomain() yorumu).
+            post.poll?.let { poll ->
+                PollWidget(
+                    poll = poll,
+                    onVote = { optionId -> onPollVote(post.id, optionId) },
+                    modifier = Modifier.padding(top = 12.dp),
                 )
             }
 

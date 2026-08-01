@@ -61,6 +61,7 @@ import kotlinx.coroutines.launch
 fun LoginScreen(
     onLoginSuccess: () -> Unit,
     onNavigateToRegister: () -> Unit,
+    onNavigateToForgotPassword: () -> Unit,
     viewModel: AuthViewModel = viewModel(),
 ) {
     var email by remember { mutableStateOf("") }
@@ -235,6 +236,14 @@ fun LoginScreen(
                         .fillMaxWidth()
                         .padding(bottom = 8.dp),
                 )
+
+                TextButton(
+                    onClick = onNavigateToForgotPassword,
+                    enabled = uiState !is LoginUiState.Loading && !googleLoading,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("Şifremi unuttum")
+                }
 
                 if (uiState is LoginUiState.Error) {
                     Text(

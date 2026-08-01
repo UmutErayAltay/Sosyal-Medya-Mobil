@@ -162,6 +162,7 @@ fun PostDetailScreen(
                         onLikeClick = { viewModel.toggleLike() },
                         onCommentClick = {},
                         onHashtagClick = onNavigateToHashtag,
+                        onPollVote = { postId, optionId -> viewModel.votePoll(postId, optionId) },
                     )
                 }
 

@@ -9,6 +9,8 @@ import com.umuterayaltay.sosyal.nativeapp.repository.AddCommentResult
 import com.umuterayaltay.sosyal.nativeapp.repository.Post
 import com.umuterayaltay.sosyal.nativeapp.repository.PostDetailResult
 import com.umuterayaltay.sosyal.nativeapp.repository.ToggleLikeResult
+import com.umuterayaltay.sosyal.nativeapp.repository.VotePollResult
+import com.umuterayaltay.sosyal.nativeapp.repository.applyVote
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -33,6 +35,7 @@ sealed class PostDetailEvent {
 class PostDetailViewModel(private val postId: String) : ViewModel() {
 
     private val interactionsRepository = ServiceLocator.interactionsRepository
+    private val pollsRepository = ServiceLocator.pollsRepository
     private val tokenStore = ServiceLocator.tokenStore
 
     private val _post = MutableStateFlow<Post?>(null)
@@ -94,6 +97,28 @@ class PostDetailViewModel(private val postId: String) : ViewModel() {
                     _post.value = current.copy(likeCount = result.count, likedByMe = result.liked)
                 }
                 is ToggleLikeResult.Error -> {
+                    if (result.code == "unauthorized") {
+                        tokenStore.clearToken()
+                        _events.emit(PostDetailEvent.SessionExpired)
+                    }
+                }
+            }
+        }
+    }
+
+    /** Anket seçeneğine tıklanınca — diğer ekranlardaki AYNI desen (sunucudan
+     * dönen GÜNCEL durum posta yazılır, optimistic tahmin YAPILMAZ). Tek post
+     * gösterildiği için toggleLike() ile AYNI şekilde _post.value doğrudan
+     * güncellenir. */
+    fun votePoll(postId: String, optionId: String) {
+        val current = _post.value ?: return
+        val pollId = current.poll?.id ?: return
+        viewModelScope.launch {
+            when (val result = pollsRepository.vote(pollId, optionId)) {
+                is VotePollResult.Success -> {
+                    _post.value = current.applyVote(postId, result)
+                }
+                is VotePollResult.Error -> {
                     if (result.code == "unauthorized") {
                         tokenStore.clearToken()
                         _events.emit(PostDetailEvent.SessionExpired)

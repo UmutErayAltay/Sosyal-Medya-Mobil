@@ -3,6 +3,23 @@ package com.umuterayaltay.sosyal.nativeapp.repository
 import com.umuterayaltay.sosyal.nativeapp.data.local.PostEntity
 import com.umuterayaltay.sosyal.nativeapp.network.PostDto
 
+/** Bir postun anketi — web'in poll_widget makrosunun gördüğü AYNI veri
+ * (app/polls.py attach_polls()). Yüzdeler backend'de hesaplanır. */
+data class PollOption(
+    val id: String,
+    val text: String,
+    val votes: Int,
+    val pct: Int,
+)
+
+data class Poll(
+    val id: String,
+    val options: List<PollOption>,
+    val totalVotes: Int,
+    /** Kullanıcının oy verdiği seçenek id'si; oy yoksa null (3-yönlü toggle). */
+    val myVote: String?,
+)
+
 /** UI'nin gördüğü sade post modeli — hem ağdan hem Room cache'inden aynı şekilde üretilir. */
 data class Post(
     val id: String,
@@ -16,6 +33,7 @@ data class Post(
     val commentCount: Int,
     val likedByMe: Boolean,
     val createdAt: String?,
+    val poll: Poll? = null,
 )
 
 fun PostDto.toDomain(): Post = Post(
@@ -30,6 +48,16 @@ fun PostDto.toDomain(): Post = Post(
     commentCount = commentCount,
     likedByMe = likedByMe,
     createdAt = createdAt,
+    poll = poll?.let { p ->
+        Poll(
+            id = p.id,
+            options = (p.options ?: emptyList()).map {
+                PollOption(id = it.id, text = it.text, votes = it.votes, pct = it.pct)
+            },
+            totalVotes = p.totalVotes,
+            myVote = p.myVote,
+        )
+    },
 )
 
 fun PostDto.toEntity(cachedAt: Long): PostEntity = PostEntity(
@@ -59,4 +87,9 @@ fun PostEntity.toDomain(): Post = Post(
     commentCount = commentCount,
     likedByMe = likedByMe,
     createdAt = createdAt,
+    // Anket BİLEREK cache'lenmiyor (PostEntity'de poll kolonu YOK): oy sayıları
+    // ve my_vote dinamik veridir — offline'da eski yüzdeleri göstermek yanıltıcı
+    // olur, üstelik offline'ken oy verilemeyeceği için widget sadece yanlış bilgi
+    // verirdi. Ağdan gelen post'ta poll dolu, cache'ten gelende null.
+    poll = null,
 )

@@ -28,6 +28,12 @@ interface AuthApi {
     // MessagingApi'ye DEĞİL, buraya eklendi (bkz. RealtimeConnectionManager).
     @GET("realtime-token")
     suspend fun getRealtimeToken(): Response<RealtimeTokenResponse>
+
+    // FAZ5: Şifre sıfırlama (Dalga 1C) — auth YOK (login/register gibi açık
+    // endpoint), HER DURUMDA {"ok":true} döner (enumeration koruması backend'de
+    // zaten yapılıyor, bkz. ForgotPasswordRequest yorumu ApiModels.kt).
+    @POST("auth/forgot-password")
+    suspend fun forgotPassword(@Body body: ForgotPasswordRequest): Response<SimpleOkResponse>
 }
 
 interface FeedApi {

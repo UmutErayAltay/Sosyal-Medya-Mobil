@@ -4,15 +4,18 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.umuterayaltay.sosyal.nativeapp.ServiceLocator
 import com.umuterayaltay.sosyal.nativeapp.repository.FeedRefreshResult
+import com.umuterayaltay.sosyal.nativeapp.repository.Poll
 import com.umuterayaltay.sosyal.nativeapp.repository.Post
 import com.umuterayaltay.sosyal.nativeapp.repository.ToggleLikeResult
 import com.umuterayaltay.sosyal.nativeapp.repository.UnreadCountResult
+import com.umuterayaltay.sosyal.nativeapp.repository.VotePollResult
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -32,10 +35,22 @@ class FeedViewModel : ViewModel() {
     private val feedRepository = ServiceLocator.feedRepository
     private val interactionsRepository = ServiceLocator.interactionsRepository
     private val notificationsRepository = ServiceLocator.notificationsRepository
+    private val pollsRepository = ServiceLocator.pollsRepository
     private val tokenStore = ServiceLocator.tokenStore
 
-    val posts: StateFlow<List<Post>> = feedRepository.observePosts()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    // Room'da poll kolonu YOK (bkz. PostEntity.toDomain() yorumu) — observePosts()
+    // her zaman poll=null döner, bu yüzden votePoll() sonucu doğrudan Room'a
+    // yazılamaz. Diğer ViewModel'lerdeki `_posts.value = ... .map { applyVote }`
+    // deseninin buradaki karşılığı: sunucudan dönen GÜNCEL anket durumu bu yerel
+    // overlay'e yazılıp Room akışıyla combine edilir.
+    private val _pollOverrides = MutableStateFlow<Map<String, Poll>>(emptyMap())
+
+    val posts: StateFlow<List<Post>> = combine(
+        feedRepository.observePosts(),
+        _pollOverrides,
+    ) { list, overrides ->
+        if (overrides.isEmpty()) list else list.map { post -> overrides[post.id]?.let { post.copy(poll = it) } ?: post }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private val _uiState = MutableStateFlow<FeedUiState>(FeedUiState.Loading)
     val uiState: StateFlow<FeedUiState> = _uiState.asStateFlow()
@@ -107,6 +122,32 @@ class FeedViewModel : ViewModel() {
                     }
                     // Diğer hatalar sessizce yutulur - tek bir post beğenisi
                     // başarısız olursa tüm akışı bir hata state'ine düşürmek istenmiyor.
+                }
+            }
+        }
+    }
+
+    /** Anket seçeneğine tıklanınca — diğer ViewModel'lerdeki AYNI desen (sunucudan
+     * dönen GÜNCEL durum yazılır, optimistic tahmin YAPILMAZ), Room'un poll
+     * cache'lememesi yüzünden hedef `_pollOverrides`'a yazılır (yukarıdaki yorum). */
+    fun votePoll(postId: String, optionId: String) {
+        val pollId = posts.value.firstOrNull { it.id == postId }?.poll?.id ?: return
+        viewModelScope.launch {
+            when (val result = pollsRepository.vote(pollId, optionId)) {
+                is VotePollResult.Success -> {
+                    _pollOverrides.value = _pollOverrides.value + (postId to Poll(
+                        id = pollId,
+                        options = result.options,
+                        totalVotes = result.totalVotes,
+                        myVote = result.myVote,
+                    ))
+                }
+                is VotePollResult.Error -> {
+                    if (result.code == "unauthorized") {
+                        tokenStore.clearToken()
+                        _events.emit(FeedEvent.SessionExpired)
+                    }
+                    // Diğer hatalar sessizce yutulur - toggleLike() ile AYNI gerekçe.
                 }
             }
         }

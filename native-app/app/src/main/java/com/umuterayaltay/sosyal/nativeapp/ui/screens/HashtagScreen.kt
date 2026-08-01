@@ -160,6 +160,7 @@ fun HashtagScreen(
                         onLikeClick = { viewModel.toggleLike(it.id) },
                         onCommentClick = { onNavigateToPostDetail(it.id) },
                         onHashtagClick = { /* zaten bu etiketin sayfasındayız */ },
+                        onPollVote = { postId, optionId -> viewModel.votePoll(postId, optionId) },
                     )
                 }
             }

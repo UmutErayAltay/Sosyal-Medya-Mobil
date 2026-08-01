@@ -6,7 +6,9 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,6 +26,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -32,11 +35,17 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Groups
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -47,11 +56,17 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -59,21 +74,26 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.umuterayaltay.sosyal.nativeapp.network.MessageDto
+import com.umuterayaltay.sosyal.nativeapp.network.MessageReactionDto
+import com.umuterayaltay.sosyal.nativeapp.network.MessageSearchResultDto
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.ConversationEvent
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.ConversationViewModel
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.ConversationViewModelFactory
+import kotlinx.coroutines.launch
 
 /**
  * Tek bir konuşma ekranı — mesaj geçmişi (eskiden yeniye, yukarı kaydırınca
- * daha eski sayfa) + metin gönderme (+ yanıtlama). Backend sözleşmesi:
- * app/api_v1.py api_message_conversation_detail()/api_send_message()
- * (bkz. ConversationViewModel docstring'i — basit polling ile "neredeyse
- * canlı", gerçek Supabase Realtime YOK).
+ * daha eski sayfa) + metin gönderme (+ yanıtlama) + Faz 5 Dalga 1B mesaj
+ * gelişmiş işlemleri (düzenle/sil/tepki/sabitle/ilet/sohbeti sessize al/ara).
+ * Backend sözleşmesi: app/api_v1/messaging.py (bkz. ConversationViewModel
+ * docstring'i — basit polling ile "neredeyse canlı", gerçek Supabase
+ * Realtime YOK sadece INSERT'ler için).
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -81,12 +101,14 @@ fun ConversationScreen(
     conversationId: String,
     onNavigateBack: () -> Unit,
     onManageGroupClick: () -> Unit,
+    onNavigateToMessageSearch: () -> Unit,
     onSessionExpired: () -> Unit,
     viewModel: ConversationViewModel = viewModel(
         factory = ConversationViewModelFactory(conversationId),
     ),
 ) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     val messages by viewModel.messages.collectAsState()
     val loading by viewModel.loading.collectAsState()
     val loadingOlder by viewModel.loadingOlder.collectAsState()
@@ -97,6 +119,29 @@ fun ConversationScreen(
     val replyingTo by viewModel.replyingTo.collectAsState()
     val myUserId by viewModel.myUserId.collectAsState()
     val selectedImageUri by viewModel.selectedImageUri.collectAsState()
+
+    // ---- Faz 5 Dalga 1B state'leri ----
+    val pinnedMessage by viewModel.pinnedMessage.collectAsState()
+    val selectedMessage by viewModel.selectedMessage.collectAsState()
+    val forwardTargets by viewModel.forwardTargets.collectAsState()
+    val forwardTargetsLoading by viewModel.forwardTargetsLoading.collectAsState()
+    val searchResults by viewModel.searchResults.collectAsState()
+    val searchLoading by viewModel.searchLoading.collectAsState()
+    val isMuted by viewModel.isMuted.collectAsState()
+
+    // Bu ekrana ÖZGÜ, ViewModel'e taşınmayan saf UI state'i (arama modu
+    // açık/kapalı, taşma menüsü, düzenleme diyaloğu, ilet sheet'i) —
+    // FeedScreen'deki filtre çipleri gibi diğer ekranlardaki AYNI ayrım
+    // (kalıcı/paylaşılan state ViewModel'de, geçici UI state composable'da).
+    var showOverflowMenu by remember { mutableStateOf(false) }
+    var searchMode by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
+    var showForwardSheet by remember { mutableStateOf(false) }
+    var editingMessage by remember { mutableStateOf<MessageDto?>(null) }
+    var editText by remember { mutableStateOf("") }
+
+    val actionsSheetState = rememberModalBottomSheetState()
+    val forwardSheetState = rememberModalBottomSheetState()
 
     LaunchedEffect(Unit) {
         viewModel.events.collect { event ->
@@ -129,113 +174,354 @@ fun ConversationScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        val info = conversationInfo
-                        if (!info?.avatarUrl.isNullOrBlank()) {
-                            AsyncImage(
-                                model = info?.avatarUrl,
-                                contentDescription = null,
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .clip(CircleShape),
+            Column {
+                TopAppBar(
+                    title = {
+                        if (searchMode) {
+                            OutlinedTextField(
+                                value = searchQuery,
+                                onValueChange = {
+                                    searchQuery = it
+                                    viewModel.searchInConversation(it)
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                placeholder = { Text("Bu sohbette ara...") },
+                                singleLine = true,
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+                                ),
                             )
                         } else {
-                            Box(
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .clip(CircleShape)
-                                    .background(MaterialTheme.colorScheme.surfaceVariant),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Icon(
-                                    imageVector = if (info?.isGroup == true) Icons.Filled.Groups else Icons.Filled.Person,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(20.dp),
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                val info = conversationInfo
+                                if (!info?.avatarUrl.isNullOrBlank()) {
+                                    AsyncImage(
+                                        model = info?.avatarUrl,
+                                        contentDescription = null,
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier
+                                            .size(36.dp)
+                                            .clip(CircleShape),
+                                    )
+                                } else {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(36.dp)
+                                            .clip(CircleShape)
+                                            .background(MaterialTheme.colorScheme.surfaceVariant),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Icon(
+                                            imageVector = if (info?.isGroup == true) Icons.Filled.Groups else Icons.Filled.Person,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.size(20.dp),
+                                        )
+                                    }
+                                }
+                                Text(
+                                    text = info?.name ?: "Konuşma",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    modifier = Modifier.padding(start = 10.dp),
                                 )
                             }
                         }
-                        Text(
-                            text = info?.name ?: "Konuşma",
-                            style = MaterialTheme.typography.titleMedium,
-                            modifier = Modifier.padding(start = 10.dp),
-                        )
-                    }
-                },
-                navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Geri")
-                    }
-                },
-                actions = {
-                    if (conversationInfo?.isGroup == true) {
-                        IconButton(onClick = onManageGroupClick) {
-                            Icon(Icons.Filled.Groups, contentDescription = "Grubu Yönet")
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = {
+                            if (searchMode) {
+                                searchMode = false
+                                searchQuery = ""
+                                viewModel.clearSearchResults()
+                            } else {
+                                onNavigateBack()
+                            }
+                        }) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Geri")
                         }
-                    }
-                },
-            )
-        },
-        bottomBar = {
-            ConversationInputBar(
-                sendText = sendText,
-                onSendTextChange = viewModel::onSendTextChange,
-                onSend = { viewModel.send(context) },
-                replyingTo = replyingTo,
-                onCancelReply = viewModel::clearReplyingTo,
-                selectedImageUri = selectedImageUri,
-                onImageSelected = viewModel::onImageSelected,
-            )
-        },
-    ) { padding ->
-        when {
-            loading && messages.isEmpty() -> CenteredMessage(padding) { CircularProgressIndicator() }
-            error != null && messages.isEmpty() -> CenteredMessage(padding) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        text = error ?: "",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Button(onClick = { viewModel.loadInitial() }, modifier = Modifier.padding(top = 12.dp)) {
-                        Text("Tekrar dene")
-                    }
-                }
-            }
-            messages.isEmpty() -> CenteredMessage(padding) {
-                Text(
-                    text = "Henüz mesaj yok, ilk mesajı sen gönder",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    },
+                    actions = {
+                        if (!searchMode) {
+                            IconButton(onClick = { searchMode = true }) {
+                                Icon(Icons.Filled.Search, contentDescription = "Sohbette ara")
+                            }
+                            if (conversationInfo?.isGroup == true) {
+                                IconButton(onClick = onManageGroupClick) {
+                                    Icon(Icons.Filled.Groups, contentDescription = "Grubu Yönet")
+                                }
+                            }
+                            IconButton(onClick = { showOverflowMenu = true }) {
+                                Icon(Icons.Filled.MoreVert, contentDescription = "Diğer")
+                            }
+                            DropdownMenu(expanded = showOverflowMenu, onDismissRequest = { showOverflowMenu = false }) {
+                                DropdownMenuItem(
+                                    text = { Text(if (isMuted) "Sohbeti sessize almayı kaldır" else "Sohbeti sessize al") },
+                                    onClick = {
+                                        showOverflowMenu = false
+                                        viewModel.toggleMute()
+                                    },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Tüm sohbetlerde ara") },
+                                    onClick = {
+                                        showOverflowMenu = false
+                                        onNavigateToMessageSearch()
+                                    },
+                                )
+                            }
+                        }
+                    },
                 )
-            }
-            else -> LazyColumn(
-                state = listState,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding),
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                if (loadingOlder) {
-                    item(key = "loading_older") {
-                        Box(
+                // Sabitlenmiş mesaj banner'ı — konuşmanın "ortak hafızası" (bkz.
+                // backend pin yetki notu: gönderen değil HERHANGİ bir katılımcı
+                // sabitleyebilir), TopAppBar'ın hemen altında sabit kalır.
+                pinnedMessage?.let { pinned ->
+                    Surface(
+                        color = MaterialTheme.colorScheme.secondaryContainer,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(vertical = 8.dp),
-                            contentAlignment = Alignment.Center,
-                        ) { CircularProgressIndicator(modifier = Modifier.size(24.dp)) }
+                                .padding(horizontal = 16.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.PushPin,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                                modifier = Modifier.size(16.dp),
+                            )
+                            Text(
+                                text = pinned.content?.takeIf { it.isNotBlank() } ?: "Sabitlenmiş mesaj",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                maxLines = 1,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .padding(start = 8.dp),
+                            )
+                        }
                     }
                 }
-                items(messages, key = { it.id }) { message ->
-                    MessageBubble(
-                        message = message,
-                        isMine = myUserId != null && message.senderId == myUserId,
-                        onReplyClick = { viewModel.setReplyingTo(message) },
+            }
+        },
+        bottomBar = {
+            if (!searchMode) {
+                ConversationInputBar(
+                    sendText = sendText,
+                    onSendTextChange = viewModel::onSendTextChange,
+                    onSend = { viewModel.send(context) },
+                    replyingTo = replyingTo,
+                    onCancelReply = viewModel::clearReplyingTo,
+                    selectedImageUri = selectedImageUri,
+                    onImageSelected = viewModel::onImageSelected,
+                )
+            }
+        },
+    ) { padding ->
+        if (searchMode) {
+            ConversationSearchResults(
+                padding = padding,
+                query = searchQuery,
+                results = searchResults,
+                loading = searchLoading,
+                onResultClick = { result ->
+                    val idx = messages.indexOfFirst { it.id == result.id }
+                    searchMode = false
+                    if (idx >= 0) {
+                        coroutineScope.launch { listState.animateScrollToItem(idx) }
+                    }
+                },
+            )
+        } else {
+            when {
+                loading && messages.isEmpty() -> CenteredMessage(padding) { CircularProgressIndicator() }
+                error != null && messages.isEmpty() -> CenteredMessage(padding) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            text = error ?: "",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Button(onClick = { viewModel.loadInitial() }, modifier = Modifier.padding(top = 12.dp)) {
+                            Text("Tekrar dene")
+                        }
+                    }
+                }
+                messages.isEmpty() -> CenteredMessage(padding) {
+                    Text(
+                        text = "Henüz mesaj yok, ilk mesajı sen gönder",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                }
+                else -> LazyColumn(
+                    state = listState,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(padding),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    if (loadingOlder) {
+                        item(key = "loading_older") {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 8.dp),
+                                contentAlignment = Alignment.Center,
+                            ) { CircularProgressIndicator(modifier = Modifier.size(24.dp)) }
+                        }
+                    }
+                    items(messages, key = { it.id }) { message ->
+                        MessageBubble(
+                            message = message,
+                            isMine = myUserId != null && message.senderId == myUserId,
+                            onLongPress = { viewModel.selectMessage(message) },
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    // ---- Faz 5 Dalga 1B: mesaj aksiyon sheet'i ----
+    // showForwardSheet iken aksiyon listesi GİZLENİR (aynı anda iki sheet
+    // üst üste açılmasın diye) — selectedMessage forward tamamlanana/iptal
+    // edilene kadar BİLEREK temizlenmez (ForwardTargetScreen'in hangi
+    // mesajı ileteceğini bilmesi gerekiyor).
+    if (selectedMessage != null && !showForwardSheet) {
+        val msg = selectedMessage!!
+        MessageActionsSheet(
+            message = msg,
+            isMine = myUserId != null && msg.senderId == myUserId,
+            sheetState = actionsSheetState,
+            onDismiss = { viewModel.clearSelectedMessage() },
+            onReply = {
+                viewModel.setReplyingTo(msg)
+                viewModel.clearSelectedMessage()
+            },
+            onEdit = {
+                editingMessage = msg
+                editText = msg.content ?: ""
+                viewModel.clearSelectedMessage()
+            },
+            onDelete = {
+                viewModel.deleteMessage(msg.id)
+            },
+            onForward = {
+                showForwardSheet = true
+                viewModel.loadForwardTargets()
+            },
+            onPin = { viewModel.pinMessage(msg.id) },
+            onReact = { emoji -> viewModel.reactToMessage(msg.id, emoji) },
+        )
+    }
+
+    if (showForwardSheet && selectedMessage != null) {
+        val msg = selectedMessage!!
+        ForwardTargetScreen(
+            targets = forwardTargets,
+            loading = forwardTargetsLoading,
+            sheetState = forwardSheetState,
+            onDismiss = {
+                showForwardSheet = false
+                viewModel.clearSelectedMessage()
+            },
+            onTargetSelected = { target ->
+                viewModel.forwardMessage(msg.id, target.id)
+                showForwardSheet = false
+            },
+        )
+    }
+
+    // ---- Faz 5 Dalga 1B: mesaj düzenleme diyaloğu ----
+    // Ayrı bir tam ekran/sheet YERİNE basit bir AlertDialog — sadece TEK
+    // metin alanı düzenleniyor, ConversationInputBar'ın karmaşık (görsel/
+    // yanıt) durumunu burada TEKRARLAMAYA gerek yok.
+    editingMessage?.let { msg ->
+        AlertDialog(
+            onDismissRequest = { editingMessage = null },
+            title = { Text("Mesajı düzenle") },
+            text = {
+                OutlinedTextField(
+                    value = editText,
+                    onValueChange = { editText = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    maxLines = 6,
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val content = editText.trim()
+                        if (content.isNotEmpty()) {
+                            viewModel.editMessage(msg.id, content)
+                        }
+                        editingMessage = null
+                    },
+                ) { Text("Kaydet") }
+            },
+            dismissButton = {
+                TextButton(onClick = { editingMessage = null }) { Text("Vazgeç") }
+            },
+        )
+    }
+}
+
+@Composable
+private fun ConversationSearchResults(
+    padding: PaddingValues,
+    query: String,
+    results: List<MessageSearchResultDto>,
+    loading: Boolean,
+    onResultClick: (MessageSearchResultDto) -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(padding),
+    ) {
+        when {
+            loading -> CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+            query.trim().length < 2 -> Text(
+                text = "Aramak için en az 2 karakter yazın",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .padding(32.dp),
+            )
+            results.isEmpty() -> Text(
+                text = "Sonuç bulunamadı",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .padding(32.dp),
+            )
+            else -> LazyColumn(modifier = Modifier.fillMaxSize()) {
+                items(results, key = { it.id }) { result ->
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onResultClick(result) }
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                    ) {
+                        Text(
+                            text = if (result.mine) "Sen" else (result.sender ?: "?"),
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                        Text(
+                            text = result.content ?: "",
+                            style = MaterialTheme.typography.bodyMedium,
+                            maxLines = 2,
+                            modifier = Modifier.padding(top = 2.dp),
+                        )
+                    }
                 }
             }
         }
@@ -244,7 +530,7 @@ fun ConversationScreen(
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun MessageBubble(message: MessageDto, isMine: Boolean, onReplyClick: () -> Unit) {
+private fun MessageBubble(message: MessageDto, isMine: Boolean, onLongPress: () -> Unit) {
     val bubbleColor = if (isMine) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
     val contentColor = if (isMine) {
         MaterialTheme.colorScheme.onPrimaryContainer
@@ -269,78 +555,142 @@ private fun MessageBubble(message: MessageDto, isMine: Boolean, onReplyClick: ()
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = if (isMine) Arrangement.End else Arrangement.Start,
     ) {
-        Card(
-            modifier = Modifier
-                .widthIn(max = 280.dp)
-                .alpha(bubbleAlpha)
-                // Uzun basınca "Yanıtla" — bu turda tek uzun-tık aksiyonu var,
-                // ayrı bir menü/IconButton İCAT edilmedi (spesifikasyon: basit).
-                .combinedClickable(onClick = {}, onLongClick = onReplyClick),
-            shape = bubbleShape,
-            colors = CardDefaults.cardColors(containerColor = bubbleColor),
-        ) {
-            Column(modifier = Modifier.padding(10.dp)) {
-                val replyTo = message.replyTo
-                if (replyTo != null) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(IntrinsicSize.Min)
-                            .background(contentColor.copy(alpha = 0.10f), MaterialTheme.shapes.extraSmall)
-                            .padding(vertical = 6.dp, horizontal = 8.dp),
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .width(3.dp)
-                                .fillMaxHeight()
-                                .background(contentColor.copy(alpha = 0.6f), MaterialTheme.shapes.extraSmall),
+        Column(horizontalAlignment = if (isMine) Alignment.End else Alignment.Start) {
+            Card(
+                modifier = Modifier
+                    .widthIn(max = 280.dp)
+                    .alpha(bubbleAlpha)
+                    // Uzun basınca aksiyon menüsü (Faz 5 Dalga 1B) — eskiden
+                    // TEK aksiyon (yanıtla) vardı, şimdi MessageActionsSheet
+                    // açılıyor (yanıtla dahil TÜM aksiyonlar orada).
+                    .combinedClickable(onClick = {}, onLongClick = onLongPress),
+                shape = bubbleShape,
+                colors = CardDefaults.cardColors(containerColor = bubbleColor),
+            ) {
+                Column(modifier = Modifier.padding(10.dp)) {
+                    if (message.isForwarded) {
+                        Text(
+                            text = "İletildi",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontStyle = FontStyle.Italic,
+                            color = contentColor.copy(alpha = 0.7f),
                         )
-                        Column(modifier = Modifier.padding(start = 8.dp)) {
-                            Text(
-                                text = replyTo.profiles?.username ?: "Bilinmeyen kullanıcı",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.SemiBold,
-                                color = contentColor,
+                    }
+                    val replyTo = message.replyTo
+                    if (replyTo != null) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(IntrinsicSize.Min)
+                                .background(contentColor.copy(alpha = 0.10f), MaterialTheme.shapes.extraSmall)
+                                .padding(vertical = 6.dp, horizontal = 8.dp),
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .width(3.dp)
+                                    .fillMaxHeight()
+                                    .background(contentColor.copy(alpha = 0.6f), MaterialTheme.shapes.extraSmall),
                             )
-                            Text(
-                                text = replyTo.content?.takeIf { it.isNotBlank() }
-                                    ?: if (!replyTo.imageUrl.isNullOrBlank()) "Görsel" else "",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = contentColor.copy(alpha = 0.85f),
-                                maxLines = 1,
-                            )
+                            Column(modifier = Modifier.padding(start = 8.dp)) {
+                                Text(
+                                    text = replyTo.profiles?.username ?: "Bilinmeyen kullanıcı",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = contentColor,
+                                )
+                                Text(
+                                    text = replyTo.content?.takeIf { it.isNotBlank() }
+                                        ?: if (!replyTo.imageUrl.isNullOrBlank()) "Görsel" else "",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = contentColor.copy(alpha = 0.85f),
+                                    maxLines = 1,
+                                )
+                            }
                         }
                     }
-                }
-                val imageUrl = message.imageUrl
-                if (!imageUrl.isNullOrBlank()) {
-                    AsyncImage(
-                        model = imageUrl,
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
+                    val imageUrl = message.imageUrl
+                    if (!imageUrl.isNullOrBlank()) {
+                        AsyncImage(
+                            model = imageUrl,
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .padding(top = if (replyTo != null) 6.dp else 0.dp)
+                                .size(200.dp)
+                                .clip(MaterialTheme.shapes.medium),
+                        )
+                    }
+                    if (!message.content.isNullOrBlank()) {
+                        Text(
+                            text = message.content,
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = contentColor,
+                            modifier = Modifier.padding(top = if (replyTo != null || !imageUrl.isNullOrBlank()) 6.dp else 0.dp),
+                        )
+                    }
+                    Row(
                         modifier = Modifier
-                            .padding(top = if (replyTo != null) 6.dp else 0.dp)
-                            .size(200.dp)
-                            .clip(MaterialTheme.shapes.medium),
-                    )
+                            .align(Alignment.End)
+                            .padding(top = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        if (message.editedAt != null) {
+                            Text(
+                                text = "düzenlendi",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontStyle = FontStyle.Italic,
+                                color = contentColor.copy(alpha = 0.7f),
+                                modifier = Modifier.padding(end = 6.dp),
+                            )
+                        }
+                        Text(
+                            text = if (isSending) "gönderiliyor…" else formatClockTime(message.createdAt),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = contentColor.copy(alpha = 0.8f),
+                        )
+                    }
                 }
-                if (!message.content.isNullOrBlank()) {
-                    Text(
-                        text = message.content,
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = contentColor,
-                        modifier = Modifier.padding(top = if (replyTo != null || !imageUrl.isNullOrBlank()) 6.dp else 0.dp),
-                    )
-                }
-                Text(
-                    text = if (isSending) "gönderiliyor…" else formatClockTime(message.createdAt),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = contentColor.copy(alpha = 0.8f),
-                    modifier = Modifier
-                        .align(Alignment.End)
-                        .padding(top = 4.dp),
-                )
             }
+            // Tepki çipleri — baloncuğun ALTINDA (backend her tepkiyi {reaction,
+            // count, mine} özetine indirgiyor, bkz. ApiModels.kt MessageReactionDto).
+            // Yatay kaydırma FlowRow yerine tercih edildi (compose-foundation
+            // sürüm bağımlılığı olmadan, her zaman kullanılabilir bir API).
+            val reactions = message.reactions
+            if (!reactions.isNullOrEmpty()) {
+                Row(
+                    modifier = Modifier
+                        .padding(top = 2.dp)
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    reactions.forEach { reaction -> ReactionChip(reaction) }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReactionChip(reaction: MessageReactionDto) {
+    val background = if (reaction.mine) {
+        MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+    } else {
+        MaterialTheme.colorScheme.surfaceVariant
+    }
+    Row(
+        modifier = Modifier
+            .clip(MaterialTheme.shapes.extraLarge)
+            .background(background)
+            .padding(horizontal = 8.dp, vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(text = reaction.reaction, style = MaterialTheme.typography.labelSmall)
+        if (reaction.count > 1) {
+            Text(
+                text = " ${reaction.count}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
