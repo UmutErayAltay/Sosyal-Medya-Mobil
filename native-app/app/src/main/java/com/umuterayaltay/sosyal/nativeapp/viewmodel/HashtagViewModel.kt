@@ -8,6 +8,7 @@ import com.umuterayaltay.sosyal.nativeapp.repository.HashtagPostsResult
 import com.umuterayaltay.sosyal.nativeapp.repository.Post
 import com.umuterayaltay.sosyal.nativeapp.repository.ToggleHashtagFollowResult
 import com.umuterayaltay.sosyal.nativeapp.repository.ToggleLikeResult
+import com.umuterayaltay.sosyal.nativeapp.repository.ToggleMutePostResult
 import com.umuterayaltay.sosyal.nativeapp.repository.VotePollResult
 import com.umuterayaltay.sosyal.nativeapp.repository.applyVote
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -33,6 +34,7 @@ class HashtagViewModel(private val tag: String) : ViewModel() {
     private val hashtagRepository = ServiceLocator.hashtagRepository
     private val interactionsRepository = ServiceLocator.interactionsRepository
     private val pollsRepository = ServiceLocator.pollsRepository
+    private val mutesRepository = ServiceLocator.mutesRepository
     private val tokenStore = ServiceLocator.tokenStore
 
     private val _posts = MutableStateFlow<List<Post>>(emptyList())
@@ -88,6 +90,21 @@ class HashtagViewModel(private val tag: String) : ViewModel() {
                     }
                 }
                 is ToggleLikeResult.Error -> handleError(result.code, silent = true)
+            }
+        }
+    }
+
+    /** DiscoverViewModel.toggleMutePost() ile AYNI gerekçe: PostActionsSheet'teki
+     * "Postu Sessize Al"/"Sesini Aç" aksiyonu. */
+    fun toggleMutePost(postId: String) {
+        viewModelScope.launch {
+            when (val result = mutesRepository.toggleMutePost(postId)) {
+                is ToggleMutePostResult.Success -> {
+                    _posts.value = _posts.value.map { post ->
+                        if (post.id == postId) post.copy(mutedByMe = result.muted) else post
+                    }
+                }
+                is ToggleMutePostResult.Error -> handleError(result.code, silent = true)
             }
         }
     }

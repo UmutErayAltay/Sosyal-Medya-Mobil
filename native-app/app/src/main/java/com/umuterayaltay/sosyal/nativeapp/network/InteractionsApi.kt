@@ -37,15 +37,18 @@ interface InteractionsApi {
         @Body request: AddCommentRequest,
     ): Response<AddCommentResponse>
 
-    // multipart/form-data — JSON DEĞİL, çünkü opsiyonel bir görsel dosyası
-    // içerebiliyor (backend api_create_post() ile AYNI kodlama). `image` null
-    // geçilirse Retrofit bu parçayı isteğe hiç eklemez (backend'de
-    // request.files.get("image") None döner, has_image=False olur).
+    // multipart/form-data — JSON DEĞİL, çünkü opsiyonel bir görsel/video
+    // dosyası içerebiliyor (backend api_create_post() ile AYNI kodlama).
+    // `image`/`video` null geçilirse Retrofit bu parçayı isteğe hiç eklemez
+    // (backend'de request.files.get(...) None döner, has_image/has_video
+    // False olur) — eski (sadece görsel) çağrı yerleri BOZULMAZ.
     @Multipart
     @POST("posts")
     suspend fun createPost(
         @Part("content") content: RequestBody,
         @Part("visibility") visibility: RequestBody,
         @Part image: MultipartBody.Part?,
+        @Part video: MultipartBody.Part?,
+        @Part("is_reel") isReel: RequestBody,
     ): Response<CreatePostResponse>
 }

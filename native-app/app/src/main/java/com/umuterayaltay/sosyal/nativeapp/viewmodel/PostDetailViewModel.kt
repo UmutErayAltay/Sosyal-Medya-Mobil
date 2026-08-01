@@ -9,6 +9,7 @@ import com.umuterayaltay.sosyal.nativeapp.repository.AddCommentResult
 import com.umuterayaltay.sosyal.nativeapp.repository.Post
 import com.umuterayaltay.sosyal.nativeapp.repository.PostDetailResult
 import com.umuterayaltay.sosyal.nativeapp.repository.ToggleLikeResult
+import com.umuterayaltay.sosyal.nativeapp.repository.ToggleMutePostResult
 import com.umuterayaltay.sosyal.nativeapp.repository.VotePollResult
 import com.umuterayaltay.sosyal.nativeapp.repository.applyVote
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -36,6 +37,7 @@ class PostDetailViewModel(private val postId: String) : ViewModel() {
 
     private val interactionsRepository = ServiceLocator.interactionsRepository
     private val pollsRepository = ServiceLocator.pollsRepository
+    private val mutesRepository = ServiceLocator.mutesRepository
     private val tokenStore = ServiceLocator.tokenStore
 
     private val _post = MutableStateFlow<Post?>(null)
@@ -119,6 +121,25 @@ class PostDetailViewModel(private val postId: String) : ViewModel() {
                     _post.value = current.applyVote(postId, result)
                 }
                 is VotePollResult.Error -> {
+                    if (result.code == "unauthorized") {
+                        tokenStore.clearToken()
+                        _events.emit(PostDetailEvent.SessionExpired)
+                    }
+                }
+            }
+        }
+    }
+
+    /** Post üzerindeki "Postu Sessize Al"/"Sesini Aç" aksiyonu — toggleLike() ile
+     * AYNI desen (tek post gösterildiği için doğrudan _post.value güncellenir). */
+    fun toggleMutePost() {
+        val current = _post.value ?: return
+        viewModelScope.launch {
+            when (val result = mutesRepository.toggleMutePost(current.id)) {
+                is ToggleMutePostResult.Success -> {
+                    _post.value = current.copy(mutedByMe = result.muted)
+                }
+                is ToggleMutePostResult.Error -> {
                     if (result.code == "unauthorized") {
                         tokenStore.clearToken()
                         _events.emit(PostDetailEvent.SessionExpired)

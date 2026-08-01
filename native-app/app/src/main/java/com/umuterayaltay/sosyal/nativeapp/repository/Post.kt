@@ -34,6 +34,12 @@ data class Post(
     val likedByMe: Boolean,
     val createdAt: String?,
     val poll: Poll? = null,
+    // Faz 5 Dalga 2A: bu gönderinin bildirimlerini BEN sessize aldım mı — backend
+    // _attach_post_metrics()/enrich_post_json()'un ZATEN döndürdüğü muted_by_me
+    // alanı önceden buraya taşınmıyordu (PostDto'da vardı, domain modelde
+    // düşürülüyordu). Feed'den GİZLEME anlamına GELMEZ (bkz. MutesRepository
+    // yorumu) — sadece "Postu Sessize Al" menü metninin doğru göstermesi için.
+    val mutedByMe: Boolean = false,
 )
 
 fun PostDto.toDomain(): Post = Post(
@@ -48,6 +54,7 @@ fun PostDto.toDomain(): Post = Post(
     commentCount = commentCount,
     likedByMe = likedByMe,
     createdAt = createdAt,
+    mutedByMe = mutedByMe,
     poll = poll?.let { p ->
         Poll(
             id = p.id,
@@ -72,6 +79,7 @@ fun PostDto.toEntity(cachedAt: Long): PostEntity = PostEntity(
     commentCount = commentCount,
     likedByMe = likedByMe,
     createdAt = createdAt,
+    mutedByMe = mutedByMe,
     cachedAt = cachedAt,
 )
 
@@ -87,6 +95,10 @@ fun PostEntity.toDomain(): Post = Post(
     commentCount = commentCount,
     likedByMe = likedByMe,
     createdAt = createdAt,
+    // post_mute (bildirim susturma) anket gibi geçici/dinamik DEĞİL — kalıcı bir
+    // kullanıcı tercihidir, bu yüzden anketin AKSİNE (poll = null yorumuna bkz.)
+    // Room'da da cache'lenir.
+    mutedByMe = mutedByMe,
     // Anket BİLEREK cache'lenmiyor (PostEntity'de poll kolonu YOK): oy sayıları
     // ve my_vote dinamik veridir — offline'da eski yüzdeleri göstermek yanıltıcı
     // olur, üstelik offline'ken oy verilemeyeceği için widget sadece yanlış bilgi

@@ -34,7 +34,12 @@ object RetrofitClient {
             .addInterceptor(loggingInterceptor)
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
-            .writeTimeout(30, TimeUnit.SECONDS)
+            // 30sn'den 60sn'e çıkarıldı — CreatePostViewModel artık 25MB'a
+            // kadar video yükleyebiliyor (bkz. api_create_post() video/is_reel
+            // desteği), yavaş bir bağlantıda 30sn tüm gövdeyi yazmaya
+            // yetmeyebilirdi. SADECE büyütüldü, başka istemci genel timeout'u
+            // küçültülmedi (diğer isteklerde 60sn hâlâ makul bir üst sınır).
+            .writeTimeout(60, TimeUnit.SECONDS)
             .build()
 
         return Retrofit.Builder()

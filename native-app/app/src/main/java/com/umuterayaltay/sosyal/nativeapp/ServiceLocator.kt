@@ -9,6 +9,7 @@ import com.umuterayaltay.sosyal.nativeapp.network.FeedApi
 import com.umuterayaltay.sosyal.nativeapp.network.HashtagApi
 import com.umuterayaltay.sosyal.nativeapp.network.InteractionsApi
 import com.umuterayaltay.sosyal.nativeapp.network.MessagingApi
+import com.umuterayaltay.sosyal.nativeapp.network.MutesApi
 import com.umuterayaltay.sosyal.nativeapp.network.NotificationsApi
 import com.umuterayaltay.sosyal.nativeapp.network.ProfileApi
 import com.umuterayaltay.sosyal.nativeapp.network.ReelsApi
@@ -29,6 +30,9 @@ import com.umuterayaltay.sosyal.nativeapp.network.PollsApi
 import com.umuterayaltay.sosyal.nativeapp.repository.PollsRepository
 import com.umuterayaltay.sosyal.nativeapp.network.StickersApi
 import com.umuterayaltay.sosyal.nativeapp.repository.StickersRepository
+import com.umuterayaltay.sosyal.nativeapp.repository.MutesRepository
+import com.umuterayaltay.sosyal.nativeapp.network.StoriesApi
+import com.umuterayaltay.sosyal.nativeapp.repository.StoriesRepository
 // FAZ5_IMPORTS_MARKER — her ajan kendi Api/Repository import'unu bu satırın
 // HEMEN ÜSTÜNE ekler (dalga başına ayrı ajan çakışmasın diye).
 
@@ -66,6 +70,10 @@ object ServiceLocator {
     lateinit var pollsRepository: PollsRepository
         private set
     lateinit var stickersRepository: StickersRepository
+        private set
+    lateinit var mutesRepository: MutesRepository
+        private set
+    lateinit var storiesRepository: StoriesRepository
         private set
     // FAZ5_LATEINIT_MARKER — her ajan kendi `lateinit var xxxRepository`'sini
     // bu satırın HEMEN ÜSTÜNE ekler.
@@ -109,6 +117,12 @@ object ServiceLocator {
 
         val stickersApi = retrofit.create(StickersApi::class.java)
         stickersRepository = StickersRepository(stickersApi)
+
+        val mutesApi = retrofit.create(MutesApi::class.java)
+        mutesRepository = MutesRepository(mutesApi)
+
+        val storiesApi = retrofit.create(StoriesApi::class.java)
+        storiesRepository = StoriesRepository(storiesApi)
 
         // FAZ5_INIT_MARKER — her ajan kendi `val xxxApi = retrofit.create(...)`
         // + `xxxRepository = XxxRepository(xxxApi)` satırlarını bu satırın

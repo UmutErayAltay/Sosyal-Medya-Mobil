@@ -28,6 +28,8 @@ import androidx.compose.material.icons.filled.HourglassEmpty
 import androidx.compose.material.icons.filled.Inbox
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.NotificationsOff
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.Settings
@@ -116,6 +118,7 @@ fun ProfileScreen(
     val isPendingRequest by viewModel.isPendingRequest.collectAsState()
     val isPrivate by viewModel.isPrivate.collectAsState()
     val isBlockedByMe by viewModel.isBlockedByMe.collectAsState()
+    val isMuted by viewModel.isMuted.collectAsState()
     val isDeactivated by viewModel.isDeactivated.collectAsState()
     val stats by viewModel.stats.collectAsState()
     val loading by viewModel.loading.collectAsState()
@@ -177,6 +180,22 @@ fun ProfileScreen(
                                     }
                                 },
                             )
+                            // Faz 5 Dalga 2A: AYNI overflow menüde ikinci bir aksiyon —
+                            // ayrı bir buton İCAT EDİLMEDİ. Engelleme'nin AKSİNE onay
+                            // diyaloğu yok (geri dönüşü kolay, düşük riskli bir aksiyon).
+                            DropdownMenuItem(
+                                text = { Text(if (isMuted) "Sesi Aç" else "Sessize Al") },
+                                leadingIcon = {
+                                    Icon(
+                                        if (isMuted) Icons.Filled.Notifications else Icons.Filled.NotificationsOff,
+                                        contentDescription = null,
+                                    )
+                                },
+                                onClick = {
+                                    showBlockMenu = false
+                                    viewModel.toggleUserMute()
+                                },
+                            )
                         }
                     }
                 },
@@ -229,6 +248,7 @@ fun ProfileScreen(
                 onCommentClick = { onNavigateToPostDetail(it.id) },
                 onHashtagClick = onNavigateToHashtag,
                 onPollVote = { postId, optionId -> viewModel.votePoll(postId, optionId) },
+                onMutePost = { postId -> viewModel.toggleMutePost(postId) },
             )
         }
     }
@@ -352,6 +372,7 @@ private fun ProfileContent(
     onCommentClick: (Post) -> Unit,
     onHashtagClick: (String) -> Unit,
     onPollVote: (String, String) -> Unit,
+    onMutePost: (String) -> Unit,
 ) {
     var selectedTab by remember { mutableStateOf(ProfileTab.Posts) }
     val hidden = isPrivate && !isSelf && !isFollowing
@@ -463,6 +484,7 @@ private fun ProfileContent(
                         onCommentClick = onCommentClick,
                         onHashtagClick = onHashtagClick,
                         onPollVote = onPollVote,
+                        onMutePost = onMutePost,
                     )
                 }
             }

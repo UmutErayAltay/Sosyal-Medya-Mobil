@@ -961,10 +961,153 @@ data class CreateStickerResponse(
 // (yukarıda tanımlı) reuse edilir, ayrı bir yanıt DTO'su İCAT EDİLMEDİ.
 
 // ---- FAZ5: Sessize alma (Dalga 2A) ----
+// app/api_v1/mutes.py api_toggle_mute_user()/api_toggle_mute_post() ile
+// birebir eşleşir (web app/mutes.py toggle_mute()/app/post_mutes.py
+// toggle_mute_post()'un JSON'a taşınmış hali). İKİ endpoint de AYNI şekli
+// döner: {"ok":true,"action":"muted"|"unmuted"} veya {"error":"..."}.
+// ToggleBlockResponse'un `blocked: Boolean` alanından FARKLI olarak backend
+// burada bir action STRING'i döndürüyor — computed `muted` property'siyle
+// çağıran tarafta bool'a çevriliyor, ayrı bir alan İCAT EDİLMEDİ.
+
+data class ToggleMuteResponse(
+    val ok: Boolean = false,
+    val action: String? = null,
+    val error: String? = null,
+) {
+    val muted: Boolean get() = action == "muted"
+}
 
 // ---- FAZ5: Video/Reel paylaşma (Dalga 2B) ----
 
 // ---- FAZ5: Hikayeler (Dalga 2C) ----
+// app/api_v1/stories.py ile birebir eşleşir — web'in app/stories.py'sinin
+// (612 satır) BİREBİR mirror'ı, hiçbir yeni davranış İCAT EDİLMEDİ. Tepki
+// (react) ve yanıt (reply) uçları story_reactions/story_replies gibi bir
+// tablo KULLANMAZ — backend'de birer DM mesajı olarak kaydedilir, native
+// tarafta bu isteğin yanıtı SADECE conversation_id döner (mesajın kendisi
+// ayrı bir "sohbete git" akışıyla, MessagingRepository üzerinden görülür).
+//
+// Route seçimi: backend `POST /stories` (web'in `/stories/new`'i yerine
+// api_v1 konvansiyonuna uygun `/posts`, `/reels` ile TUTARLI).
+
+/** GET /stories/bar satırı — active_stories_bar()'ın ürettiği grup özeti.
+ * `allSeen=false` ise halka renkli (görülmemiş hikaye var), `true` ise
+ * soluk/gri (Instagram deseni). */
+data class StoryBarItemDto(
+    @SerializedName("user_id") val userId: String,
+    val username: String?,
+    @SerializedName("avatar_url") val avatarUrl: String?,
+    @SerializedName("all_seen") val allSeen: Boolean = false,
+)
+
+data class StoryBarResponse(
+    val stories: List<StoryBarItemDto>? = null,
+    val error: String? = null,
+)
+
+/** GET /stories/user/{userId} satırı — attach_story_poll()'un eklediği `poll`
+ * alanı PollDto ile AYNI şekil (id/options/total_votes/my_vote), story'ye
+ * özgü position_x/y/scale de PollDto'da ZATEN var. */
+data class StoryDto(
+    val id: String,
+    @SerializedName("user_id") val userId: String,
+    @SerializedName("image_url") val imageUrl: String?,
+    @SerializedName("video_url") val videoUrl: String?,
+    val caption: String?,
+    @SerializedName("created_at") val createdAt: String?,
+    val visibility: String? = null,
+    @SerializedName("background_color") val backgroundColor: String? = null,
+    @SerializedName("caption_position_x") val captionPositionX: Double? = null,
+    @SerializedName("caption_position_y") val captionPositionY: Double? = null,
+    val poll: PollDto? = null,
+)
+
+data class UserStoriesResponse(
+    val username: String? = null,
+    @SerializedName("avatar_url") val avatarUrl: String? = null,
+    @SerializedName("is_mine") val isMine: Boolean = false,
+    val stories: List<StoryDto>? = null,
+    val error: String? = null,
+)
+
+/** POST /stories yanıtı (multipart/form-data gövde — bkz. StoriesApi.createStory).
+ * `pollError=true` ise hikaye BAŞARIYLA oluşturuldu ama anket eklenemedi
+ * (backend'in insert/anket ayrı try bloklarının native karşılığı). */
+data class CreateStoryResponse(
+    val ok: Boolean = false,
+    @SerializedName("story_id") val storyId: String? = null,
+    @SerializedName("poll_error") val pollError: Boolean = false,
+    val error: String? = null,
+)
+
+/** POST /stories/{id}/react gövdesi — whitelist (❤️😂😮😢🔥👏) backend'de
+ * doğrulanır, native taraf sadece 6 sabit emoji butonu gösterir. */
+data class ReactToStoryRequest(
+    val emoji: String,
+)
+
+data class ReactToStoryResponse(
+    val ok: Boolean = false,
+    @SerializedName("conversation_id") val conversationId: String? = null,
+    val error: String? = null,
+)
+
+/** POST /stories/{id}/reply gövdesi. */
+data class ReplyToStoryRequest(
+    val text: String,
+)
+
+data class ReplyToStoryResponse(
+    val ok: Boolean = false,
+    @SerializedName("conversation_id") val conversationId: String? = null,
+    val error: String? = null,
+)
+
+/** POST /stories/{id}/save-highlight gövdesi — highlightId XOR newTitle
+ * (ikisi birden dolu gönderilirse backend highlightId'yi önceliklendirir,
+ * bkz. app/api_v1/stories.py api_save_highlight()). */
+data class SaveHighlightRequest(
+    @SerializedName("highlight_id") val highlightId: String? = null,
+    @SerializedName("new_title") val newTitle: String? = null,
+)
+
+data class SaveHighlightResponse(
+    val ok: Boolean = false,
+    @SerializedName("highlight_id") val highlightId: String? = null,
+    val error: String? = null,
+)
+
+/** GET /stories/highlights/{userId} satırı — _get_highlights()'ın ürettiği özet. */
+data class HighlightDto(
+    val id: String,
+    val title: String?,
+    @SerializedName("cover_url") val coverUrl: String?,
+    @SerializedName("item_count") val itemCount: Int = 0,
+)
+
+data class HighlightsResponse(
+    val highlights: List<HighlightDto>? = null,
+    val error: String? = null,
+)
+
+/** GET /stories/highlights/{id}/view satırındaki her öğe — story'nin
+ * `id`sine FK YOK (medya KOPYALANDI), bu yüzden StoryDto'dan FARKLI/daha dar
+ * bir DTO (visibility/poll yok — highlight'a kaydedilen anket TAŞINMAZ,
+ * bkz. backend api_save_highlight() docstring'i). */
+data class HighlightItemDto(
+    val id: String,
+    @SerializedName("image_url") val imageUrl: String?,
+    @SerializedName("video_url") val videoUrl: String?,
+    val caption: String?,
+    @SerializedName("original_created_at") val originalCreatedAt: String?,
+)
+
+data class HighlightViewResponse(
+    val title: String? = null,
+    @SerializedName("is_mine") val isMine: Boolean = false,
+    val items: List<HighlightItemDto>? = null,
+    val error: String? = null,
+)
 
 // ---- FAZ5: Bookmark + Koleksiyon (Dalga 3A) ----
 

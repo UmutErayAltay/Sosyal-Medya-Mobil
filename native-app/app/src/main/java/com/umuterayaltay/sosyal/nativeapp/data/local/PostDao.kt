@@ -25,4 +25,10 @@ interface PostDao {
     // yeniden emit eder (Discover/Profil/Reels'teki .map{} deseninin Room karşılığı).
     @Query("UPDATE posts SET likeCount = :likeCount, likedByMe = :likedByMe WHERE id = :postId")
     suspend fun updateLikeState(postId: String, likeCount: Int, likedByMe: Boolean)
+
+    // Faz 5 Dalga 2A — post sessize alma: updateLikeState() ile AYNI desen
+    // (sunucudan dönen GERÇEK durum cache'e yazılır, observeAll() otomatik
+    // yeniden emit eder).
+    @Query("UPDATE posts SET mutedByMe = :mutedByMe WHERE id = :postId")
+    suspend fun updateMuteState(postId: String, mutedByMe: Boolean)
 }

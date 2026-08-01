@@ -205,6 +205,7 @@ fun DiscoverScreen(
                                         onCommentClick = { onNavigateToPostDetail(it.id) },
                                         onHashtagClick = onNavigateToHashtag,
                                         onPollVote = { postId, optionId -> viewModel.votePoll(postId, optionId) },
+                                        onMutePost = { postId -> viewModel.toggleMutePost(postId) },
                                     )
                                 }
                             }
@@ -268,6 +269,7 @@ fun DiscoverScreen(
                                 onCommentClick = { onNavigateToPostDetail(it.id) },
                                 onHashtagClick = onNavigateToHashtag,
                                 onPollVote = { postId, optionId -> viewModel.votePoll(postId, optionId) },
+                                onMutePost = { postId -> viewModel.toggleMutePost(postId) },
                             )
                         }
                         item {

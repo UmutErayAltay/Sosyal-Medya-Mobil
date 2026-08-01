@@ -103,9 +103,13 @@ class InteractionsRepository(
 
     /**
      * Yeni post oluşturur — app/api_v1.py api_create_post() ile AYNI kısıt:
-     * content VE imageBytes ikisi de boşsa backend zaten "empty" döner, burada
-     * ayrıca bir ön-kontrol YAPILMIYOR (tek doğruluk kaynağı backend olsun diye
-     * — CreatePostViewModel.submit() UI tarafında aynı kontrolü zaten yapıyor).
+     * content VE imageBytes/videoBytes ikisi de boşsa backend zaten "empty"
+     * döner, burada ayrıca bir ön-kontrol YAPILMIYOR (tek doğruluk kaynağı
+     * backend olsun diye — CreatePostViewModel.submit() UI tarafında aynı
+     * kontrolü zaten yapıyor). `videoFileName` GERÇEK içerik tipiyle eşleşen
+     * bir uzantı taşımalı (ör. "upload.mp4") — backend hem uzantı HEM
+     * sniff edilmiş MIME'ı doğruluyor (storage_helper.py upload_video),
+     * görsel deseninin AKSİNE burada sabit bir dosya adı YETERSİZ.
      */
     suspend fun createPost(
         content: String,
@@ -113,16 +117,28 @@ class InteractionsRepository(
         imageBytes: ByteArray?,
         imageMimeType: String?,
         imageFileName: String?,
+        videoBytes: ByteArray? = null,
+        videoMimeType: String? = null,
+        videoFileName: String? = null,
+        isReel: Boolean = false,
     ): CreatePostResult = withContext(Dispatchers.IO) {
         try {
             val contentBody: RequestBody = content.toRequestBody("text/plain".toMediaTypeOrNull())
             val visibilityBody: RequestBody = visibility.toRequestBody("text/plain".toMediaTypeOrNull())
+            val isReelBody: RequestBody = (if (isReel) "true" else "false")
+                .toRequestBody("text/plain".toMediaTypeOrNull())
             val imagePart: MultipartBody.Part? = imageBytes?.let { bytes ->
                 val imageBody = bytes.toRequestBody(imageMimeType?.toMediaTypeOrNull())
                 MultipartBody.Part.createFormData("image", imageFileName ?: "image.jpg", imageBody)
             }
+            val videoPart: MultipartBody.Part? = videoBytes?.let { bytes ->
+                val videoBody = bytes.toRequestBody(videoMimeType?.toMediaTypeOrNull())
+                MultipartBody.Part.createFormData("video", videoFileName ?: "upload.mp4", videoBody)
+            }
 
-            val response = interactionsApi.createPost(contentBody, visibilityBody, imagePart)
+            val response = interactionsApi.createPost(
+                contentBody, visibilityBody, imagePart, videoPart, isReelBody,
+            )
             val body = response.body()
             val post = body?.post
             if (response.isSuccessful && body != null && body.error == null && post != null) {

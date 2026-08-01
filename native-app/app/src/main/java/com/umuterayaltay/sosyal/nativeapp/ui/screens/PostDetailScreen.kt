@@ -163,6 +163,7 @@ fun PostDetailScreen(
                         onCommentClick = {},
                         onHashtagClick = onNavigateToHashtag,
                         onPollVote = { postId, optionId -> viewModel.votePoll(postId, optionId) },
+                        onMutePost = { viewModel.toggleMutePost() },
                     )
                 }
 

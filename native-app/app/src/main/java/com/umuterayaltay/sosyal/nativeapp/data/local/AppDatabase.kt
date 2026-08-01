@@ -9,12 +9,14 @@ import androidx.room.RoomDatabase
 // bkz. repository/Post.kt).
 // version 2 -> 3: PostEntity'ye likedByMe kolonu eklendi (Faz 4 — beğeni
 // aksiyonu, bkz. repository/Post.kt/InteractionsRepository).
+// version 3 -> 4: PostEntity'ye mutedByMe kolonu eklendi (Faz 5 Dalga 2A —
+// post sessize alma, bkz. repository/Post.kt PostEntity.toDomain() yorumu).
 // Bu tablo SADECE bir cache (FeedRepository'nin "önce cache göster, sonra
 // ağdan tazele" deseni) - gerçek kullanıcı verisi değil, bu yüzden migration
 // yazmak yerine fallbackToDestructiveMigration() tercih edildi: şema
 // uyuşmazlığında tablo silinip network'ten yeniden doldurulur, kalıcı veri
 // kaybı riski yok.
-@Database(entities = [PostEntity::class], version = 3, exportSchema = false)
+@Database(entities = [PostEntity::class], version = 4, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun postDao(): PostDao
 

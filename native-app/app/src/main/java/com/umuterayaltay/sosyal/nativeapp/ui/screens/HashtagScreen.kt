@@ -161,6 +161,7 @@ fun HashtagScreen(
                         onCommentClick = { onNavigateToPostDetail(it.id) },
                         onHashtagClick = { /* zaten bu etiketin sayfasındayız */ },
                         onPollVote = { postId, optionId -> viewModel.votePoll(postId, optionId) },
+                        onMutePost = { postId -> viewModel.toggleMutePost(postId) },
                     )
                 }
             }

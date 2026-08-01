@@ -7,6 +7,7 @@ import com.umuterayaltay.sosyal.nativeapp.repository.FeedRefreshResult
 import com.umuterayaltay.sosyal.nativeapp.repository.Poll
 import com.umuterayaltay.sosyal.nativeapp.repository.Post
 import com.umuterayaltay.sosyal.nativeapp.repository.ToggleLikeResult
+import com.umuterayaltay.sosyal.nativeapp.repository.ToggleMutePostResult
 import com.umuterayaltay.sosyal.nativeapp.repository.UnreadCountResult
 import com.umuterayaltay.sosyal.nativeapp.repository.VotePollResult
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -36,6 +37,7 @@ class FeedViewModel : ViewModel() {
     private val interactionsRepository = ServiceLocator.interactionsRepository
     private val notificationsRepository = ServiceLocator.notificationsRepository
     private val pollsRepository = ServiceLocator.pollsRepository
+    private val mutesRepository = ServiceLocator.mutesRepository
     private val tokenStore = ServiceLocator.tokenStore
 
     // Room'da poll kolonu YOK (bkz. PostEntity.toDomain() yorumu) — observePosts()
@@ -122,6 +124,28 @@ class FeedViewModel : ViewModel() {
                     }
                     // Diğer hatalar sessizce yutulur - tek bir post beğenisi
                     // başarısız olursa tüm akışı bir hata state'ine düşürmek istenmiyor.
+                }
+            }
+        }
+    }
+
+    /** PostActionsSheet'teki "Postu Sessize Al"/"Sesini Aç" aksiyonu — toggleLike()
+     * ile AYNI desen (sunucu yanıtı geldikten SONRA Room cache'i güncellenir,
+     * observePosts() otomatik yeniden emit eder). Post'un feed'den GİZLENMESİYLE
+     * karıştırılmamalı — bu SADECE bildirim susturur, muted_user_ids'in AKSİNE
+     * feed'i filtrelemez (bkz. görev tanımı). */
+    fun toggleMutePost(postId: String) {
+        viewModelScope.launch {
+            when (val result = mutesRepository.toggleMutePost(postId)) {
+                is ToggleMutePostResult.Success -> {
+                    feedRepository.updateMuteState(postId, result.muted)
+                }
+                is ToggleMutePostResult.Error -> {
+                    if (result.code == "unauthorized") {
+                        tokenStore.clearToken()
+                        _events.emit(FeedEvent.SessionExpired)
+                    }
+                    // Diğer hatalar sessizce yutulur - toggleLike() ile AYNI gerekçe.
                 }
             }
         }

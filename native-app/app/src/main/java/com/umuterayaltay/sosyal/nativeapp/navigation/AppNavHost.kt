@@ -33,6 +33,9 @@ import com.umuterayaltay.sosyal.nativeapp.ui.screens.TwoFactorScreen
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.FollowListKind
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.ForgotPasswordScreen
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.MessageSearchScreen
+import com.umuterayaltay.sosyal.nativeapp.ui.screens.StoryViewerScreen
+import com.umuterayaltay.sosyal.nativeapp.ui.screens.StoryCreateScreen
+import com.umuterayaltay.sosyal.nativeapp.ui.screens.HighlightsScreen
 // FAZ5_IMPORTS_MARKER — her ajan kendi ekran import'unu bu satırın HEMEN
 // ÜSTÜNE ekler (dalga başına ayrı ajan çakışmasın diye).
 
@@ -500,6 +503,54 @@ fun AppNavHost() {
                 onNavigateToConversation = { conversationId ->
                     navController.navigate("conversation/$conversationId")
                 },
+                onSessionExpired = {
+                    navController.navigate(ROUTE_LOGIN) {
+                        popUpTo(ROUTE_MAIN) { inclusive = true }
+                    }
+                },
+            )
+        }
+
+        // Faz 5 Dalga 2C: Hikayeler — FeedScreen'in hikaye çubuğundan
+        // ("storyViewer/{userId}") ve oradaki "+" / StoryBar'ın "Hikaye Ekle"
+        // öğesinden ("storyCreate") erişilir. "highlights/{userId}"/
+        // "highlightView/{highlightId}" bu turda HİÇBİR YERDEN bağlanmıyor
+        // (ProfileScreen'e BAĞLANMAYACAK, Dalga 4'e ertelendi — bkz. görev
+        // tanımı) ama route'ları/ekranları HAZIR, ileride tek satırla bağlanır.
+        composable(
+            route = "storyViewer/{userId}",
+            arguments = listOf(navArgument("userId") { type = NavType.StringType }),
+        ) { backStackEntry ->
+            val userId = backStackEntry.arguments?.getString("userId") ?: return@composable
+            StoryViewerScreen(
+                userId = userId,
+                onNavigateBack = { navController.navigateUp() },
+                onSessionExpired = {
+                    navController.navigate(ROUTE_LOGIN) {
+                        popUpTo(ROUTE_MAIN) { inclusive = true }
+                    }
+                },
+            )
+        }
+        composable("storyCreate") {
+            StoryCreateScreen(
+                onNavigateBack = { navController.navigateUp() },
+                onStoryCreated = { navController.navigateUp() },
+                onSessionExpired = {
+                    navController.navigate(ROUTE_LOGIN) {
+                        popUpTo(ROUTE_MAIN) { inclusive = true }
+                    }
+                },
+            )
+        }
+        composable(
+            route = "highlights/{userId}",
+            arguments = listOf(navArgument("userId") { type = NavType.StringType }),
+        ) { backStackEntry ->
+            val userId = backStackEntry.arguments?.getString("userId") ?: return@composable
+            HighlightsScreen(
+                userId = userId,
+                onNavigateBack = { navController.navigateUp() },
                 onSessionExpired = {
                     navController.navigate(ROUTE_LOGIN) {
                         popUpTo(ROUTE_MAIN) { inclusive = true }

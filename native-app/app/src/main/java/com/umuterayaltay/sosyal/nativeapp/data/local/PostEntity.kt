@@ -17,5 +17,9 @@ data class PostEntity(
     val commentCount: Int,
     val likedByMe: Boolean,
     val createdAt: String?,
+    // version 3 -> 4: mutedByMe kolonu eklendi (Faz 5 Dalga 2A — post sessize
+    // alma kalıcı bir tercih, anketin aksine offline'da da anlamlı, bkz.
+    // repository/Post.kt PostEntity.toDomain() yorumu).
+    val mutedByMe: Boolean = false,
     val cachedAt: Long,
 )

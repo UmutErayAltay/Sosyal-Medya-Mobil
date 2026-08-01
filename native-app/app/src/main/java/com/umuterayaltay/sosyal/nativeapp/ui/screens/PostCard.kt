@@ -15,15 +15,21 @@ import androidx.compose.foundation.text.ClickableText
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -79,6 +85,7 @@ private fun buildContentAnnotatedString(content: String, hashtagColor: androidx.
         append(content.substring(lastEnd))
     }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PostCard(
     post: Post,
@@ -88,7 +95,13 @@ fun PostCard(
     // Faz 5 (Dalga 1A): VARSAYILAN DEĞERLİ — anket bağlamayan çağrı yerleri
     // (henüz bağlanmamış ekranlar) değişmeden derlenmeye devam eder.
     onPollVote: (postId: String, optionId: String) -> Unit = { _, _ -> },
+    // Faz 5 Dalga 2A: VARSAYILAN DEĞERLİ ŞART — mevcut çağrı yerleri (henüz
+    // bağlanmamış ekranlar) bu parametre olmadan da değişmeden derlenmeye
+    // devam eder (onPollVote ile AYNI gerekçe).
+    onMutePost: (postId: String) -> Unit = {},
 ) {
+    var showActionsSheet by remember { mutableStateOf(false) }
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -144,6 +157,13 @@ fun PostCard(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
+                }
+                IconButton(onClick = { showActionsSheet = true }) {
+                    Icon(
+                        imageVector = Icons.Filled.MoreVert,
+                        contentDescription = "Diğer seçenekler",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
 
@@ -235,5 +255,13 @@ fun PostCard(
                 }
             }
         }
+    }
+
+    if (showActionsSheet) {
+        PostActionsSheet(
+            post = post,
+            onMutePost = onMutePost,
+            onDismiss = { showActionsSheet = false },
+        )
     }
 }

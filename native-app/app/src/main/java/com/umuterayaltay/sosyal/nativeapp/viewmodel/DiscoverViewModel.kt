@@ -12,6 +12,7 @@ import com.umuterayaltay.sosyal.nativeapp.repository.Post
 import com.umuterayaltay.sosyal.nativeapp.repository.SearchActionResult
 import com.umuterayaltay.sosyal.nativeapp.repository.SearchResult
 import com.umuterayaltay.sosyal.nativeapp.repository.ToggleLikeResult
+import com.umuterayaltay.sosyal.nativeapp.repository.ToggleMutePostResult
 import com.umuterayaltay.sosyal.nativeapp.repository.VotePollResult
 import com.umuterayaltay.sosyal.nativeapp.repository.applyVote
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -51,6 +52,7 @@ class DiscoverViewModel : ViewModel() {
     private val discoverRepository = ServiceLocator.discoverRepository
     private val interactionsRepository = ServiceLocator.interactionsRepository
     private val pollsRepository = ServiceLocator.pollsRepository
+    private val mutesRepository = ServiceLocator.mutesRepository
     private val tokenStore = ServiceLocator.tokenStore
 
     // ---- Keşfet akışı ----
@@ -274,6 +276,28 @@ class DiscoverViewModel : ViewModel() {
                     }
                 }
                 is ToggleLikeResult.Error -> {
+                    if (result.code == "unauthorized") {
+                        tokenStore.clearToken()
+                        _events.emit(DiscoverEvent.SessionExpired)
+                    }
+                }
+            }
+        }
+    }
+
+    /** PostActionsSheet'teki "Postu Sessize Al"/"Sesini Aç" aksiyonu — toggleLike()
+     * ile AYNI gerekçeyle hem keşfet akışı hem arama sonuçları güncellenir. */
+    fun toggleMutePost(postId: String) {
+        viewModelScope.launch {
+            when (val result = mutesRepository.toggleMutePost(postId)) {
+                is ToggleMutePostResult.Success -> {
+                    fun apply(list: List<Post>): List<Post> = list.map { post ->
+                        if (post.id == postId) post.copy(mutedByMe = result.muted) else post
+                    }
+                    _discoverPosts.value = apply(_discoverPosts.value)
+                    _searchPosts.value = apply(_searchPosts.value)
+                }
+                is ToggleMutePostResult.Error -> {
                     if (result.code == "unauthorized") {
                         tokenStore.clearToken()
                         _events.emit(DiscoverEvent.SessionExpired)

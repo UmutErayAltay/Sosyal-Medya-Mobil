@@ -38,7 +38,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -55,53 +54,47 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
-import com.umuterayaltay.sosyal.nativeapp.viewmodel.CreatePostEvent
-import com.umuterayaltay.sosyal.nativeapp.viewmodel.CreatePostViewModel
+import com.umuterayaltay.sosyal.nativeapp.viewmodel.StoryCreateEvent
+import com.umuterayaltay.sosyal.nativeapp.viewmodel.StoryCreateViewModel
 
-private data class VisibilityOption(val value: String, val label: String, val icon: ImageVector)
+private data class StoryVisibilityOption(val value: String, val label: String, val icon: ImageVector)
 
-private val VISIBILITY_OPTIONS = listOf(
-    VisibilityOption("public", "Herkese Açık", Icons.Filled.Public),
-    VisibilityOption("followers", "Takipçiler", Icons.Filled.Group),
-    VisibilityOption("close_friends", "Yakın Arkadaşlar", Icons.Filled.Star),
+private val STORY_VISIBILITY_OPTIONS = listOf(
+    StoryVisibilityOption("public", "Herkese Açık", Icons.Filled.Public),
+    StoryVisibilityOption("followers", "Takipçiler", Icons.Filled.Group),
+    StoryVisibilityOption("close_friends", "Yakın Arkadaşlar", Icons.Filled.Star),
 )
 
 /**
- * "Yeni Gönderi" ekranı — app/api_v1.py api_create_post() sözleşmesiyle
- * (bkz. CreatePostViewModel) AYNI BİLİNÇLİ SINIR: metin + (TEK opsiyonel
- * görsel VEYA TEK opsiyonel video/reel, ikisi birden UI'da mutually
- * exclusive) + görünürlük (galeriden, Android Photo Picker ile). Görsel/video
- * seçildiğinde diğeri otomatik temizlenir (bkz. ViewModel onImageSelected/
- * onVideoSelected). Video seçiliyken "Reel olarak paylaş" Switch'i görünür —
- * reels.py'nin is_reel=True + video_url IS NOT NULL filtresi ZATEN doğru
- * postları buluyor, burada SADECE bayrak taşınıyor. Görünürlük seçimi
- * DiscoverScreen'deki SearchTypeFilterRow'un FilterChip satırı DESENİYLE
- * tutarlı. Paylaşım sonrası navigasyon (geri dönme) bu ekranın BİLMEDİĞİ bir
- * şey — [onPostCreated] callback'i çağrılır, NavHost geri navigasyonu yapar
- * (NewMessageScreen'deki onConversationReady deseniyle TUTARLI).
+ * "Yeni Hikaye" ekranı — app/api_v1/stories.py api_create_story() sözleşmesiyle
+ * AYNI BİLİNÇLİ SINIR (bkz. StoryCreateViewModel): caption + (TEK opsiyonel
+ * görsel VEYA TEK opsiyonel video, mutually exclusive) + opsiyonel anket (0-4
+ * seçenek) + görünürlük. CreatePostScreen'deki VisibilityFilterRow (private,
+ * dosyaya özgü) ile GÖRSEL DİL tutarlı ama AYRI bir composable — CreatePostScreen'e
+ * DOKUNULMADI.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CreatePostScreen(
+fun StoryCreateScreen(
     onNavigateBack: () -> Unit,
-    onPostCreated: () -> Unit,
+    onStoryCreated: () -> Unit,
     onSessionExpired: () -> Unit,
-    viewModel: CreatePostViewModel = viewModel(),
+    viewModel: StoryCreateViewModel = viewModel(),
 ) {
     val context = LocalContext.current
-    val content by viewModel.content.collectAsState()
+    val caption by viewModel.caption.collectAsState()
     val visibility by viewModel.visibility.collectAsState()
     val selectedImageUri by viewModel.selectedImageUri.collectAsState()
     val selectedVideoUri by viewModel.selectedVideoUri.collectAsState()
-    val isReel by viewModel.isReel.collectAsState()
+    val pollOptions by viewModel.pollOptions.collectAsState()
     val submitting by viewModel.submitting.collectAsState()
     val error by viewModel.error.collectAsState()
 
     LaunchedEffect(Unit) {
         viewModel.events.collect { event ->
             when (event) {
-                is CreatePostEvent.Success -> onPostCreated()
-                is CreatePostEvent.SessionExpired -> onSessionExpired()
+                is StoryCreateEvent.Success -> onStoryCreated()
+                is StoryCreateEvent.SessionExpired -> onSessionExpired()
             }
         }
     }
@@ -114,12 +107,14 @@ fun CreatePostScreen(
         contract = ActivityResultContracts.PickVisualMedia(),
     ) { uri -> viewModel.onVideoSelected(uri) }
 
-    val canSubmit = (content.isNotBlank() || selectedImageUri != null || selectedVideoUri != null) && !submitting
+    val filledPollOptionCount = pollOptions.count { it.isNotBlank() }
+    val canSubmit = (caption.isNotBlank() || selectedImageUri != null || selectedVideoUri != null ||
+        filledPollOptionCount >= 2) && !submitting
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Yeni Gönderi") },
+                title = { Text("Yeni Hikaye") },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack, enabled = !submitting) {
                         Icon(Icons.Filled.Close, contentDescription = "Vazgeç")
@@ -156,15 +151,15 @@ fun CreatePostScreen(
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                VisibilityFilterRow(selected = visibility, onSelect = viewModel::onVisibilityChange)
+                StoryVisibilityFilterRow(selected = visibility, onSelect = viewModel::onVisibilityChange)
             }
 
             OutlinedTextField(
-                value = content,
-                onValueChange = viewModel::onContentChange,
+                value = caption,
+                onValueChange = viewModel::onCaptionChange,
                 modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("Ne düşünüyorsun?") },
-                minLines = 4,
+                placeholder = { Text("Bir şeyler yaz...") },
+                minLines = 2,
                 enabled = !submitting,
                 shape = MaterialTheme.shapes.medium,
             )
@@ -173,7 +168,7 @@ fun CreatePostScreen(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(220.dp)
+                        .height(280.dp)
                         .clip(RoundedCornerShape(16.dp))
                         .background(MaterialTheme.colorScheme.surfaceVariant),
                 ) {
@@ -196,69 +191,41 @@ fun CreatePostScreen(
                         Icon(Icons.Filled.Close, contentDescription = "Görseli kaldır")
                     }
                 }
-            } else if (selectedVideoUri == null) {
-                OutlinedButton(
-                    onClick = {
-                        imagePickerLauncher.launch(
-                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
-                        )
-                    },
-                    enabled = !submitting,
-                    shape = MaterialTheme.shapes.medium,
-                    modifier = Modifier.fillMaxWidth(),
+            } else if (selectedVideoUri != null) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .padding(12.dp),
                 ) {
-                    Icon(Icons.Filled.AddPhotoAlternate, contentDescription = null)
-                    Text(text = "Görsel Ekle", modifier = Modifier.padding(start = 8.dp))
-                }
-            }
-
-            // Video seçimi — görsel ile mutually exclusive (yukarıdaki
-            // ViewModel.onImageSelected/onVideoSelected zaten diğerini
-            // temizliyor). Tam video player İCAT EDİLMEDİ (görev tanımı
-            // gereği gerekmiyor) — sadece dosya seçildiğini gösteren basit
-            // bir ikon+etiket + kaldır butonu yeterli.
-            if (selectedImageUri == null) {
-                if (selectedVideoUri != null) {
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(16.dp))
-                                .background(MaterialTheme.colorScheme.surfaceVariant)
-                                .padding(12.dp),
-                        ) {
-                            Icon(Icons.Filled.Movie, contentDescription = null)
-                            Text(
-                                text = "Video seçildi",
-                                modifier = Modifier
-                                    .padding(start = 8.dp)
-                                    .weight(1f),
-                            )
-                            IconButton(
-                                onClick = { viewModel.onVideoSelected(null) },
-                                enabled = !submitting,
-                            ) {
-                                Icon(Icons.Filled.Close, contentDescription = "Videoyu kaldır")
-                            }
-                        }
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Text(
-                                text = "Reel olarak paylaş",
-                                style = MaterialTheme.typography.bodyMedium,
-                                modifier = Modifier.weight(1f),
-                            )
-                            Switch(
-                                checked = isReel,
-                                onCheckedChange = viewModel::onReelToggle,
-                                enabled = !submitting,
-                            )
-                        }
+                    Icon(Icons.Filled.Movie, contentDescription = null)
+                    Text(
+                        text = "Video seçildi",
+                        modifier = Modifier
+                            .padding(start = 8.dp)
+                            .weight(1f),
+                    )
+                    IconButton(onClick = { viewModel.onVideoSelected(null) }, enabled = !submitting) {
+                        Icon(Icons.Filled.Close, contentDescription = "Videoyu kaldır")
                     }
-                } else {
+                }
+            } else {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        onClick = {
+                            imagePickerLauncher.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                            )
+                        },
+                        enabled = !submitting,
+                        shape = MaterialTheme.shapes.medium,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Icon(Icons.Filled.AddPhotoAlternate, contentDescription = null)
+                        Text(text = "Görsel", modifier = Modifier.padding(start = 8.dp))
+                    }
                     OutlinedButton(
                         onClick = {
                             videoPickerLauncher.launch(
@@ -267,10 +234,40 @@ fun CreatePostScreen(
                         },
                         enabled = !submitting,
                         shape = MaterialTheme.shapes.medium,
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.weight(1f),
                     ) {
                         Icon(Icons.Filled.VideoLibrary, contentDescription = null)
-                        Text(text = "Video Ekle", modifier = Modifier.padding(start = 8.dp))
+                        Text(text = "Video", modifier = Modifier.padding(start = 8.dp))
+                    }
+                }
+            }
+
+            // Anket seçenekleri (0-4) — SADECE medya yokken zorunlu DEĞİL,
+            // backend medya+anket birlikte olabiliyor (bkz. create_story()).
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = "Anket (opsiyonel)",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                pollOptions.forEachIndexed { index, option ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedTextField(
+                            value = option,
+                            onValueChange = { viewModel.onPollOptionChange(index, it) },
+                            modifier = Modifier.weight(1f),
+                            placeholder = { Text("Seçenek ${index + 1}") },
+                            singleLine = true,
+                            enabled = !submitting,
+                        )
+                        IconButton(onClick = { viewModel.removePollOption(index) }, enabled = !submitting) {
+                            Icon(Icons.Filled.Close, contentDescription = "Seçeneği kaldır")
+                        }
+                    }
+                }
+                if (pollOptions.size < 4) {
+                    TextButton(onClick = { viewModel.addPollOption() }, enabled = !submitting) {
+                        Text("+ Seçenek Ekle")
                     }
                 }
             }
@@ -302,12 +299,12 @@ fun CreatePostScreen(
 }
 
 @Composable
-private fun VisibilityFilterRow(selected: String, onSelect: (String) -> Unit) {
+private fun StoryVisibilityFilterRow(selected: String, onSelect: (String) -> Unit) {
     LazyRow(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        items(VISIBILITY_OPTIONS, key = { it.value }) { option ->
+        items(STORY_VISIBILITY_OPTIONS, key = { it.value }) { option ->
             val isSelected = selected == option.value
             FilterChip(
                 selected = isSelected,

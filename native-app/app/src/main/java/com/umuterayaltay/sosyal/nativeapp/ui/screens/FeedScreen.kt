@@ -43,6 +43,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.FeedEvent
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.FeedUiState
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.FeedViewModel
+import com.umuterayaltay.sosyal.nativeapp.viewmodel.StoryBarEvent
+import com.umuterayaltay.sosyal.nativeapp.viewmodel.StoryBarViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -53,17 +55,31 @@ fun FeedScreen(
     onNotificationsClick: () -> Unit,
     onTrendingClick: () -> Unit,
     onNavigateToHashtag: (String) -> Unit,
+    // Faz 5 Dalga 2C: hikaye çubuğu — StoryBarViewModel FeedViewModel'e
+    // KARIŞTIRILMADI (görev tanımı), ayrı `viewModel()` instance'ı.
+    onNavigateToStoryViewer: (String) -> Unit = {},
+    onNavigateToStoryCreate: () -> Unit = {},
     viewModel: FeedViewModel = viewModel(),
+    storyBarViewModel: StoryBarViewModel = viewModel(),
 ) {
     val posts by viewModel.posts.collectAsState()
     val uiState by viewModel.uiState.collectAsState()
     val isRefreshing by viewModel.isRefreshing.collectAsState()
     val unreadNotificationsCount by viewModel.unreadNotificationsCount.collectAsState()
+    val storyBarItems by storyBarViewModel.items.collectAsState()
 
     LaunchedEffect(Unit) {
         viewModel.events.collect { event ->
             when (event) {
                 is FeedEvent.SessionExpired -> onSessionExpired()
+            }
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        storyBarViewModel.events.collect { event ->
+            when (event) {
+                is StoryBarEvent.SessionExpired -> onSessionExpired()
             }
         }
     }
@@ -183,6 +199,16 @@ fun FeedScreen(
                     contentPadding = PaddingValues(vertical = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
+                    // Faz 5 Dalga 2C: hikaye çubuğu — post listesinden ÖNCE,
+                    // web'in feed sayfasındaki AYNI konum (bkz. görev tanımı:
+                    // "LazyColumn'un EN ÜSTÜNE, post listesinden önce").
+                    item {
+                        StoryBar(
+                            items = storyBarItems,
+                            onAddStoryClick = onNavigateToStoryCreate,
+                            onStoryClick = onNavigateToStoryViewer,
+                        )
+                    }
                     items(posts, key = { it.id }) { post ->
                         PostCard(
                             post = post,
@@ -190,6 +216,7 @@ fun FeedScreen(
                             onCommentClick = { onNavigateToPostDetail(it.id) },
                             onHashtagClick = onNavigateToHashtag,
                             onPollVote = { postId, optionId -> viewModel.votePoll(postId, optionId) },
+                            onMutePost = { postId -> viewModel.toggleMutePost(postId) },
                         )
                     }
                 }

@@ -11,6 +11,8 @@ import com.umuterayaltay.sosyal.nativeapp.repository.ProfileResult
 import com.umuterayaltay.sosyal.nativeapp.repository.ToggleBlockResult
 import com.umuterayaltay.sosyal.nativeapp.repository.ToggleFollowResult
 import com.umuterayaltay.sosyal.nativeapp.repository.ToggleLikeResult
+import com.umuterayaltay.sosyal.nativeapp.repository.ToggleMutePostResult
+import com.umuterayaltay.sosyal.nativeapp.repository.ToggleUserMuteResult
 import com.umuterayaltay.sosyal.nativeapp.repository.VotePollResult
 import com.umuterayaltay.sosyal.nativeapp.repository.applyVote
 import com.umuterayaltay.sosyal.nativeapp.repository.toDomain
@@ -38,6 +40,7 @@ class ProfileViewModel(private val requestedUsername: String?) : ViewModel() {
     private val authRepository = ServiceLocator.authRepository
     private val interactionsRepository = ServiceLocator.interactionsRepository
     private val pollsRepository = ServiceLocator.pollsRepository
+    private val mutesRepository = ServiceLocator.mutesRepository
     private val tokenStore = ServiceLocator.tokenStore
 
     private var resolvedUsername: String? = requestedUsername
@@ -71,6 +74,12 @@ class ProfileViewModel(private val requestedUsername: String?) : ViewModel() {
 
     private val _isBlockedByMe = MutableStateFlow(false)
     val isBlockedByMe: StateFlow<Boolean> = _isBlockedByMe.asStateFlow()
+
+    // Faz 5 Dalga 2A — profil.isMuted DTO'da zaten dolu geliyordu (backend
+    // api_v1/profile.py), sadece hiç okunmuyordu (bkz. görev tanımı). loadProfile()
+    // sonunda buraya yazılır, toggleUserMute() ile güncellenir.
+    private val _isMuted = MutableStateFlow(false)
+    val isMuted: StateFlow<Boolean> = _isMuted.asStateFlow()
 
     private val _isDeactivated = MutableStateFlow(false)
     val isDeactivated: StateFlow<Boolean> = _isDeactivated.asStateFlow()
@@ -125,6 +134,7 @@ class ProfileViewModel(private val requestedUsername: String?) : ViewModel() {
                     _isPendingRequest.value = body.isPendingRequest
                     _isPrivate.value = body.isPrivate
                     _isBlockedByMe.value = body.isBlockedByMe
+                    _isMuted.value = body.isMuted
                     _stats.value = body.stats
                 }
                 is ProfileResult.Error -> {
@@ -194,6 +204,56 @@ class ProfileViewModel(private val requestedUsername: String?) : ViewModel() {
                             "not_found" -> "Kullanıcı bulunamadı"
                             else -> "İşlem başarısız, lütfen tekrar deneyin"
                         }
+                    }
+                }
+            }
+        }
+    }
+
+    /** Profil ekranındaki "Sessize Al"/"Sesi Aç" aksiyonu — toggleBlock() ile AYNI
+     * desen (sunucudan dönen YENİ durum doğrudan _isMuted'e yazılır, loadProfile()
+     * tekrarı YOK). Kullanıcı mute etmek feed'i FİLTRELER (muted_user_ids), ama bu
+     * BAŞKASININ profilinde etkisi yoktur — profil/keşfet/arama muted kişinin
+     * postlarını YİNE gösterir (bkz. app/mutes.py docstring'i), bu yüzden burada
+     * posts listesine dokunulmaz. */
+    fun toggleUserMute() {
+        val targetId = profile.value?.id ?: return
+        viewModelScope.launch {
+            when (val result = mutesRepository.toggleUserMute(targetId)) {
+                is ToggleUserMuteResult.Success -> _isMuted.value = result.muted
+                is ToggleUserMuteResult.Error -> {
+                    if (result.code == "unauthorized") {
+                        tokenStore.clearToken()
+                        _events.emit(ProfileEvent.SessionExpired)
+                    } else {
+                        _error.value = when (result.code) {
+                            "cannot_mute_self" -> "Kendini sessize alamazsın"
+                            else -> "İşlem başarısız, lütfen tekrar deneyin"
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /** PostActionsSheet'teki "Postu Sessize Al"/"Sesini Aç" aksiyonu —
+     * toggleLike() ile AYNI gerekçeyle posts/likedPosts/archivedPosts'ın HEPSİ
+     * güncellenir (aynı post birden fazla sekmede görünebilir). */
+    fun toggleMutePost(postId: String) {
+        viewModelScope.launch {
+            when (val result = mutesRepository.toggleMutePost(postId)) {
+                is ToggleMutePostResult.Success -> {
+                    fun apply(list: List<Post>): List<Post> = list.map { post ->
+                        if (post.id == postId) post.copy(mutedByMe = result.muted) else post
+                    }
+                    _posts.value = apply(_posts.value)
+                    _likedPosts.value = apply(_likedPosts.value)
+                    _archivedPosts.value = apply(_archivedPosts.value)
+                }
+                is ToggleMutePostResult.Error -> {
+                    if (result.code == "unauthorized") {
+                        tokenStore.clearToken()
+                        _events.emit(ProfileEvent.SessionExpired)
                     }
                 }
             }

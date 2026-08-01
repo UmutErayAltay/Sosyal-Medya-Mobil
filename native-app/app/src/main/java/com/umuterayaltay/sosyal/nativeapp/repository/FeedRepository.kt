@@ -36,6 +36,11 @@ class FeedRepository(
     suspend fun updateLikeState(postId: String, likeCount: Int, likedByMe: Boolean) =
         withContext(Dispatchers.IO) { postDao.updateLikeState(postId, likeCount, likedByMe) }
 
+    /** MutesRepository.toggleMutePost() sunucu yanıtı geldikten SONRA çağrılır —
+     * updateLikeState() ile AYNI desen. */
+    suspend fun updateMuteState(postId: String, mutedByMe: Boolean) =
+        withContext(Dispatchers.IO) { postDao.updateMuteState(postId, mutedByMe) }
+
     suspend fun refresh(): FeedRefreshResult = withContext(Dispatchers.IO) {
         try {
             val response = feedApi.getFeed(cursor = 0, limit = FIRST_PAGE_LIMIT)

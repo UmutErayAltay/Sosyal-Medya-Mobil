@@ -90,6 +90,10 @@ fun MainScaffold(navController: NavHostController, onSessionExpired: () -> Unit)
                     onNotificationsClick = { navController.navigate("notifications") },
                     onTrendingClick = { navController.navigate("trending") },
                     onNavigateToHashtag = { tag -> navController.navigate("hashtag/$tag") },
+                    // Faz 5 Dalga 2C: hikaye çubuğu — "+"tan oluşturma ekranına,
+                    // bir halkaya tıklanınca o kullanıcının viewer'ına gider.
+                    onNavigateToStoryViewer = { userId -> navController.navigate("storyViewer/$userId") },
+                    onNavigateToStoryCreate = { navController.navigate("storyCreate") },
                 )
                 MainTab.Discover -> DiscoverScreen(
                     onSessionExpired = onSessionExpired,
