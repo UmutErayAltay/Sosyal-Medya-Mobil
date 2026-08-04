@@ -9,6 +9,7 @@ import com.umuterayaltay.sosyal.nativeapp.repository.Highlight
 import com.umuterayaltay.sosyal.nativeapp.repository.HighlightItem
 import com.umuterayaltay.sosyal.nativeapp.repository.HighlightViewResult
 import com.umuterayaltay.sosyal.nativeapp.repository.HighlightsResult
+import com.umuterayaltay.sosyal.nativeapp.repository.UpdateHighlightResult
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -19,6 +20,11 @@ import kotlinx.coroutines.launch
 sealed class HighlightsEvent {
     data object SessionExpired : HighlightsEvent()
     data object HighlightDeleted : HighlightsEvent()
+    // FeedEvent.ShowToast ile AYNI gerekçe (bkz. viewmodel/FeedViewModel.kt) —
+    // "Düzenle" başarısız olursa (ör. nothing_to_update) kullanıcıya GÖRÜNÜR
+    // bir geri bildirim gerekir, diğer aksiyonların (silme) AKSİNE sessizce
+    // yutulmaz.
+    data class ShowToast(val message: String) : HighlightsEvent()
 }
 
 /**
@@ -98,6 +104,46 @@ class HighlightsViewModel(private val userId: String) : ViewModel() {
                 is DeleteHighlightResult.Error -> handleError(result.code, silent = true)
             }
         }
+    }
+
+    /** HighlightsScreen'deki "Düzenle" aksiyonu — SADECE başlık (title)
+     * gönderilir, kapak (coverUrl) bu turda native UI'dan hiç çağrılmıyor
+     * (kapsam dışı, bkz. HighlightsScreen.kt yorumu). Başarıda hem liste
+     * (_highlights) hem şu an açık olan görüntüleyicinin başlığı (_selectedTitle)
+     * güncellenir — düzenleme SADECE görüntüleyici içindeyken (isMine) tetiklenebildiği
+     * için ikisi de AYNI highlight'a işaret eder. */
+    fun updateHighlight(highlightId: String, title: String) {
+        val trimmed = title.trim()
+        if (trimmed.isEmpty()) {
+            viewModelScope.launch { _events.emit(HighlightsEvent.ShowToast("Başlık boş olamaz")) }
+            return
+        }
+        viewModelScope.launch {
+            when (val result = storiesRepository.updateHighlight(highlightId, title = trimmed)) {
+                is UpdateHighlightResult.Success -> {
+                    _highlights.value = _highlights.value.map { highlight ->
+                        if (highlight.id == highlightId) highlight.copy(title = trimmed) else highlight
+                    }
+                    _selectedTitle.value = trimmed
+                }
+                is UpdateHighlightResult.Error -> {
+                    if (result.code == "unauthorized") {
+                        tokenStore.clearToken()
+                        _events.emit(HighlightsEvent.SessionExpired)
+                    } else {
+                        _events.emit(HighlightsEvent.ShowToast(mapUpdateError(result.code)))
+                    }
+                }
+            }
+        }
+    }
+
+    private fun mapUpdateError(code: String?): String = when (code) {
+        "not_found" -> "Öne çıkan bulunamadı"
+        "nothing_to_update" -> "Değişiklik yok"
+        "network_error" -> "Bağlantı hatası — internet bağlantınızı kontrol edin"
+        "highlights_not_available" -> "Şu anda kullanılamıyor, daha sonra tekrar dene"
+        else -> "Güncellenemedi, lütfen tekrar dene"
     }
 
     private suspend fun handleError(code: String?, silent: Boolean = false) {

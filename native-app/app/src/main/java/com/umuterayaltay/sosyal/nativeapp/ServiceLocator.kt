@@ -39,6 +39,12 @@ import com.umuterayaltay.sosyal.nativeapp.network.GifsApi
 import com.umuterayaltay.sosyal.nativeapp.repository.GifsRepository
 import com.umuterayaltay.sosyal.nativeapp.network.PushApi
 import com.umuterayaltay.sosyal.nativeapp.repository.PushRepository
+import com.umuterayaltay.sosyal.nativeapp.network.RepostsApi
+import com.umuterayaltay.sosyal.nativeapp.repository.RepostsRepository
+import com.umuterayaltay.sosyal.nativeapp.network.SharesApi
+import com.umuterayaltay.sosyal.nativeapp.repository.SharesRepository
+import com.umuterayaltay.sosyal.nativeapp.network.ReportsApi
+import com.umuterayaltay.sosyal.nativeapp.repository.ReportsRepository
 // FAZ5_IMPORTS_MARKER — her ajan kendi Api/Repository import'unu bu satırın
 // HEMEN ÜSTÜNE ekler (dalga başına ayrı ajan çakışmasın diye).
 
@@ -86,6 +92,12 @@ object ServiceLocator {
     lateinit var gifsRepository: GifsRepository
         private set
     lateinit var pushRepository: PushRepository
+        private set
+    lateinit var repostsRepository: RepostsRepository
+        private set
+    lateinit var sharesRepository: SharesRepository
+        private set
+    lateinit var reportsRepository: ReportsRepository
         private set
     // FAZ5_LATEINIT_MARKER — her ajan kendi `lateinit var xxxRepository`'sini
     // bu satırın HEMEN ÜSTÜNE ekler.
@@ -144,6 +156,15 @@ object ServiceLocator {
 
         val pushApi = retrofit.create(PushApi::class.java)
         pushRepository = PushRepository(pushApi)
+
+        val repostsApi = retrofit.create(RepostsApi::class.java)
+        repostsRepository = RepostsRepository(repostsApi)
+
+        val sharesApi = retrofit.create(SharesApi::class.java)
+        sharesRepository = SharesRepository(sharesApi)
+
+        val reportsApi = retrofit.create(ReportsApi::class.java)
+        reportsRepository = ReportsRepository(reportsApi)
 
         // FAZ5_INIT_MARKER — her ajan kendi `val xxxApi = retrofit.create(...)`
         // + `xxxRepository = XxxRepository(xxxApi)` satırlarını bu satırın

@@ -1,5 +1,6 @@
 package com.umuterayaltay.sosyal.nativeapp.ui.screens
 
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -33,10 +34,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -75,11 +80,18 @@ fun FeedScreen(
     val isRefreshing by viewModel.isRefreshing.collectAsState()
     val unreadNotificationsCount by viewModel.unreadNotificationsCount.collectAsState()
     val storyBarItems by storyBarViewModel.items.collectAsState()
+    val context = LocalContext.current
+
+    // Faz 5 sonrası eksik giderme: "Gönder" (post paylaşımı) — bir ViewModel
+    // state'i İCAT EDİLMEDİ, PostShareSheet kendi başına yeterli (bkz. o dosyanın
+    // yorumu), burada SADECE hangi post paylaşılacağı tutulur.
+    var shareTargetPostId by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
         viewModel.events.collect { event ->
             when (event) {
                 is FeedEvent.SessionExpired -> onSessionExpired()
+                is FeedEvent.ShowToast -> Toast.makeText(context, event.message, Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -106,10 +118,27 @@ fun FeedScreen(
     // enterAlwaysScrollBehavior()'ı TAM OLARAK bunu yapar (elle NestedScrollConnection
     // yazmaya gerek yok). LazyColumn'un scroll'u yukarı doğru bu bar'a
     // nestedScroll ile bildirilir, bar kendi offset'ini animasyonla ayarlar.
+    // Kullanıcı raporu (gerçek cihaz ekran görüntüsü): TopAppBar TAM olarak
+    // kaymıyordu, üstte boş/koyu bir şerit kalıyordu. Kök neden: nestedScroll
+    // modifier'ı BURADA (Scaffold'un kökünde) uygulanınca, PullToRefreshBox'ın
+    // KENDİ iç nestedScroll bağlantısı (Modifier.pullToRefresh, LazyColumn'a
+    // Scaffold'dan DAHA YAKIN bir ata) scroll delta'sını ÖNCE görüyor —
+    // PullToRefreshBox üstten biraz overscroll/pull kalıntısı (distancePulled)
+    // taşıyorsa (androidx material3 1.3.1 PullToRefresh.kt: onPreScroll SADECE
+    // distancePulled>0 iken yukarı-kaydırma delta'sını kısmen tüketiyor) bu
+    // TopAppBar'a ulaşan delta'yı eksiltip heightOffset'in tam
+    // heightOffsetLimit'e (-expandedHeightPx, TAM collapse) ULAŞMASINI
+    // engelleyebiliyor — bar kısmi bir yükseklikte "takılı" kalıyor (görünen
+    // koyu şerit, TopAppBarLayout'un clipToBounds()'ı title/icon'ları gizliyor
+    // ama Surface'in containerColor'ı hâlâ boyanıyor). Çözüm: nestedScroll'u
+    // LazyColumn'a taşı (PullToRefreshBox'ın İÇİNE, scroll kaynağına daha
+    // yakın) — böylece TopAppBar'ın bağlantısı PullToRefreshBox'ınkinden ÖNCE
+    // pre-scroll alır, tam collapse garanti olur; PullToRefreshBox'ın kendi
+    // pull-to-refresh algılaması (sadece top-boundary'de post-scroll ile
+    // çalışıyor) buna rağmen bozulmaz.
     val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
 
     Scaffold(
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
             TopAppBar(
                 title = { Text("Ana Sayfa") },
@@ -222,7 +251,12 @@ fun FeedScreen(
                     }
                 }
                 else -> LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
+                    // nestedScroll BURADA (LazyColumn'un kendisinde) — PullToRefreshBox'ın
+                    // KENDİ iç nestedScroll'undan (bu Box'ın modifier.pullToRefresh'i) DAHA
+                    // YAKIN bir ata olsun diye (yukarıdaki scrollBehavior yorumuna bkz.).
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .nestedScroll(scrollBehavior.nestedScrollConnection),
                     contentPadding = PaddingValues(vertical = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
@@ -245,11 +279,22 @@ fun FeedScreen(
                             onPollVote = { postId, optionId -> viewModel.votePoll(postId, optionId) },
                             onMutePost = { postId -> viewModel.toggleMutePost(postId) },
                             onBookmark = { postId -> viewModel.toggleBookmark(postId) },
+                            onRepost = { postId -> viewModel.repost(postId) },
+                            onShare = { postId -> shareTargetPostId = postId },
+                            onReport = { postId -> viewModel.report(postId) },
                         )
                     }
                 }
             }
         }
+    }
+
+    shareTargetPostId?.let { postId ->
+        PostShareSheet(
+            postId = postId,
+            onDismiss = { shareTargetPostId = null },
+            onSessionExpired = onSessionExpired,
+        )
     }
 }
 

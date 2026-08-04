@@ -1,5 +1,6 @@
 package com.umuterayaltay.sosyal.nativeapp.ui.screens
 
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -56,6 +57,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -100,11 +102,17 @@ fun DiscoverScreen(
     val discoverLoading by viewModel.discoverLoading.collectAsState()
     val discoverHasMore by viewModel.discoverHasMore.collectAsState()
     val discoverError by viewModel.discoverError.collectAsState()
+    val context = LocalContext.current
+
+    // FeedScreen.kt'deki AYNI gerekçe: "Gönder" (post paylaşımı) için ayrı bir
+    // ViewModel state'i İCAT EDİLMEDİ, PostShareSheet kendi başına yeterli.
+    var shareTargetPostId by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
         viewModel.events.collect { event ->
             when (event) {
                 is DiscoverEvent.SessionExpired -> onSessionExpired()
+                is DiscoverEvent.ShowToast -> Toast.makeText(context, event.message, Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -215,6 +223,9 @@ fun DiscoverScreen(
                                         onPollVote = { postId, optionId -> viewModel.votePoll(postId, optionId) },
                                         onMutePost = { postId -> viewModel.toggleMutePost(postId) },
                                         onBookmark = { postId -> viewModel.toggleBookmark(postId) },
+                                        onRepost = { postId -> viewModel.repost(postId) },
+                                        onShare = { postId -> shareTargetPostId = postId },
+                                        onReport = { postId -> viewModel.report(postId) },
                                     )
                                 }
                             }
@@ -280,6 +291,9 @@ fun DiscoverScreen(
                                 onPollVote = { postId, optionId -> viewModel.votePoll(postId, optionId) },
                                 onMutePost = { postId -> viewModel.toggleMutePost(postId) },
                                 onBookmark = { postId -> viewModel.toggleBookmark(postId) },
+                                onRepost = { postId -> viewModel.repost(postId) },
+                                onShare = { postId -> shareTargetPostId = postId },
+                                onReport = { postId -> viewModel.report(postId) },
                             )
                         }
                         item {
@@ -297,6 +311,14 @@ fun DiscoverScreen(
                 }
             }
         }
+    }
+
+    shareTargetPostId?.let { postId ->
+        PostShareSheet(
+            postId = postId,
+            onDismiss = { shareTargetPostId = null },
+            onSessionExpired = onSessionExpired,
+        )
     }
 }
 

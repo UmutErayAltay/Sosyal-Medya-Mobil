@@ -1,5 +1,6 @@
 package com.umuterayaltay.sosyal.nativeapp.ui.screens
 
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -63,6 +64,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -139,11 +141,17 @@ fun ProfileScreen(
 
     var showBlockMenu by remember { mutableStateOf(false) }
     var showBlockConfirmDialog by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+
+    // FeedScreen.kt'deki AYNI gerekçe — "Gönder" için ayrı bir ViewModel state'i
+    // İCAT EDİLMEDİ, PostShareSheet kendi başına yeterli.
+    var shareTargetPostId by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
         viewModel.events.collect { event ->
             when (event) {
                 is ProfileEvent.SessionExpired -> onSessionExpired()
+                is ProfileEvent.ShowToast -> Toast.makeText(context, event.message, Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -279,8 +287,19 @@ fun ProfileScreen(
                 onPollVote = { postId, optionId -> viewModel.votePoll(postId, optionId) },
                 onMutePost = { postId -> viewModel.toggleMutePost(postId) },
                 onBookmarkPost = { postId -> viewModel.toggleBookmark(postId) },
+                onRepost = { postId -> viewModel.repost(postId) },
+                onShare = { postId -> shareTargetPostId = postId },
+                onReport = { postId -> viewModel.report(postId) },
             )
         }
+    }
+
+    shareTargetPostId?.let { postId ->
+        PostShareSheet(
+            postId = postId,
+            onDismiss = { shareTargetPostId = null },
+            onSessionExpired = onSessionExpired,
+        )
     }
 
     if (showBlockConfirmDialog) {
@@ -407,6 +426,9 @@ private fun ProfileContent(
     onPollVote: (String, String) -> Unit,
     onMutePost: (String) -> Unit,
     onBookmarkPost: (String) -> Unit,
+    onRepost: (String) -> Unit,
+    onShare: (String) -> Unit,
+    onReport: (String) -> Unit,
 ) {
     var selectedTab by remember { mutableStateOf(ProfileTab.Posts) }
     val hidden = isPrivate && !isSelf && !isFollowing
@@ -531,6 +553,9 @@ private fun ProfileContent(
                         onPollVote = onPollVote,
                         onMutePost = onMutePost,
                         onBookmark = onBookmarkPost,
+                        onRepost = onRepost,
+                        onShare = onShare,
+                        onReport = onReport,
                     )
                 }
             }

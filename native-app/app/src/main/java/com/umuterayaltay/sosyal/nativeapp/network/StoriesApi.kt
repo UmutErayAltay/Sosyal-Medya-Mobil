@@ -76,4 +76,14 @@ interface StoriesApi {
 
     @POST("stories/highlights/{id}/delete")
     suspend fun deleteHighlight(@Path("id") highlightId: String): Response<SimpleOkResponse>
+
+    /** app/api_v1/stories.py api_update_highlight() ile birebir eşleşir —
+     * title/coverUrl'den en az biri dolu olmalı (backend nothing_to_update
+     * ile 400 döner). Native UI'dan bu turda SADECE title gönderiliyor (kapak
+     * değiştirme kapsam dışı, bkz. HighlightsScreen.kt yorumu). */
+    @POST("stories/highlights/{id}/update")
+    suspend fun updateHighlight(
+        @Path("id") highlightId: String,
+        @Body body: UpdateHighlightRequest,
+    ): Response<SimpleOkResponse>
 }

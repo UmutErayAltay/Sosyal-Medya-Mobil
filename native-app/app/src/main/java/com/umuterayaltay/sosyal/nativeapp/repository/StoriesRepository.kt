@@ -10,6 +10,7 @@ import com.umuterayaltay.sosyal.nativeapp.network.SaveHighlightRequest
 import com.umuterayaltay.sosyal.nativeapp.network.StoriesApi
 import com.umuterayaltay.sosyal.nativeapp.network.StoryBarItemDto
 import com.umuterayaltay.sosyal.nativeapp.network.StoryDto
+import com.umuterayaltay.sosyal.nativeapp.network.UpdateHighlightRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
@@ -171,6 +172,11 @@ sealed class HighlightViewResult {
 sealed class DeleteHighlightResult {
     data object Success : DeleteHighlightResult()
     data class Error(val code: String?) : DeleteHighlightResult()
+}
+
+sealed class UpdateHighlightResult {
+    data object Success : UpdateHighlightResult()
+    data class Error(val code: String?) : UpdateHighlightResult()
 }
 
 /**
@@ -412,6 +418,31 @@ class StoriesRepository(
             DeleteHighlightResult.Error("network_error")
         } catch (e: Exception) {
             DeleteHighlightResult.Error("unknown_error")
+        }
+    }
+
+    /** HighlightsScreen'deki "Düzenle" aksiyonu — saveHighlight/deleteHighlight
+     * ile AYNI desen. Kapak değiştirme (coverUrl) bu turda native UI'dan hiç
+     * ÇAĞRILMIYOR (SADECE başlık düzenleniyor, kapsam dışı bırakıldı — bkz.
+     * HighlightsScreen.kt yorumu), parametre yine de backend sözleşmesiyle
+     * TAM eşleşsin diye burada duruyor. */
+    suspend fun updateHighlight(
+        highlightId: String,
+        title: String? = null,
+        coverUrl: String? = null,
+    ): UpdateHighlightResult = withContext(Dispatchers.IO) {
+        try {
+            val response = storiesApi.updateHighlight(highlightId, UpdateHighlightRequest(title, coverUrl))
+            val body = response.body()
+            if (response.isSuccessful && body?.ok == true) {
+                UpdateHighlightResult.Success
+            } else {
+                UpdateHighlightResult.Error(body?.error ?: RetrofitClient.parseErrorCode(response))
+            }
+        } catch (e: IOException) {
+            UpdateHighlightResult.Error("network_error")
+        } catch (e: Exception) {
+            UpdateHighlightResult.Error("unknown_error")
         }
     }
 }

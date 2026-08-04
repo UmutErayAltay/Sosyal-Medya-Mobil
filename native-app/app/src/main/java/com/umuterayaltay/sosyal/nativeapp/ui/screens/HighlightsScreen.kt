@@ -1,5 +1,6 @@
 package com.umuterayaltay.sosyal.nativeapp.ui.screens
 
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -19,13 +20,17 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBackIosNew
 import androidx.compose.material.icons.filled.Collections
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -38,6 +43,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -70,14 +76,21 @@ fun HighlightsScreen(
     val selectedItems by viewModel.selectedItems.collectAsState()
     val loading by viewModel.loading.collectAsState()
     val error by viewModel.error.collectAsState()
+    val context = LocalContext.current
 
     var openHighlightId by remember { mutableStateOf<String?>(null) }
+    // "Düzenle" diyaloğu — SADECE başlık (title) alanı var, kapak (cover_url)
+    // değiştirme bu turda KAPSAM DIŞI bırakıldı (zaman kısıtı, bkz. görev
+    // tanımı "Kapak değiştirme opsiyonel/kapsam dışı bırakılabilir").
+    var showEditDialog by remember { mutableStateOf(false) }
+    var editTitleText by remember { mutableStateOf("") }
 
     LaunchedEffect(Unit) {
         viewModel.events.collect { event ->
             when (event) {
                 is HighlightsEvent.SessionExpired -> onSessionExpired()
                 is HighlightsEvent.HighlightDeleted -> openHighlightId = null
+                is HighlightsEvent.ShowToast -> Toast.makeText(context, event.message, Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -92,7 +105,37 @@ fun HighlightsScreen(
             onDelete = {
                 openHighlightId?.let { viewModel.deleteHighlight(it) }
             },
+            onEditClick = {
+                editTitleText = selectedTitle
+                showEditDialog = true
+            },
         )
+
+        if (showEditDialog) {
+            AlertDialog(
+                onDismissRequest = { showEditDialog = false },
+                title = { Text("Öne çıkanı düzenle") },
+                text = {
+                    OutlinedTextField(
+                        value = editTitleText,
+                        onValueChange = { editTitleText = it },
+                        label = { Text("Başlık") },
+                        singleLine = true,
+                    )
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            showEditDialog = false
+                            openHighlightId?.let { viewModel.updateHighlight(it, editTitleText) }
+                        },
+                    ) { Text("Kaydet") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showEditDialog = false }) { Text("Vazgeç") }
+                },
+            )
+        }
         return
     }
 
@@ -205,6 +248,7 @@ private fun HighlightViewerContent(
     loading: Boolean,
     onNavigateBack: () -> Unit,
     onDelete: () -> Unit,
+    onEditClick: () -> Unit,
 ) {
     var currentIndex by remember { mutableStateOf(0) }
 
@@ -219,6 +263,12 @@ private fun HighlightViewerContent(
                 },
                 actions = {
                     if (isMine) {
+                        // Silme ikonunun YANINA eklendi — kapak değiştirme kapsam
+                        // dışı bırakıldığı için SADECE başlık düzenleniyor (bkz.
+                        // HighlightsScreen üstündeki showEditDialog yorumu).
+                        IconButton(onClick = onEditClick) {
+                            Icon(Icons.Filled.Edit, contentDescription = "Öne çıkanı düzenle")
+                        }
                         IconButton(onClick = onDelete) {
                             Icon(Icons.Filled.Delete, contentDescription = "Öne çıkanı sil")
                         }

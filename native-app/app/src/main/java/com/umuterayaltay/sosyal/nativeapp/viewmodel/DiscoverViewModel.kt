@@ -9,6 +9,8 @@ import com.umuterayaltay.sosyal.nativeapp.network.SearchHistoryItemDto
 import com.umuterayaltay.sosyal.nativeapp.network.UserSearchDto
 import com.umuterayaltay.sosyal.nativeapp.repository.DiscoverPageResult
 import com.umuterayaltay.sosyal.nativeapp.repository.Post
+import com.umuterayaltay.sosyal.nativeapp.repository.ReportResult
+import com.umuterayaltay.sosyal.nativeapp.repository.RepostResult
 import com.umuterayaltay.sosyal.nativeapp.repository.SearchActionResult
 import com.umuterayaltay.sosyal.nativeapp.repository.SearchResult
 import com.umuterayaltay.sosyal.nativeapp.repository.ToggleBookmarkResult
@@ -31,6 +33,9 @@ import kotlinx.coroutines.FlowPreview
 
 sealed class DiscoverEvent {
     data object SessionExpired : DiscoverEvent()
+    // FeedEvent.ShowToast ile AYNI gerekçe: repost/report sonucu (already_reposted/
+    // already_reported dahil) kullanıcıya GÖRÜNÜR bir geri bildirimle gösterilmeli.
+    data class ShowToast(val message: String) : DiscoverEvent()
 }
 
 /** Arama tipi filtresi — backend `type=all|users|posts|hashtags` sözleşmesiyle BİREBİR. */
@@ -55,6 +60,8 @@ class DiscoverViewModel : ViewModel() {
     private val pollsRepository = ServiceLocator.pollsRepository
     private val mutesRepository = ServiceLocator.mutesRepository
     private val bookmarksRepository = ServiceLocator.bookmarksRepository
+    private val repostsRepository = ServiceLocator.repostsRepository
+    private val reportsRepository = ServiceLocator.reportsRepository
     private val tokenStore = ServiceLocator.tokenStore
 
     // ---- Keşfet akışı ----
@@ -351,6 +358,60 @@ class DiscoverViewModel : ViewModel() {
                 }
             }
         }
+    }
+
+    /** PostActionsSheet'teki "Yeniden Paylaş" aksiyonu — FeedViewModel.repost()
+     * ile AYNI desen (backend YENİ bir post oluşturuyor, mevcut listelerde
+     * güncellenecek bir alan yok, sonuç sadece Toast/Snackbar ile bildirilir). */
+    fun repost(postId: String) {
+        viewModelScope.launch {
+            when (val result = repostsRepository.repost(postId)) {
+                is RepostResult.Success -> _events.emit(DiscoverEvent.ShowToast("Yeniden paylaşıldı"))
+                is RepostResult.Error -> {
+                    if (result.code == "unauthorized") {
+                        tokenStore.clearToken()
+                        _events.emit(DiscoverEvent.SessionExpired)
+                    } else {
+                        _events.emit(DiscoverEvent.ShowToast(mapRepostError(result.code)))
+                    }
+                }
+            }
+        }
+    }
+
+    /** PostActionsSheet'teki "Bildir" aksiyonu — FeedViewModel.report() ile AYNI desen. */
+    fun report(postId: String) {
+        viewModelScope.launch {
+            when (val result = reportsRepository.reportPost(postId)) {
+                is ReportResult.Success -> _events.emit(DiscoverEvent.ShowToast("Şikayetin alındı, teşekkürler"))
+                is ReportResult.Error -> {
+                    if (result.code == "unauthorized") {
+                        tokenStore.clearToken()
+                        _events.emit(DiscoverEvent.SessionExpired)
+                    } else {
+                        _events.emit(DiscoverEvent.ShowToast(mapReportError(result.code)))
+                    }
+                }
+            }
+        }
+    }
+
+    private fun mapRepostError(code: String?): String = when (code) {
+        "already_reposted" -> "Zaten yeniden paylaştın"
+        "not_found" -> "Gönderi bulunamadı"
+        "not_public", "private_account" -> "Bu gönderi yeniden paylaşılamaz"
+        "blocked" -> "Bu işlem engellenmiş bir kullanıcı yüzünden yapılamıyor"
+        "not_available" -> "Bu gönderi şu an yeniden paylaşılamıyor"
+        "network_error" -> "Bağlantı hatası — internet bağlantınızı kontrol edin"
+        "unavailable" -> "Şu anda kullanılamıyor, daha sonra tekrar dene"
+        else -> "Yeniden paylaşılamadı, lütfen tekrar dene"
+    }
+
+    private fun mapReportError(code: String?): String = when (code) {
+        "already_reported" -> "Bu içeriği zaten şikayet ettin"
+        "network_error" -> "Bağlantı hatası — internet bağlantınızı kontrol edin"
+        "unavailable" -> "Şu anda kullanılamıyor, daha sonra tekrar dene"
+        else -> "Şikayet gönderilemedi, lütfen tekrar dene"
     }
 
     private fun mapErrorMessage(code: String?): String = when (code) {

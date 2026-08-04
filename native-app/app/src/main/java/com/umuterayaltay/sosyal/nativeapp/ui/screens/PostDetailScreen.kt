@@ -1,5 +1,6 @@
 package com.umuterayaltay.sosyal.nativeapp.ui.screens
 
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -51,6 +52,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -91,11 +93,17 @@ fun PostDetailScreen(
     val replyingTo by viewModel.replyingTo.collectAsState()
     val loading by viewModel.loading.collectAsState()
     val error by viewModel.error.collectAsState()
+    val context = LocalContext.current
+
+    // FeedScreen.kt'deki AYNI gerekçe — "Gönder" için ayrı bir ViewModel state'i
+    // İCAT EDİLMEDİ, PostShareSheet kendi başına yeterli.
+    var showShareSheet by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         viewModel.events.collect { event ->
             when (event) {
                 is PostDetailEvent.SessionExpired -> onSessionExpired()
+                is PostDetailEvent.ShowToast -> Toast.makeText(context, event.message, Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -173,6 +181,9 @@ fun PostDetailScreen(
                         onPollVote = { postId, optionId -> viewModel.votePoll(postId, optionId) },
                         onMutePost = { viewModel.toggleMutePost() },
                         onBookmark = { viewModel.toggleBookmark() },
+                        onRepost = { viewModel.repost() },
+                        onShare = { showShareSheet = true },
+                        onReport = { viewModel.report() },
                     )
                 }
 
@@ -239,6 +250,14 @@ fun PostDetailScreen(
                 }
             }
         }
+    }
+
+    if (showShareSheet) {
+        PostShareSheet(
+            postId = postId,
+            onDismiss = { showShareSheet = false },
+            onSessionExpired = onSessionExpired,
+        )
     }
 }
 

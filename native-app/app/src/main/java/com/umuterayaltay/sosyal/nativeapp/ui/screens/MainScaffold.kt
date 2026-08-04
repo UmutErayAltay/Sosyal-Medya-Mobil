@@ -74,8 +74,20 @@ fun MainScaffold(navController: NavHostController, onSessionExpired: () -> Unit)
             // tonalElevation = 0.dp (BİLİNÇLİ): Compose'un elevation gölgesi
             // barın ÜSTÜNDE ince, keskin bir siyah çizgi gibi görünüyordu
             // (kullanıcı raporu, gerçek cihaz) — düz containerColor yeterli.
+            //
+            // Kullanıcı raporu (gerçek cihaz ekran görüntüsü, 2. tur): tonalElevation=0
+            // TEK BAŞINA yetmiyordu — barın HEMEN ÜSTÜNDE ince, açık renkli bir yatay
+            // çizgi hâlâ görünüyordu. Kök neden: containerColor = colorScheme.surface
+            // idi, ama bu Scaffold'un content Box'ı (aşağıdaki `Box(Modifier.padding(padding))`)
+            // KENDİ containerColor'ını HİÇ ayarlamıyor, yani varsayılan
+            // colorScheme.background kullanıyor — Theme.kt'de surface/background
+            // BİLEREK farklı tonlar (kartların "yükseltilmiş" görünmesi için, ör.
+            // dark: surface=Charcoal850 background=Charcoal950). Bu iki farklı ton
+            // TAM OLARAK bu NavigationBar'ın üst kenarında karşılaşıyor -> gözle
+            // görülür bir renk dikişi/çizgi. containerColor'ı da background'a
+            // sabitleyince (aşağıdaki içerik Scaffold'larıyla AYNI ton) dikiş kayboluyor.
             NavigationBar(
-                containerColor = MaterialTheme.colorScheme.surface,
+                containerColor = MaterialTheme.colorScheme.background,
                 tonalElevation = 0.dp,
             ) {
                 MainTab.entries.forEach { tab ->

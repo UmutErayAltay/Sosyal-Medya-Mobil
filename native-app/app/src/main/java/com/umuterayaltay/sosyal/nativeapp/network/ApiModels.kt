@@ -1213,3 +1213,61 @@ data class TrendingResponse(
     val tags: List<HashtagSearchDto>? = null,
     val error: String? = null,
 )
+
+// ---- FAZ5 sonrası eksik giderme: Repost/Paylaş/Bildir (native UI turu) ----
+// app/api_v1/reposts.py api_repost_post() + app/api_v1/messaging.py
+// api_share_post() + app/api_v1/reports.py (native görev tanımı OKUNARAK
+// doğrulandı — backend AYRI bir ajan turunda zaten yazıldı/test edildi/push'landı,
+// burada SADECE tüketici taraf eklendi).
+
+/** POST posts/{postId}/repost gövdesi — content boş bırakılırsa Twitter
+ * retweet'i gibi "alıntısız" repost (bu turun kapsamı: alıntı-yorumlu repost
+ * İCAT EDİLMEDİ, backend zaten destekliyor ama UI'da SADECE hızlı-repost var). */
+data class RepostRequest(
+    val content: String = "",
+)
+
+data class RepostResponse(
+    val ok: Boolean = false,
+    @SerializedName("post_id") val postId: String? = null,
+    val error: String? = null,
+)
+
+/** POST posts/{postId}/share gövdesi — userIds GERÇEK profil id'leridir
+ * (bkz. SharesRepository/PostShareSheet yorumu: GET /messages/forward-targets
+ * KONUŞMA id'si döndürdüğü için burada REUSE EDİLMEDİ, DiscoverApi kullanıcı
+ * aramasından toplanan gerçek profil id'leri gönderilir). */
+data class SharePostRequest(
+    @SerializedName("user_ids") val userIds: List<String>,
+    val note: String = "",
+)
+
+data class SharePostResponse(
+    val sent: Int = 0,
+    val error: String? = null,
+)
+
+/** POST /report gövdesi — targetType şu an native UI'dan SADECE "post" ile
+ * gönderiliyor (yorum/kullanıcı şikayeti bu turun kapsamı DIŞINDA), backend
+ * sözleşmesi genel olduğu için alan adı sabitlenmedi. */
+data class ReportRequest(
+    @SerializedName("target_type") val targetType: String,
+    @SerializedName("target_id") val targetId: String,
+)
+// NOT: rapor BAŞARI/HATA yanıtı {"ok":true}/{"error":"..."} şekli — SimpleOkResponse
+// (yukarıda tanımlı) reuse edilir, ayrı bir yanıt DTO'su İCAT EDİLMEDİ.
+
+// ---- FAZ5 sonrası eksik giderme: Highlight düzenleme (native UI turu) ----
+// app/api_v1/stories.py api_update_highlight() ile birebir eşleşir.
+
+/** POST stories/highlights/{id}/update gövdesi — title/coverUrl'den EN AZ
+ * biri dolu olmalı (backend nothing_to_update ile 400 döner, burada AYRICA
+ * ön-kontrol YAPILMAZ, tek doğruluk kaynağı backend). Kapak değiştirme
+ * (coverUrl) bu turda native UI'dan hiç GÖNDERİLMİYOR (SADECE başlık
+ * düzenleniyor, kapsam dışı bırakıldı — bkz. HighlightsScreen yorumu),
+ * alan yine de backend sözleşmesiyle TAM eşleşsin diye DTO'da duruyor. */
+data class UpdateHighlightRequest(
+    val title: String? = null,
+    @SerializedName("cover_url") val coverUrl: String? = null,
+)
+// NOT: yanıt {"ok":true}/{"error":"..."} şekli — SimpleOkResponse reuse edilir.

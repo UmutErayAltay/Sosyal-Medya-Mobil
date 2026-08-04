@@ -1,5 +1,6 @@
 package com.umuterayaltay.sosyal.nativeapp.ui.screens
 
+import android.widget.Toast
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -30,8 +31,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.HashtagEvent
@@ -58,11 +63,17 @@ fun HashtagScreen(
     val isFollowing by viewModel.isFollowing.collectAsState()
     val loading by viewModel.loading.collectAsState()
     val error by viewModel.error.collectAsState()
+    val context = LocalContext.current
+
+    // FeedScreen.kt'deki AYNI gerekçe — "Gönder" için ayrı bir ViewModel state'i
+    // İCAT EDİLMEDİ, PostShareSheet kendi başına yeterli.
+    var shareTargetPostId by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
         viewModel.events.collect { event ->
             when (event) {
                 is HashtagEvent.SessionExpired -> onSessionExpired()
+                is HashtagEvent.ShowToast -> Toast.makeText(context, event.message, Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -163,10 +174,21 @@ fun HashtagScreen(
                         onPollVote = { postId, optionId -> viewModel.votePoll(postId, optionId) },
                         onMutePost = { postId -> viewModel.toggleMutePost(postId) },
                         onBookmark = { postId -> viewModel.toggleBookmark(postId) },
+                        onRepost = { postId -> viewModel.repost(postId) },
+                        onShare = { postId -> shareTargetPostId = postId },
+                        onReport = { postId -> viewModel.report(postId) },
                     )
                 }
             }
         }
+    }
+
+    shareTargetPostId?.let { postId ->
+        PostShareSheet(
+            postId = postId,
+            onDismiss = { shareTargetPostId = null },
+            onSessionExpired = onSessionExpired,
+        )
     }
 }
 

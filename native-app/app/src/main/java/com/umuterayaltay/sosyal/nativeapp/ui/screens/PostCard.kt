@@ -101,6 +101,12 @@ fun PostCard(
     onMutePost: (postId: String) -> Unit = {},
     // Faz 5 Dalga 3A: onMutePost ile AYNI gerekçeyle VARSAYILAN DEĞERLİ.
     onBookmark: (postId: String) -> Unit = {},
+    // Faz 5 sonrası eksik giderme: Repost/Paylaş/Bildir — onMutePost/onBookmark
+    // ile AYNI gerekçeyle VARSAYILAN DEĞERLİ (henüz bağlanmamış çağrı yerleri
+    // değişmeden derlenmeye devam eder, bkz. PostActionsSheet.kt).
+    onRepost: (postId: String) -> Unit = {},
+    onShare: (postId: String) -> Unit = {},
+    onReport: (postId: String) -> Unit = {},
 ) {
     var showActionsSheet by remember { mutableStateOf(false) }
 
@@ -271,6 +277,9 @@ fun PostCard(
             post = post,
             onMutePost = onMutePost,
             onBookmark = onBookmark,
+            onRepost = onRepost,
+            onShare = onShare,
+            onReport = onReport,
             onDismiss = { showActionsSheet = false },
         )
     }
