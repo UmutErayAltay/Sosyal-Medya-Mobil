@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.umuterayaltay.sosyal.nativeapp.ServiceLocator
 import com.umuterayaltay.sosyal.nativeapp.repository.HashtagPostsResult
 import com.umuterayaltay.sosyal.nativeapp.repository.Post
+import com.umuterayaltay.sosyal.nativeapp.repository.ToggleBookmarkResult
 import com.umuterayaltay.sosyal.nativeapp.repository.ToggleHashtagFollowResult
 import com.umuterayaltay.sosyal.nativeapp.repository.ToggleLikeResult
 import com.umuterayaltay.sosyal.nativeapp.repository.ToggleMutePostResult
@@ -35,6 +36,7 @@ class HashtagViewModel(private val tag: String) : ViewModel() {
     private val interactionsRepository = ServiceLocator.interactionsRepository
     private val pollsRepository = ServiceLocator.pollsRepository
     private val mutesRepository = ServiceLocator.mutesRepository
+    private val bookmarksRepository = ServiceLocator.bookmarksRepository
     private val tokenStore = ServiceLocator.tokenStore
 
     private val _posts = MutableStateFlow<List<Post>>(emptyList())
@@ -105,6 +107,21 @@ class HashtagViewModel(private val tag: String) : ViewModel() {
                     }
                 }
                 is ToggleMutePostResult.Error -> handleError(result.code, silent = true)
+            }
+        }
+    }
+
+    /** DiscoverViewModel.toggleBookmark() ile AYNI gerekçe: PostActionsSheet'teki
+     * "Kaydet"/"Kaydedildi" aksiyonu. */
+    fun toggleBookmark(postId: String) {
+        viewModelScope.launch {
+            when (val result = bookmarksRepository.toggleBookmark(postId)) {
+                is ToggleBookmarkResult.Success -> {
+                    _posts.value = _posts.value.map { post ->
+                        if (post.id == postId) post.copy(bookmarkedByMe = result.bookmarked) else post
+                    }
+                }
+                is ToggleBookmarkResult.Error -> handleError(result.code, silent = true)
             }
         }
     }

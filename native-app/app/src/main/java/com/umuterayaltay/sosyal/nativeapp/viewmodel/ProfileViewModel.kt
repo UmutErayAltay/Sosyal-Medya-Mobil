@@ -4,11 +4,14 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.umuterayaltay.sosyal.nativeapp.ServiceLocator
+import com.umuterayaltay.sosyal.nativeapp.network.CollectionDto
 import com.umuterayaltay.sosyal.nativeapp.network.ProfileDto
 import com.umuterayaltay.sosyal.nativeapp.network.ProfileStatsDto
+import com.umuterayaltay.sosyal.nativeapp.repository.CollectionsResult
 import com.umuterayaltay.sosyal.nativeapp.repository.Post
 import com.umuterayaltay.sosyal.nativeapp.repository.ProfileResult
 import com.umuterayaltay.sosyal.nativeapp.repository.ToggleBlockResult
+import com.umuterayaltay.sosyal.nativeapp.repository.ToggleBookmarkResult
 import com.umuterayaltay.sosyal.nativeapp.repository.ToggleFollowResult
 import com.umuterayaltay.sosyal.nativeapp.repository.ToggleLikeResult
 import com.umuterayaltay.sosyal.nativeapp.repository.ToggleMutePostResult
@@ -41,6 +44,7 @@ class ProfileViewModel(private val requestedUsername: String?) : ViewModel() {
     private val interactionsRepository = ServiceLocator.interactionsRepository
     private val pollsRepository = ServiceLocator.pollsRepository
     private val mutesRepository = ServiceLocator.mutesRepository
+    private val bookmarksRepository = ServiceLocator.bookmarksRepository
     private val tokenStore = ServiceLocator.tokenStore
 
     private var resolvedUsername: String? = requestedUsername
@@ -56,6 +60,13 @@ class ProfileViewModel(private val requestedUsername: String?) : ViewModel() {
 
     private val _bookmarkedPosts = MutableStateFlow<List<Post>>(emptyList())
     val bookmarkedPosts: StateFlow<List<Post>> = _bookmarkedPosts.asStateFlow()
+
+    // Faz 5 Dalga 3A — "Kaydedilenler" sekmesindeki koleksiyon filtresi için
+    // (bkz. görev tanımı). SADECE isSelf profilinde anlamlı, başkasının
+    // profilinde bookmarkedPosts zaten boş dönüyor (backend _serialize_profile
+    // sadece sahibine dolduruyor).
+    private val _collections = MutableStateFlow<List<CollectionDto>>(emptyList())
+    val collections: StateFlow<List<CollectionDto>> = _collections.asStateFlow()
 
     private val _archivedPosts = MutableStateFlow<List<Post>>(emptyList())
     val archivedPosts: StateFlow<List<Post>> = _archivedPosts.asStateFlow()
@@ -136,6 +147,9 @@ class ProfileViewModel(private val requestedUsername: String?) : ViewModel() {
                     _isBlockedByMe.value = body.isBlockedByMe
                     _isMuted.value = body.isMuted
                     _stats.value = body.stats
+                    // SADECE kendi profilimizde anlamlı (bkz. _collections yorumu) —
+                    // başkasının profilinde gereksiz bir istek atılmasın.
+                    if (body.isSelf) loadCollections()
                 }
                 is ProfileResult.Error -> {
                     if (result.code == "unauthorized") {
@@ -260,10 +274,52 @@ class ProfileViewModel(private val requestedUsername: String?) : ViewModel() {
         }
     }
 
+    /** "Kaydedilenler" sekmesi için koleksiyon listesi — loadProfile() isSelf ise
+     * otomatik çeker, koleksiyon oluşturma/silmeden sonra da manuel çağrılabilir. */
+    fun loadCollections() {
+        viewModelScope.launch {
+            when (val result = bookmarksRepository.getCollections()) {
+                is CollectionsResult.Success -> _collections.value = result.collections
+                is CollectionsResult.Error -> Unit // sessizce yutulur, toggleUserMute() ile AYNI gerekçe
+            }
+        }
+    }
+
+    /** PostActionsSheet'teki "Kaydet"/"Kaydedildi" aksiyonu — toggleMutePost() ile
+     * AYNI desen (posts/likedPosts/archivedPosts'ın HEPSİ güncellenir). Kaldırılan
+     * bookmark ("Kaydedilenler" sekmesinde iken tekrar tıklanırsa) bookmarkedPosts
+     * listesinden de ÇIKARILIR — aksi halde sekme, artık kaydedilmemiş bir postu
+     * göstermeye devam ederdi. */
+    fun toggleBookmark(postId: String, collectionId: String? = null) {
+        viewModelScope.launch {
+            when (val result = bookmarksRepository.toggleBookmark(postId, collectionId)) {
+                is ToggleBookmarkResult.Success -> {
+                    fun apply(list: List<Post>): List<Post> = list.map { post ->
+                        if (post.id == postId) post.copy(bookmarkedByMe = result.bookmarked) else post
+                    }
+                    _posts.value = apply(_posts.value)
+                    _likedPosts.value = apply(_likedPosts.value)
+                    _archivedPosts.value = apply(_archivedPosts.value)
+                    _bookmarkedPosts.value = if (result.bookmarked) {
+                        apply(_bookmarkedPosts.value)
+                    } else {
+                        _bookmarkedPosts.value.filterNot { it.id == postId }
+                    }
+                }
+                is ToggleBookmarkResult.Error -> {
+                    if (result.code == "unauthorized") {
+                        tokenStore.clearToken()
+                        _events.emit(ProfileEvent.SessionExpired)
+                    }
+                }
+            }
+        }
+    }
+
     /** Kalp ikonuna tıklanınca çağrılır — aynı post birden fazla sekmede/listede
      * görünebilir (ör. hem "Gönderiler" hem "Beğenilenler"de), bu yüzden
-     * posts/likedPosts/archivedPosts'ın HEPSİ güncellenir (bookmarkedPosts'un
-     * ProfileScreen'de gösterildiği bir sekme yok, bu yüzden dokunulmadı). */
+     * posts/likedPosts/archivedPosts/bookmarkedPosts'ın HEPSİ güncellenir (Faz 5
+     * Dalga 3A'dan beri "Kaydedilenler" sekmesi de var, bkz. toggleBookmark()). */
     fun toggleLike(postId: String) {
         viewModelScope.launch {
             when (val result = interactionsRepository.toggleLike(postId)) {
@@ -274,6 +330,7 @@ class ProfileViewModel(private val requestedUsername: String?) : ViewModel() {
                     _posts.value = apply(_posts.value)
                     _likedPosts.value = apply(_likedPosts.value)
                     _archivedPosts.value = apply(_archivedPosts.value)
+                    _bookmarkedPosts.value = apply(_bookmarkedPosts.value)
                 }
                 is ToggleLikeResult.Error -> {
                     if (result.code == "unauthorized") {

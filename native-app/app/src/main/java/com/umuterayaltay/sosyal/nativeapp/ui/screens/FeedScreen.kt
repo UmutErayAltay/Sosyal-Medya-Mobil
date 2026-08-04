@@ -217,6 +217,7 @@ fun FeedScreen(
                             onHashtagClick = onNavigateToHashtag,
                             onPollVote = { postId, optionId -> viewModel.votePoll(postId, optionId) },
                             onMutePost = { postId -> viewModel.toggleMutePost(postId) },
+                            onBookmark = { postId -> viewModel.toggleBookmark(postId) },
                         )
                     }
                 }

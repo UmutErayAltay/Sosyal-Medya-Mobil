@@ -31,4 +31,8 @@ interface PostDao {
     // yeniden emit eder).
     @Query("UPDATE posts SET mutedByMe = :mutedByMe WHERE id = :postId")
     suspend fun updateMuteState(postId: String, mutedByMe: Boolean)
+
+    // Faz 5 Dalga 3A — kaydetme: updateMuteState() ile AYNI desen.
+    @Query("UPDATE posts SET bookmarkedByMe = :bookmarkedByMe WHERE id = :postId")
+    suspend fun updateBookmarkState(postId: String, bookmarkedByMe: Boolean)
 }

@@ -40,6 +40,12 @@ data class Post(
     // düşürülüyordu). Feed'den GİZLEME anlamına GELMEZ (bkz. MutesRepository
     // yorumu) — sadece "Postu Sessize Al" menü metninin doğru göstermesi için.
     val mutedByMe: Boolean = false,
+    // Faz 5 Dalga 3A: bu postu BEN kaydettim mi — _attach_post_metrics()/
+    // enrich_post_json()'un döndürdüğü bookmarked_by_me alanı (mutedByMe ile
+    // AYNI gerekçeyle önceden PostDto'da vardı, domain modelde düşürülüyordu).
+    val bookmarkedByMe: Boolean = false,
+    /** SADECE profil "Kaydedilenler" listesinde dolu (hangi koleksiyona ait). */
+    val bookmarkCollectionId: String? = null,
 )
 
 fun PostDto.toDomain(): Post = Post(
@@ -55,6 +61,8 @@ fun PostDto.toDomain(): Post = Post(
     likedByMe = likedByMe,
     createdAt = createdAt,
     mutedByMe = mutedByMe,
+    bookmarkedByMe = bookmarkedByMe,
+    bookmarkCollectionId = bookmarkCollectionId,
     poll = poll?.let { p ->
         Poll(
             id = p.id,
@@ -80,6 +88,7 @@ fun PostDto.toEntity(cachedAt: Long): PostEntity = PostEntity(
     likedByMe = likedByMe,
     createdAt = createdAt,
     mutedByMe = mutedByMe,
+    bookmarkedByMe = bookmarkedByMe,
     cachedAt = cachedAt,
 )
 
@@ -99,6 +108,9 @@ fun PostEntity.toDomain(): Post = Post(
     // kullanıcı tercihidir, bu yüzden anketin AKSİNE (poll = null yorumuna bkz.)
     // Room'da da cache'lenir.
     mutedByMe = mutedByMe,
+    // bookmarkedByMe de mutedByMe ile AYNI gerekçeyle kalıcı bir kullanıcı
+    // tercihi — Room'da cache'lenir (bkz. PostEntity/AppDatabase version 5).
+    bookmarkedByMe = bookmarkedByMe,
     // Anket BİLEREK cache'lenmiyor (PostEntity'de poll kolonu YOK): oy sayıları
     // ve my_vote dinamik veridir — offline'da eski yüzdeleri göstermek yanıltıcı
     // olur, üstelik offline'ken oy verilemeyeceği için widget sadece yanlış bilgi

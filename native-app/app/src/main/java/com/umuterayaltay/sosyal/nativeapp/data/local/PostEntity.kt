@@ -21,5 +21,8 @@ data class PostEntity(
     // alma kalıcı bir tercih, anketin aksine offline'da da anlamlı, bkz.
     // repository/Post.kt PostEntity.toDomain() yorumu).
     val mutedByMe: Boolean = false,
+    // version 4 -> 5: PostEntity'ye bookmarkedByMe kolonu eklendi (Faz 5 Dalga
+    // 3A — kaydetme, mutedByMe ile AYNI gerekçeyle kalıcı bir tercih).
+    val bookmarkedByMe: Boolean = false,
     val cachedAt: Long,
 )

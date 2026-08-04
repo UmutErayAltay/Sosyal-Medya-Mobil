@@ -312,11 +312,17 @@ class ConversationViewModel(private val conversationId: String) : ViewModel() {
      * imageUrl'i BİLEREK null bırakılır (yerel content:// URI'sini MessageDto's
      * String alanına güvenilir biçimde koymak yerine basit tutuldu) — görsel,
      * gerçek mesaj gelince balon üzerinde belirir.
+     *
+     * [gifUrl]/[stickerId] (Faz 5 Dalga 3B, MediaPickerSheet'ten) — GİF zaten
+     * kalıcı bir Klipy CDN URL'si olduğu için (yerel content:// URI'sinin
+     * AKSİNE) optimistic balonun imageUrl'ine DOĞRUDAN konur, hemen görünür;
+     * sticker optimistic balonda RENDER edilmiyor (MessageDto.sticker bu turda
+     * hâlâ görüntülenmiyor, bkz. dosya yorumu), sadece gönderim isteğine eklenir.
      */
-    fun send(context: Context) {
+    fun send(context: Context, gifUrl: String? = null, stickerId: String? = null) {
         val content = _sendText.value.trim()
         val imageUri = _selectedImageUri.value
-        if (content.isEmpty() && imageUri == null) return
+        if (content.isEmpty() && imageUri == null && gifUrl.isNullOrBlank() && stickerId.isNullOrBlank()) return
         val replyingTo = _replyingTo.value
         val replyId = replyingTo?.id
 
@@ -340,7 +346,7 @@ class ConversationViewModel(private val conversationId: String) : ViewModel() {
             },
             reactions = null,
             sticker = null,
-            imageUrl = null,
+            imageUrl = gifUrl,
         )
 
         // Input HEMEN temizlenir — "gönderdim" hissi ağ isteği bitmeden verilir.
@@ -373,6 +379,8 @@ class ConversationViewModel(private val conversationId: String) : ViewModel() {
                     replyId,
                     imageBytes,
                     imageMimeType,
+                    stickerId,
+                    gifUrl,
                 )
             ) {
                 is SendMessageResult.Success -> replaceOptimisticMessage(tempId, result.message)

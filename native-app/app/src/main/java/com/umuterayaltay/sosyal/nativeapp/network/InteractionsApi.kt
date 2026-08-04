@@ -41,7 +41,8 @@ interface InteractionsApi {
     // dosyası içerebiliyor (backend api_create_post() ile AYNI kodlama).
     // `image`/`video` null geçilirse Retrofit bu parçayı isteğe hiç eklemez
     // (backend'de request.files.get(...) None döner, has_image/has_video
-    // False olur) — eski (sadece görsel) çağrı yerleri BOZULMAZ.
+    // False olur) — eski (sadece görsel) çağrı yerleri BOZULMAZ. `gif_url`
+    // (Faz 5 Dalga 3B) SADECE görsel/video YOKSA backend'de kullanılır.
     @Multipart
     @POST("posts")
     suspend fun createPost(
@@ -50,5 +51,6 @@ interface InteractionsApi {
         @Part image: MultipartBody.Part?,
         @Part video: MultipartBody.Part?,
         @Part("is_reel") isReel: RequestBody,
+        @Part("gif_url") gifUrl: RequestBody?,
     ): Response<CreatePostResponse>
 }

@@ -23,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.Gif
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Public
@@ -42,10 +43,14 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -55,6 +60,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
+import com.umuterayaltay.sosyal.nativeapp.ui.components.MediaPickerSheet
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.CreatePostEvent
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.CreatePostViewModel
 
@@ -94,8 +100,17 @@ fun CreatePostScreen(
     val selectedImageUri by viewModel.selectedImageUri.collectAsState()
     val selectedVideoUri by viewModel.selectedVideoUri.collectAsState()
     val isReel by viewModel.isReel.collectAsState()
+    val selectedGifUrl by viewModel.selectedGifUrl.collectAsState()
     val submitting by viewModel.submitting.collectAsState()
     val error by viewModel.error.collectAsState()
+
+    // GIF seçici (Faz 5 Dalga 3B) — MediaPickerSheet PAYLAŞILAN bileşen hem
+    // GIF hem Sticker sekmesi taşıyor ama backend api_create_post() SADECE
+    // gif_url kabul ediyor (sticker_id post oluşturmada desteklenmiyor, bkz.
+    // InteractionsRepository.createPost yorumu) — bu yüzden onStickerSelected
+    // BİLİNÇLİ olarak no-op bırakıldı, sekme gizlenmedi (bileşene dokunulmadı).
+    var showMediaPicker by remember { mutableStateOf(false) }
+    val mediaPickerSheetState = rememberModalBottomSheetState()
 
     LaunchedEffect(Unit) {
         viewModel.events.collect { event ->
@@ -114,7 +129,21 @@ fun CreatePostScreen(
         contract = ActivityResultContracts.PickVisualMedia(),
     ) { uri -> viewModel.onVideoSelected(uri) }
 
-    val canSubmit = (content.isNotBlank() || selectedImageUri != null || selectedVideoUri != null) && !submitting
+    val canSubmit = (
+        content.isNotBlank() || selectedImageUri != null || selectedVideoUri != null || !selectedGifUrl.isNullOrBlank()
+        ) && !submitting
+
+    if (showMediaPicker) {
+        MediaPickerSheet(
+            sheetState = mediaPickerSheetState,
+            onDismiss = { showMediaPicker = false },
+            onGifSelected = { url ->
+                showMediaPicker = false
+                viewModel.onGifSelected(url)
+            },
+            onStickerSelected = {},
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -196,7 +225,7 @@ fun CreatePostScreen(
                         Icon(Icons.Filled.Close, contentDescription = "Görseli kaldır")
                     }
                 }
-            } else if (selectedVideoUri == null) {
+            } else if (selectedVideoUri == null && selectedGifUrl.isNullOrBlank()) {
                 OutlinedButton(
                     onClick = {
                         imagePickerLauncher.launch(
@@ -209,6 +238,51 @@ fun CreatePostScreen(
                 ) {
                     Icon(Icons.Filled.AddPhotoAlternate, contentDescription = null)
                     Text(text = "Görsel Ekle", modifier = Modifier.padding(start = 8.dp))
+                }
+            }
+
+            // GIF önizleme/seçim (Faz 5 Dalga 3B) — görsel/video ile mutually
+            // exclusive (ViewModel.onGifSelected/onImageSelected/onVideoSelected
+            // zaten diğerlerini temizliyor, backend api_create_post()'daki
+            // AYNI kural).
+            if (selectedImageUri == null && selectedVideoUri == null) {
+                if (!selectedGifUrl.isNullOrBlank()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(220.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant),
+                    ) {
+                        AsyncImage(
+                            model = selectedGifUrl,
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                        IconButton(
+                            onClick = { viewModel.onGifCleared() },
+                            enabled = !submitting,
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(8.dp)
+                                .size(32.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f)),
+                        ) {
+                            Icon(Icons.Filled.Close, contentDescription = "GIF'i kaldır")
+                        }
+                    }
+                } else {
+                    OutlinedButton(
+                        onClick = { showMediaPicker = true },
+                        enabled = !submitting,
+                        shape = MaterialTheme.shapes.medium,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Icon(Icons.Filled.Gif, contentDescription = null)
+                        Text(text = "GIF Ekle", modifier = Modifier.padding(start = 8.dp))
+                    }
                 }
             }
 
@@ -258,7 +332,7 @@ fun CreatePostScreen(
                             )
                         }
                     }
-                } else {
+                } else if (selectedGifUrl.isNullOrBlank()) {
                     OutlinedButton(
                         onClick = {
                             videoPickerLauncher.launch(

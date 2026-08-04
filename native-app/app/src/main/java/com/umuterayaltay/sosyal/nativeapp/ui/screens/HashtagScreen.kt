@@ -162,6 +162,7 @@ fun HashtagScreen(
                         onHashtagClick = { /* zaten bu etiketin sayfasındayız */ },
                         onPollVote = { postId, optionId -> viewModel.votePoll(postId, optionId) },
                         onMutePost = { postId -> viewModel.toggleMutePost(postId) },
+                        onBookmark = { postId -> viewModel.toggleBookmark(postId) },
                     )
                 }
             }

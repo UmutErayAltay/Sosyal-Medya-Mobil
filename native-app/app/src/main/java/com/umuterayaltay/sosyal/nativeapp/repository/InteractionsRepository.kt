@@ -80,12 +80,26 @@ class InteractionsRepository(
         }
     }
 
-    suspend fun addComment(postId: String, content: String, parentCommentId: String? = null): AddCommentResult =
+    /** stickerId/gifUrl (Faz 5 Dalga 3B) opsiyonel — content boşsa bile biri
+     * doluysa backend kabul eder (api_add_comment ile AYNI kural: üçü de boşsa
+     * "empty" döner), burada ayrıca bir ön-kontrol YAPILMIYOR. */
+    suspend fun addComment(
+        postId: String,
+        content: String,
+        parentCommentId: String? = null,
+        stickerId: String? = null,
+        gifUrl: String? = null,
+    ): AddCommentResult =
         withContext(Dispatchers.IO) {
             try {
                 val response = interactionsApi.addComment(
                     postId,
-                    AddCommentRequest(content = content, parentCommentId = parentCommentId),
+                    AddCommentRequest(
+                        content = content,
+                        parentCommentId = parentCommentId,
+                        stickerId = stickerId,
+                        gifUrl = gifUrl,
+                    ),
                 )
                 val body = response.body()
                 val comment = body?.comment
@@ -109,7 +123,10 @@ class InteractionsRepository(
      * kontrolü zaten yapıyor). `videoFileName` GERÇEK içerik tipiyle eşleşen
      * bir uzantı taşımalı (ör. "upload.mp4") — backend hem uzantı HEM
      * sniff edilmiş MIME'ı doğruluyor (storage_helper.py upload_video),
-     * görsel deseninin AKSİNE burada sabit bir dosya adı YETERSİZ.
+     * görsel deseninin AKSİNE burada sabit bir dosya adı YETERSİZ. `gifUrl`
+     * (Faz 5 Dalga 3B) SADECE görsel/video YOKSA backend'de kullanılır
+     * (api_create_post()'daki AYNI mutually-exclusive kural) — burada ayrıca
+     * bir ön-kontrol YAPILMIYOR, tek doğruluk kaynağı backend.
      */
     suspend fun createPost(
         content: String,
@@ -121,6 +138,7 @@ class InteractionsRepository(
         videoMimeType: String? = null,
         videoFileName: String? = null,
         isReel: Boolean = false,
+        gifUrl: String? = null,
     ): CreatePostResult = withContext(Dispatchers.IO) {
         try {
             val contentBody: RequestBody = content.toRequestBody("text/plain".toMediaTypeOrNull())
@@ -135,9 +153,10 @@ class InteractionsRepository(
                 val videoBody = bytes.toRequestBody(videoMimeType?.toMediaTypeOrNull())
                 MultipartBody.Part.createFormData("video", videoFileName ?: "upload.mp4", videoBody)
             }
+            val gifUrlBody: RequestBody? = gifUrl?.toRequestBody("text/plain".toMediaTypeOrNull())
 
             val response = interactionsApi.createPost(
-                contentBody, visibilityBody, imagePart, videoPart, isReelBody,
+                contentBody, visibilityBody, imagePart, videoPart, isReelBody, gifUrlBody,
             )
             val body = response.body()
             val post = body?.post

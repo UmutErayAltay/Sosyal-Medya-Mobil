@@ -70,6 +70,14 @@ class CreatePostViewModel : ViewModel() {
     private val _isReel = MutableStateFlow(false)
     val isReel: StateFlow<Boolean> = _isReel.asStateFlow()
 
+    // GIF seçimi (Faz 5 Dalga 3B, MediaPickerSheet'ten) — backend api_create_post()
+    // ile AYNI mutually-exclusive kural: gifUrl SADECE görsel/video YOKSA
+    // kullanılır. onGifSelected görsel/video'yu TEMİZLER, onImageSelected/
+    // onVideoSelected de (aşağıda) seçilirse gifUrl'i TEMİZLER — hangi taraftan
+    // girilirse girilsin en fazla biri dolu kalır.
+    private val _selectedGifUrl = MutableStateFlow<String?>(null)
+    val selectedGifUrl: StateFlow<String?> = _selectedGifUrl.asStateFlow()
+
     private val _submitting = MutableStateFlow(false)
     val submitting: StateFlow<Boolean> = _submitting.asStateFlow()
 
@@ -95,6 +103,7 @@ class CreatePostViewModel : ViewModel() {
         if (uri != null) {
             _selectedVideoUri.value = null
             _isReel.value = false
+            _selectedGifUrl.value = null
         }
     }
 
@@ -102,6 +111,7 @@ class CreatePostViewModel : ViewModel() {
         _selectedVideoUri.value = uri
         if (uri != null) {
             _selectedImageUri.value = null
+            _selectedGifUrl.value = null
         } else {
             _isReel.value = false
         }
@@ -109,6 +119,19 @@ class CreatePostViewModel : ViewModel() {
 
     fun onReelToggle(value: Boolean) {
         _isReel.value = value
+    }
+
+    /** GIF seçilince görsel/video temizlenir — backend'in mutually-exclusive
+     * kuralıyla (bkz. InteractionsRepository.createPost yorumu) AYNI. */
+    fun onGifSelected(url: String) {
+        _selectedGifUrl.value = url
+        _selectedImageUri.value = null
+        _selectedVideoUri.value = null
+        _isReel.value = false
+    }
+
+    fun onGifCleared() {
+        _selectedGifUrl.value = null
     }
 
     /** [context] SADECE seçilen görsel/video Uri'sinin byte'larını/mime tipini
@@ -119,7 +142,8 @@ class CreatePostViewModel : ViewModel() {
         val text = _content.value.trim()
         val imageUri = _selectedImageUri.value
         val videoUri = _selectedVideoUri.value
-        if (text.isEmpty() && imageUri == null && videoUri == null) {
+        val gifUrl = _selectedGifUrl.value
+        if (text.isEmpty() && imageUri == null && videoUri == null && gifUrl.isNullOrBlank()) {
             _error.value = "Bir şeyler yaz, bir görsel veya video seç"
             return
         }
@@ -200,6 +224,7 @@ class CreatePostViewModel : ViewModel() {
                     // eşleme+docstring'e bkz.) — sabit isim burada YETERSİZ.
                     videoFileName = videoFileName,
                     isReel = _isReel.value,
+                    gifUrl = gifUrl,
                 )
             ) {
                 is CreatePostResult.Success -> _events.emit(CreatePostEvent.Success)

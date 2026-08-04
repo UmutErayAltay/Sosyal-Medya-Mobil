@@ -41,6 +41,11 @@ class FeedRepository(
     suspend fun updateMuteState(postId: String, mutedByMe: Boolean) =
         withContext(Dispatchers.IO) { postDao.updateMuteState(postId, mutedByMe) }
 
+    /** BookmarksRepository.toggleBookmark() sunucu yanıtı geldikten SONRA çağrılır —
+     * updateMuteState() ile AYNI desen. */
+    suspend fun updateBookmarkState(postId: String, bookmarkedByMe: Boolean) =
+        withContext(Dispatchers.IO) { postDao.updateBookmarkState(postId, bookmarkedByMe) }
+
     suspend fun refresh(): FeedRefreshResult = withContext(Dispatchers.IO) {
         try {
             val response = feedApi.getFeed(cursor = 0, limit = FIRST_PAGE_LIMIT)

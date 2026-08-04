@@ -77,6 +77,7 @@ private enum class ProfileTab(val label: String) {
     Posts("Gönderiler"),
     Media("Medya"),
     Liked("Beğenilenler"),
+    Saved("Kaydedilenler"),
     Archived("Arşiv"),
 }
 
@@ -112,6 +113,7 @@ fun ProfileScreen(
     val profile by viewModel.profile.collectAsState()
     val posts by viewModel.posts.collectAsState()
     val likedPosts by viewModel.likedPosts.collectAsState()
+    val bookmarkedPosts by viewModel.bookmarkedPosts.collectAsState()
     val archivedPosts by viewModel.archivedPosts.collectAsState()
     val isSelf by viewModel.isSelf.collectAsState()
     val isFollowing by viewModel.isFollowing.collectAsState()
@@ -240,6 +242,7 @@ fun ProfileScreen(
                 isBlockedByMe = isBlockedByMe,
                 posts = posts,
                 likedPosts = likedPosts,
+                bookmarkedPosts = bookmarkedPosts,
                 archivedPosts = archivedPosts,
                 onToggleFollow = viewModel::toggleFollow,
                 onNavigateToFollowers = { profile?.username?.let(onNavigateToFollowers) },
@@ -249,6 +252,7 @@ fun ProfileScreen(
                 onHashtagClick = onNavigateToHashtag,
                 onPollVote = { postId, optionId -> viewModel.votePoll(postId, optionId) },
                 onMutePost = { postId -> viewModel.toggleMutePost(postId) },
+                onBookmarkPost = { postId -> viewModel.toggleBookmark(postId) },
             )
         }
     }
@@ -364,6 +368,7 @@ private fun ProfileContent(
     isBlockedByMe: Boolean,
     posts: List<Post>,
     likedPosts: List<Post>,
+    bookmarkedPosts: List<Post>,
     archivedPosts: List<Post>,
     onToggleFollow: () -> Unit,
     onNavigateToFollowers: () -> Unit,
@@ -373,12 +378,21 @@ private fun ProfileContent(
     onHashtagClick: (String) -> Unit,
     onPollVote: (String, String) -> Unit,
     onMutePost: (String) -> Unit,
+    onBookmarkPost: (String) -> Unit,
 ) {
     var selectedTab by remember { mutableStateOf(ProfileTab.Posts) }
     val hidden = isPrivate && !isSelf && !isFollowing
 
+    // Kaydedilenler Archived ile AYNI gerekçeyle SADECE kendi profilimizde
+    // gösterilir — kişisel bir liste (bkz. app/social.py bookmarks yorumu),
+    // başkasının profilinde backend zaten boş dönüyor ama sekmeyi hiç
+    // göstermemek daha nettir.
     val tabs = remember(isSelf) {
-        if (isSelf) ProfileTab.entries.toList() else ProfileTab.entries.filterNot { it == ProfileTab.Archived }
+        if (isSelf) {
+            ProfileTab.entries.toList()
+        } else {
+            ProfileTab.entries.filterNot { it == ProfileTab.Archived || it == ProfileTab.Saved }
+        }
     }
 
     // Medya sekmesi client-side filtrelenir - PostDto.imageUrls (coklu gorsel)
@@ -450,6 +464,7 @@ private fun ProfileContent(
                 ProfileTab.Posts -> posts
                 ProfileTab.Media -> mediaPosts
                 ProfileTab.Liked -> likedPosts
+                ProfileTab.Saved -> bookmarkedPosts
                 ProfileTab.Archived -> archivedPosts
             }
 
@@ -485,6 +500,7 @@ private fun ProfileContent(
                         onHashtagClick = onHashtagClick,
                         onPollVote = onPollVote,
                         onMutePost = onMutePost,
+                        onBookmark = onBookmarkPost,
                     )
                 }
             }

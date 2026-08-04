@@ -195,13 +195,14 @@ class MessagingRepository(
         }
 
     /**
-     * Metin ve/veya görsel gönderir — app/api_v1.py api_send_message() artık
+     * Metin ve/veya görsel/sticker/GIF gönderir — app/api_v1.py api_send_message()
      * multipart/form-data bekliyor (JSON DEĞİL). En az content VEYA imageBytes
-     * dolu olmalı (backend ikisi de boşsa "empty" döner) — burada ayrıca bir
-     * ön-kontrol YAPILMIYOR, tek doğruluk kaynağı backend olsun diye
-     * (ConversationViewModel.send() UI tarafında aynı kontrolü zaten yapıyor,
-     * InteractionsRepository.createPost() ile AYNI gerekçe). replyToId null ise
-     * @Part de null geçilir (Retrofit null Part'ı atlar).
+     * VEYA stickerId VEYA gifUrl dolu olmalı (backend hepsi boşsa "empty"
+     * döner) — burada ayrıca bir ön-kontrol YAPILMIYOR, tek doğruluk kaynağı
+     * backend olsun diye (ConversationViewModel.send() UI tarafında aynı
+     * kontrolü zaten yapıyor, InteractionsRepository.createPost() ile AYNI
+     * gerekçe). Tüm opsiyonel parametreler null ise @Part de null geçilir
+     * (Retrofit null Part'ı isteğe hiç eklemez).
      */
     suspend fun sendMessage(
         conversationId: String,
@@ -209,6 +210,8 @@ class MessagingRepository(
         replyToId: String?,
         imageBytes: ByteArray?,
         imageMimeType: String?,
+        stickerId: String? = null,
+        gifUrl: String? = null,
     ): SendMessageResult =
         withContext(Dispatchers.IO) {
             try {
@@ -218,12 +221,16 @@ class MessagingRepository(
                     val imageBody = bytes.toRequestBody((imageMimeType ?: "image/jpeg").toMediaTypeOrNull())
                     MultipartBody.Part.createFormData("image", "message_image", imageBody)
                 }
+                val stickerIdBody: RequestBody? = stickerId?.toRequestBody("text/plain".toMediaTypeOrNull())
+                val gifUrlBody: RequestBody? = gifUrl?.toRequestBody("text/plain".toMediaTypeOrNull())
 
                 val response = messagingApi.sendMessage(
                     conversationId,
                     contentBody,
                     replyToBody,
                     imagePart,
+                    stickerIdBody,
+                    gifUrlBody,
                 )
                 val body = response.body()
                 if (response.isSuccessful && body?.message != null) {

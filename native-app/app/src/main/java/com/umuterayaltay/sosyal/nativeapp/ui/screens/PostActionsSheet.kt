@@ -5,6 +5,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -23,13 +25,14 @@ import com.umuterayaltay.sosyal.nativeapp.repository.Post
  * Bir postun overflow (üç-nokta) menüsü — PostCard.kt'nin ŞU ANA KADAR hiç
  * aksiyon sheet'i YOKTU, bu Faz 5 Dalga 2A'da SIFIRDAN kuruldu.
  *
- * BİLİNÇLİ OLARAK GENİŞLETİLEBİLİR TASARLANDI: bu ilk turda İÇİNDE SADECE
- * "Postu Sessize Al / Sesini Aç" var, ama GELECEKTE (Dalga 3) Bookmark/Şikayet/
- * Sil buraya EKLENECEK — o yüzden imza şimdiden `onMutePost` DIŞINDA parametre
- * alabilecek şekilde bırakıldı (yorum aşağıda). Yeni bir aksiyon eklenince
- * sadece burada yeni bir satır + yeni bir opsiyonel callback parametresi
- * eklenir, çağıran taraflar (PostCard) DEĞİŞMEDEN derlenmeye devam eder
- * (PostCard.onMutePost'un VARSAYILAN DEĞERLİ olması ile AYNI gerekçe).
+ * BİLİNÇLİ OLARAK GENİŞLETİLEBİLİR TASARLANDI: Dalga 2A'da SADECE "Postu
+ * Sessize Al / Sesini Aç" vardı, Dalga 3A'da "Kaydet / Kaydedildi" eklendi
+ * (GELECEKTE Şikayet/Sil de buraya eklenecek) — o yüzden imza şimdiden yeni
+ * parametreler alabilecek şekilde bırakıldı. onBookmark VARSAYILAN DEĞERLİ
+ * ({}) — onMutePost'un PostCard'daki AYNI gerekçesiyle, henüz bağlanmamış
+ * çağrı yerleri DEĞİŞMEDEN derlenmeye devam eder. İlk turda collection_id
+ * her zaman null (Genel'e kaydedilir) — koleksiyon seçimi kaydedilenler
+ * ekranında yapılır, bu basit toggle'a KARIŞTIRILMAZ.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -37,7 +40,8 @@ fun PostActionsSheet(
     post: Post,
     onMutePost: (String) -> Unit,
     onDismiss: () -> Unit,
-    // Gelecekte (Dalga 3): onBookmark: (String) -> Unit = {}, onReport: (String) -> Unit = {}, onDelete: (String) -> Unit = {}
+    onBookmark: (String) -> Unit = {},
+    // Gelecekte: onReport: (String) -> Unit = {}, onDelete: (String) -> Unit = {}
 ) {
     val sheetState = rememberModalBottomSheetState()
 
@@ -45,6 +49,14 @@ fun PostActionsSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
     ) {
+        PostActionItem(
+            icon = if (post.bookmarkedByMe) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
+            label = if (post.bookmarkedByMe) "Kaydedildi" else "Kaydet",
+            onClick = {
+                onBookmark(post.id)
+                onDismiss()
+            },
+        )
         PostActionItem(
             icon = if (post.mutedByMe) Icons.Filled.Notifications else Icons.Filled.NotificationsOff,
             label = if (post.mutedByMe) "Postu Sesini Aç" else "Postu Sessize Al",

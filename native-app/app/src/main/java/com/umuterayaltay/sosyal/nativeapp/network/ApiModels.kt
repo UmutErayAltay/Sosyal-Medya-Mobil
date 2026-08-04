@@ -118,6 +118,9 @@ data class PostDto(
     @SerializedName("liked_by_me") val likedByMe: Boolean = false,
     @SerializedName("my_reaction") val myReaction: String? = null,
     @SerializedName("bookmarked_by_me") val bookmarkedByMe: Boolean = false,
+    // SADECE profile.py'nin bookmarked_posts listesinde dolu (o postun hangi
+    // koleksiyona ait olduğu) — feed/discover gibi genel akışlarda null.
+    @SerializedName("bookmark_collection_id") val bookmarkCollectionId: String? = null,
     @SerializedName("muted_by_me") val mutedByMe: Boolean = false,
     @SerializedName("repost_of") val repostOf: RepostOfDto? = null,
     // attach_polls() her post'a ekliyor (anketi olmayan postta null) — bu alan
@@ -522,10 +525,11 @@ data class ToggleAdminResponse(
 
 // ---- Etkileşimler: beğeni + yorum (app/api_v1.py satır ~1582-1801:
 // api_toggle_like/api_post_detail/api_add_comment okunarak doğrulandı — Faz 4,
-// native Android). BİLİNÇLİ SINIR: sticker/GIF yorum GÖNDERME, yorum düzenleme/
-// silme, yorum TEPKİSİ (comment_reactions) ve yorum BEĞENME (comment_likes)'e
-// aksiyon yok — bunlar VAR OLAN veri olarak modellenir (sticker/reactions
-// alanları) ama bu turda render edilmez.
+// native Android; sticker/GIF yorum GÖNDERME Faz 5 Dalga 3B'de eklendi, bkz.
+// AddCommentRequest.stickerId/gifUrl). BİLİNÇLİ SINIR: yorum düzenleme/silme,
+// yorum TEPKİSİ (comment_reactions) ve yorum BEĞENME (comment_likes)'e aksiyon
+// yok — bunlar VAR OLAN veri olarak modellenir (reactions alanı) ama bu turda
+// render edilmez.
 
 data class LikeRequest(
     val reaction: String? = null,
@@ -567,6 +571,9 @@ data class CommentDto(
     @SerializedName("like_count") val likeCount: Int = 0,
     @SerializedName("liked_by_me") val likedByMe: Boolean = false,
     val sticker: CommentStickerDto? = null,
+    // Faz 5 Dalga 3B: GIF'li yorum — ayrı bir kolon/tablo DEĞİL, comments.gif_url
+    // (Klipy CDN URL'si, is_valid_klipy_url() ile doğrulanır).
+    @SerializedName("gif_url") val gifUrl: String? = null,
     val reactions: List<CommentReactionDto>? = null,
     val replies: List<CommentDto>? = null,
 )
@@ -580,6 +587,11 @@ data class PostDetailResponse(
 data class AddCommentRequest(
     val content: String,
     @SerializedName("parent_comment_id") val parentCommentId: String? = null,
+    // Faz 5 Dalga 3B: sticker/GIF yorum — ikisi de opsiyonel, backend
+    // (api_add_comment) geçersizse sessizce yok sayar (sticker id yoksa / gif_url
+    // Klipy CDN'inden değilse). content + sticker_id + gif_url ÜÇÜ de boşsa 400.
+    @SerializedName("sticker_id") val stickerId: String? = null,
+    @SerializedName("gif_url") val gifUrl: String? = null,
 )
 
 data class AddCommentResponse(
@@ -1110,8 +1122,74 @@ data class HighlightViewResponse(
 )
 
 // ---- FAZ5: Bookmark + Koleksiyon (Dalga 3A) ----
+// app/api_v1/bookmarks.py OKUNARAK doğrulandı — web'in app/social.py
+// toggle_bookmark()/list_collections()/create_collection()/delete_collection()/
+// set_bookmark_collection()'ının AYNI JSON sözleşmesi. KRİTİK: bir bookmark
+// AYNI ANDA EN FAZLA BİR koleksiyona ait olabilir (collection_id nullable TEK
+// kolon, join tablosu DEĞİL) — "koleksiyona ekle" bir TAŞIMA'dır.
+
+/** POST posts/{postId}/bookmark gövdesi — collectionId null/eksik = "Genel". */
+data class ToggleBookmarkRequest(
+    @SerializedName("collection_id") val collectionId: String? = null,
+)
+
+data class ToggleBookmarkResponse(
+    val ok: Boolean? = null,
+    val bookmarked: Boolean = false,
+    val error: String? = null,
+)
+
+/** bookmark_collections satırı — sadece id/name (list_collections() ile AYNI select). */
+data class CollectionDto(
+    val id: String,
+    val name: String,
+)
+
+data class CollectionsResponse(
+    val collections: List<CollectionDto>? = null,
+    val error: String? = null,
+)
+
+data class CreateCollectionRequest(
+    val name: String,
+)
+
+data class CreateCollectionResponse(
+    val id: String? = null,
+    val name: String? = null,
+    val error: String? = null,
+)
+
+/** POST posts/{postId}/bookmark/collection gövdesi — collectionId null/eksik = "Genel"'e taşı. */
+data class SetBookmarkCollectionRequest(
+    @SerializedName("collection_id") val collectionId: String? = null,
+)
 
 // ---- FAZ5: GIF + Sticker tüketicileri (Dalga 3B) ----
+// app/api_v1/gifs.py api_gif_search() ile birebir eşleşir — web app/gifs.py
+// gif_search()'ün AYNI Klipy proxy sözleşmesi. GIF'ler bir DB tablosu DEĞİL,
+// düz Klipy CDN URL'leridir; kabul kuralı (is_valid_klipy_url()) backend'de
+// TEK yerde (app/gifs.py) toplanmıştır — burada AYRICA doğrulama YAPILMAZ,
+// tek doğruluk kaynağı backend'dir. Sticker tüketimi (StickerDto/
+// StickersRepository.getMine()) Dalga 1C'de zaten yazıldı, burada SADECE
+// mesaj/yorum/post'a EKLEME (stickerId/gifUrl parametreleri) var.
+
+/** GET gif/search elemanı — url (paylaşılacak yüksek çözünürlük) + preview
+ * (ızgarada gösterilecek küçük boy, yoksa url'e düşülür — backend zaten
+ * garantiliyor ama null-safety için burada da opsiyonel bırakıldı). */
+data class GifDto(
+    val url: String,
+    val preview: String? = null,
+)
+
+/** `disabled: true` HATA DEĞİL — KLIPY_API_KEY sunucuda tanımlı değilse
+ * (bkz. api_gif_search() docstring'i); GifsRepository bunu AYRI bir sonuç
+ * türü olarak modeller, native taraf GIF sekmesini gizlemeli. */
+data class GifSearchResponse(
+    val gifs: List<GifDto>? = null,
+    val disabled: Boolean = false,
+    val error: String? = null,
+)
 
 // ---- FAZ5: Push/FCM (Dalga 4A) ----
 

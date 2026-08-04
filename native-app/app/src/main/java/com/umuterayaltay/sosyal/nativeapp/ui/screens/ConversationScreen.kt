@@ -34,6 +34,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Gif
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Person
@@ -79,6 +80,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
+import com.umuterayaltay.sosyal.nativeapp.ui.components.MediaPickerSheet
 import com.umuterayaltay.sosyal.nativeapp.network.MessageDto
 import com.umuterayaltay.sosyal.nativeapp.network.MessageReactionDto
 import com.umuterayaltay.sosyal.nativeapp.network.MessageSearchResultDto
@@ -312,6 +314,8 @@ fun ConversationScreen(
                     sendText = sendText,
                     onSendTextChange = viewModel::onSendTextChange,
                     onSend = { viewModel.send(context) },
+                    onSendGif = { url -> viewModel.send(context, gifUrl = url) },
+                    onSendSticker = { id -> viewModel.send(context, stickerId = id) },
                     replyingTo = replyingTo,
                     onCancelReply = viewModel::clearReplyingTo,
                     selectedImageUri = selectedImageUri,
@@ -695,11 +699,14 @@ private fun ReactionChip(reaction: MessageReactionDto) {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ConversationInputBar(
     sendText: String,
     onSendTextChange: (String) -> Unit,
     onSend: () -> Unit,
+    onSendGif: (String) -> Unit,
+    onSendSticker: (String) -> Unit,
     replyingTo: MessageDto?,
     onCancelReply: () -> Unit,
     selectedImageUri: Uri?,
@@ -711,6 +718,26 @@ private fun ConversationInputBar(
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia(),
     ) { uri -> onImageSelected(uri) }
+
+    // GIF/Sticker seçici (Faz 5 Dalga 3B) — görsel-ekle butonunun AKSİNE
+    // önizleme YOK, MediaPickerSheet'te seçim yapılır yapılmaz sheet kapanır
+    // ve mesaj DOĞRUDAN gönderilir (bkz. MediaPickerSheet dosya yorumu).
+    var showMediaPicker by remember { mutableStateOf(false) }
+    val mediaPickerSheetState = rememberModalBottomSheetState()
+    if (showMediaPicker) {
+        MediaPickerSheet(
+            sheetState = mediaPickerSheetState,
+            onDismiss = { showMediaPicker = false },
+            onGifSelected = { url ->
+                showMediaPicker = false
+                onSendGif(url)
+            },
+            onStickerSelected = { id ->
+                showMediaPicker = false
+                onSendSticker(id)
+            },
+        )
+    }
 
     Surface(
         color = MaterialTheme.colorScheme.surface,
@@ -800,6 +827,13 @@ private fun ConversationInputBar(
                     Icon(
                         Icons.Filled.AddPhotoAlternate,
                         contentDescription = "Görsel ekle",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                IconButton(onClick = { showMediaPicker = true }) {
+                    Icon(
+                        Icons.Filled.Gif,
+                        contentDescription = "GIF veya çıkartma ekle",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }

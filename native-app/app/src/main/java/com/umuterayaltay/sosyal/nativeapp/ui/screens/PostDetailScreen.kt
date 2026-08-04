@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Gif
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -38,10 +39,14 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -52,6 +57,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.umuterayaltay.sosyal.nativeapp.network.CommentDto
+import com.umuterayaltay.sosyal.nativeapp.ui.components.MediaPickerSheet
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.PostDetailEvent
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.PostDetailViewModel
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.PostDetailViewModelFactory
@@ -110,7 +116,9 @@ fun PostDetailScreen(
                 CommentInputBar(
                     text = commentText,
                     onTextChange = viewModel::onCommentTextChange,
-                    onSend = viewModel::addComment,
+                    onSend = { viewModel.addComment() },
+                    onSendGif = { url -> viewModel.addComment(gifUrl = url) },
+                    onSendSticker = { id -> viewModel.addComment(stickerId = id) },
                     replyingTo = replyingTo,
                     onCancelReply = viewModel::clearReplyingTo,
                 )
@@ -164,6 +172,7 @@ fun PostDetailScreen(
                         onHashtagClick = onNavigateToHashtag,
                         onPollVote = { postId, optionId -> viewModel.votePoll(postId, optionId) },
                         onMutePost = { viewModel.toggleMutePost() },
+                        onBookmark = { viewModel.toggleBookmark() },
                     )
                 }
 
@@ -337,14 +346,37 @@ private fun CommentRow(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun CommentInputBar(
     text: String,
     onTextChange: (String) -> Unit,
     onSend: () -> Unit,
+    onSendGif: (String) -> Unit,
+    onSendSticker: (String) -> Unit,
     replyingTo: CommentDto?,
     onCancelReply: () -> Unit,
 ) {
+    // GIF/Sticker seçici (Faz 5 Dalga 3B) — ConversationScreen'deki AYNI
+    // "seç=gönder" deseni (MediaPickerSheet dosya yorumuna bkz.): seçim
+    // yapılır yapılmaz sheet kapanır ve yorum DOĞRUDAN gönderilir.
+    var showMediaPicker by remember { mutableStateOf(false) }
+    val mediaPickerSheetState = rememberModalBottomSheetState()
+    if (showMediaPicker) {
+        MediaPickerSheet(
+            sheetState = mediaPickerSheetState,
+            onDismiss = { showMediaPicker = false },
+            onGifSelected = { url ->
+                showMediaPicker = false
+                onSendGif(url)
+            },
+            onStickerSelected = { id ->
+                showMediaPicker = false
+                onSendSticker(id)
+            },
+        )
+    }
+
     // Surface + tonalElevation: input bar'ı üstteki yorum listesinden görsel
     // olarak AYIRIYOR (ConversationScreen'deki mesaj input bar'ıyla tutarlı
     // bir "sabit alt çubuk" hissi) — işlev (onSend/onTextChange) DEĞİŞMEDİ.
@@ -381,6 +413,13 @@ private fun CommentInputBar(
                     .padding(horizontal = 12.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                IconButton(onClick = { showMediaPicker = true }) {
+                    Icon(
+                        Icons.Filled.Gif,
+                        contentDescription = "GIF veya çıkartma ekle",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 OutlinedTextField(
                     value = text,
                     onValueChange = onTextChange,

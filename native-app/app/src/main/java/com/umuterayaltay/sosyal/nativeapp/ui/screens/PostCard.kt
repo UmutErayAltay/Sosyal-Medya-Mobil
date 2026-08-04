@@ -99,6 +99,8 @@ fun PostCard(
     // bağlanmamış ekranlar) bu parametre olmadan da değişmeden derlenmeye
     // devam eder (onPollVote ile AYNI gerekçe).
     onMutePost: (postId: String) -> Unit = {},
+    // Faz 5 Dalga 3A: onMutePost ile AYNI gerekçeyle VARSAYILAN DEĞERLİ.
+    onBookmark: (postId: String) -> Unit = {},
 ) {
     var showActionsSheet by remember { mutableStateOf(false) }
 
@@ -261,6 +263,7 @@ fun PostCard(
         PostActionsSheet(
             post = post,
             onMutePost = onMutePost,
+            onBookmark = onBookmark,
             onDismiss = { showActionsSheet = false },
         )
     }

@@ -6,6 +6,7 @@ import com.umuterayaltay.sosyal.nativeapp.ServiceLocator
 import com.umuterayaltay.sosyal.nativeapp.repository.FeedRefreshResult
 import com.umuterayaltay.sosyal.nativeapp.repository.Poll
 import com.umuterayaltay.sosyal.nativeapp.repository.Post
+import com.umuterayaltay.sosyal.nativeapp.repository.ToggleBookmarkResult
 import com.umuterayaltay.sosyal.nativeapp.repository.ToggleLikeResult
 import com.umuterayaltay.sosyal.nativeapp.repository.ToggleMutePostResult
 import com.umuterayaltay.sosyal.nativeapp.repository.UnreadCountResult
@@ -38,6 +39,7 @@ class FeedViewModel : ViewModel() {
     private val notificationsRepository = ServiceLocator.notificationsRepository
     private val pollsRepository = ServiceLocator.pollsRepository
     private val mutesRepository = ServiceLocator.mutesRepository
+    private val bookmarksRepository = ServiceLocator.bookmarksRepository
     private val tokenStore = ServiceLocator.tokenStore
 
     // Room'da poll kolonu YOK (bkz. PostEntity.toDomain() yorumu) — observePosts()
@@ -141,6 +143,28 @@ class FeedViewModel : ViewModel() {
                     feedRepository.updateMuteState(postId, result.muted)
                 }
                 is ToggleMutePostResult.Error -> {
+                    if (result.code == "unauthorized") {
+                        tokenStore.clearToken()
+                        _events.emit(FeedEvent.SessionExpired)
+                    }
+                    // Diğer hatalar sessizce yutulur - toggleLike() ile AYNI gerekçe.
+                }
+            }
+        }
+    }
+
+    /** PostActionsSheet'teki "Kaydet"/"Kaydedildi" aksiyonu — toggleMutePost()
+     * ile AYNI desen (sunucu yanıtı geldikten SONRA Room cache'i güncellenir,
+     * observePosts() otomatik yeniden emit eder). İlk turda collection_id
+     * her zaman null (Genel'e kaydedilir), koleksiyon seçimi kaydedilenler
+     * ekranında yapılır. */
+    fun toggleBookmark(postId: String) {
+        viewModelScope.launch {
+            when (val result = bookmarksRepository.toggleBookmark(postId)) {
+                is ToggleBookmarkResult.Success -> {
+                    feedRepository.updateBookmarkState(postId, result.bookmarked)
+                }
+                is ToggleBookmarkResult.Error -> {
                     if (result.code == "unauthorized") {
                         tokenStore.clearToken()
                         _events.emit(FeedEvent.SessionExpired)

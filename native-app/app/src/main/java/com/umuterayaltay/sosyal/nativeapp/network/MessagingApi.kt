@@ -34,8 +34,9 @@ interface MessagingApi {
     ): Response<ConversationDetailResponse>
 
     // multipart/form-data — content (opsiyonel metin), reply_to_id (opsiyonel),
-    // image (opsiyonel dosya) — en az content VEYA image dolu olmalı (backend
-    // ikisi de boşsa 400 {"error":"empty"} döner). SettingsApi.editProfile()
+    // image (opsiyonel dosya), sticker_id/gif_url (opsiyonel, Faz 5 Dalga 3B) —
+    // en az content VEYA image VEYA sticker_id VEYA gif_url dolu olmalı (backend
+    // hepsi boşsa 400 {"error":"empty"} döner). SettingsApi.editProfile()
     // ile AYNI desen (bkz. dosya yorumu). SendMessageRequest (JSON) artık
     // KULLANILMIYOR, ApiModels.kt'den kaldırıldı.
     @Multipart
@@ -45,6 +46,8 @@ interface MessagingApi {
         @Part("content") content: RequestBody,
         @Part("reply_to_id") replyToId: RequestBody?,
         @Part image: MultipartBody.Part?,
+        @Part("sticker_id") stickerId: RequestBody?,
+        @Part("gif_url") gifUrl: RequestBody?,
     ): Response<SendMessageResponse>
 
     @POST("messages/start/{username}")

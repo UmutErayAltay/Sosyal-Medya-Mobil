@@ -8,6 +8,7 @@ import com.umuterayaltay.sosyal.nativeapp.network.CommentDto
 import com.umuterayaltay.sosyal.nativeapp.repository.AddCommentResult
 import com.umuterayaltay.sosyal.nativeapp.repository.Post
 import com.umuterayaltay.sosyal.nativeapp.repository.PostDetailResult
+import com.umuterayaltay.sosyal.nativeapp.repository.ToggleBookmarkResult
 import com.umuterayaltay.sosyal.nativeapp.repository.ToggleLikeResult
 import com.umuterayaltay.sosyal.nativeapp.repository.ToggleMutePostResult
 import com.umuterayaltay.sosyal.nativeapp.repository.VotePollResult
@@ -38,6 +39,7 @@ class PostDetailViewModel(private val postId: String) : ViewModel() {
     private val interactionsRepository = ServiceLocator.interactionsRepository
     private val pollsRepository = ServiceLocator.pollsRepository
     private val mutesRepository = ServiceLocator.mutesRepository
+    private val bookmarksRepository = ServiceLocator.bookmarksRepository
     private val tokenStore = ServiceLocator.tokenStore
 
     private val _post = MutableStateFlow<Post?>(null)
@@ -149,6 +151,25 @@ class PostDetailViewModel(private val postId: String) : ViewModel() {
         }
     }
 
+    /** Post üzerindeki "Kaydet"/"Kaydedildi" aksiyonu — toggleMutePost() ile AYNI
+     * desen (tek post gösterildiği için doğrudan _post.value güncellenir). */
+    fun toggleBookmark() {
+        val current = _post.value ?: return
+        viewModelScope.launch {
+            when (val result = bookmarksRepository.toggleBookmark(current.id)) {
+                is ToggleBookmarkResult.Success -> {
+                    _post.value = current.copy(bookmarkedByMe = result.bookmarked)
+                }
+                is ToggleBookmarkResult.Error -> {
+                    if (result.code == "unauthorized") {
+                        tokenStore.clearToken()
+                        _events.emit(PostDetailEvent.SessionExpired)
+                    }
+                }
+            }
+        }
+    }
+
     fun onCommentTextChange(text: String) {
         _commentText.value = text
     }
@@ -161,12 +182,16 @@ class PostDetailViewModel(private val postId: String) : ViewModel() {
         _replyingTo.value = null
     }
 
-    fun addComment() {
+    /** [gifUrl]/[stickerId] (Faz 5 Dalga 3B, MediaPickerSheet'ten) — content
+     * boşken de biri doluysa backend kabul eder (InteractionsRepository.addComment
+     * yorumu, api_add_comment ile AYNI kural), bu yüzden aşağıdaki boş-kontrolü
+     * ÜÇÜNÜ birden kapsar (sadece content.isEmpty() değil). */
+    fun addComment(gifUrl: String? = null, stickerId: String? = null) {
         val content = _commentText.value.trim()
-        if (content.isEmpty()) return
+        if (content.isEmpty() && gifUrl.isNullOrBlank() && stickerId.isNullOrBlank()) return
         val parentId = _replyingTo.value?.id
         viewModelScope.launch {
-            when (val result = interactionsRepository.addComment(postId, content, parentId)) {
+            when (val result = interactionsRepository.addComment(postId, content, parentId, stickerId, gifUrl)) {
                 is AddCommentResult.Success -> {
                     _commentText.value = ""
                     _replyingTo.value = null
