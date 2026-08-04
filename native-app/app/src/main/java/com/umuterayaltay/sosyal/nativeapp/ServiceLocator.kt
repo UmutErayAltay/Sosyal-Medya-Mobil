@@ -37,6 +37,8 @@ import com.umuterayaltay.sosyal.nativeapp.network.BookmarksApi
 import com.umuterayaltay.sosyal.nativeapp.repository.BookmarksRepository
 import com.umuterayaltay.sosyal.nativeapp.network.GifsApi
 import com.umuterayaltay.sosyal.nativeapp.repository.GifsRepository
+import com.umuterayaltay.sosyal.nativeapp.network.PushApi
+import com.umuterayaltay.sosyal.nativeapp.repository.PushRepository
 // FAZ5_IMPORTS_MARKER — her ajan kendi Api/Repository import'unu bu satırın
 // HEMEN ÜSTÜNE ekler (dalga başına ayrı ajan çakışmasın diye).
 
@@ -82,6 +84,8 @@ object ServiceLocator {
     lateinit var bookmarksRepository: BookmarksRepository
         private set
     lateinit var gifsRepository: GifsRepository
+        private set
+    lateinit var pushRepository: PushRepository
         private set
     // FAZ5_LATEINIT_MARKER — her ajan kendi `lateinit var xxxRepository`'sini
     // bu satırın HEMEN ÜSTÜNE ekler.
@@ -137,6 +141,9 @@ object ServiceLocator {
 
         val gifsApi = retrofit.create(GifsApi::class.java)
         gifsRepository = GifsRepository(gifsApi)
+
+        val pushApi = retrofit.create(PushApi::class.java)
+        pushRepository = PushRepository(pushApi)
 
         // FAZ5_INIT_MARKER — her ajan kendi `val xxxApi = retrofit.create(...)`
         // + `xxxRepository = XxxRepository(xxxApi)` satırlarını bu satırın

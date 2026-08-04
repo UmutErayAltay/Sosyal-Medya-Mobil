@@ -1192,6 +1192,15 @@ data class GifSearchResponse(
 )
 
 // ---- FAZ5: Push/FCM (Dalga 4A) ----
+// app/api_v1/push.py (backend, PARALEL ajan tarafından yazıldı) POST
+// push/register ve push/unregister ile birebir eşleşir — ikisi de AYNI gövde
+// {"token": "..."} alır, {"ok": true}/{"error": "..."} döner (SimpleOkResponse
+// reuse edilir, ayrı bir yanıt DTO'su İCAT EDİLMEDİ).
+
+/** POST push/register ve push/unregister ORTAK gövdesi. */
+data class RegisterTokenRequest(
+    @SerializedName("token") val token: String,
+)
 
 data class ToggleHashtagFollowResponse(
     val following: Boolean = false,

@@ -2,6 +2,7 @@ package com.umuterayaltay.sosyal.nativeapp.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.google.firebase.messaging.FirebaseMessaging
 import com.umuterayaltay.sosyal.nativeapp.ServiceLocator
 import com.umuterayaltay.sosyal.nativeapp.repository.AuthResult
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -49,7 +50,10 @@ class AuthViewModel : ViewModel() {
             when (
                 val result = authRepository.login(trimmedEmail, password, deviceName = android.os.Build.MODEL)
             ) {
-                is AuthResult.Success -> _uiState.value = LoginUiState.Success
+                is AuthResult.Success -> {
+                    _uiState.value = LoginUiState.Success
+                    registerFcmToken()
+                }
                 is AuthResult.Error -> {
                     if (result.code == "mfa_required") {
                         _uiState.value = LoginUiState.NeedsCode(
@@ -81,7 +85,10 @@ class AuthViewModel : ViewModel() {
                     code = code.trim(),
                 )
             ) {
-                is AuthResult.Success -> _uiState.value = LoginUiState.Success
+                is AuthResult.Success -> {
+                    _uiState.value = LoginUiState.Success
+                    registerFcmToken()
+                }
                 is AuthResult.Error -> _uiState.value = LoginUiState.Error(mapErrorMessage(result.code))
             }
         }
@@ -101,7 +108,10 @@ class AuthViewModel : ViewModel() {
                     deviceName = android.os.Build.MODEL,
                 )
             ) {
-                is AuthResult.Success -> _uiState.value = LoginUiState.Success
+                is AuthResult.Success -> {
+                    _uiState.value = LoginUiState.Success
+                    registerFcmToken()
+                }
                 is AuthResult.Error -> {
                     if (result.code == "mfa_required") {
                         _uiState.value = LoginUiState.NeedsCode(PendingCredential.Google(idToken))
@@ -130,7 +140,10 @@ class AuthViewModel : ViewModel() {
                     deviceName = android.os.Build.MODEL,
                 )
             ) {
-                is AuthResult.Success -> _uiState.value = LoginUiState.Success
+                is AuthResult.Success -> {
+                    _uiState.value = LoginUiState.Success
+                    registerFcmToken()
+                }
                 is AuthResult.Error -> _uiState.value = LoginUiState.Error(mapErrorMessage(result.code))
             }
         }
@@ -153,6 +166,20 @@ class AuthViewModel : ViewModel() {
 
     fun resetState() {
         _uiState.value = LoginUiState.Idle
+    }
+
+    /** Login BAŞARILI olduğu her yoldan (email/şifre, 2FA kodu, Google — dördü
+     * de yukarıda AYNI Success dalında) sonra FCM token'ı sunucuya kaydedilir
+     * (Faz 5 Dalga 4A — bkz. ServiceLocator.pushRepository/PushRepository).
+     * Hata sessizce yutulur: push kaydı BAŞARISIZ olsa bile login akışı
+     * ETKİLENMEMELİ (registerToken zaten kendi try/catch'inde network/unknown
+     * hatasını Error olarak döner, burada sonuç KULLANILMIYOR). */
+    private fun registerFcmToken() {
+        FirebaseMessaging.getInstance().token.addOnSuccessListener { token ->
+            viewModelScope.launch {
+                ServiceLocator.pushRepository.registerToken(token)
+            }
+        }
     }
 
     private fun mapErrorMessage(code: String?): String = when (code) {

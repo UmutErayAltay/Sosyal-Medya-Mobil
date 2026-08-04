@@ -17,4 +17,8 @@ plugins {
     id("com.android.application") version "8.9.1" apply false
     id("org.jetbrains.kotlin.android") version "2.1.20" apply false
     id("org.jetbrains.kotlin.plugin.compose") version "2.1.20" apply false
+    // Faz 5 Dalga 4A: FCM push bildirimi — google-services.json'daki proje
+    // bilgilerini (gen-lang-client-07070261-4a9fa) derleme zamanında okuyup
+    // BuildConfig/kaynaklara enjekte eden Gradle eklentisi.
+    id("com.google.gms.google-services") version "4.4.2" apply false
 }

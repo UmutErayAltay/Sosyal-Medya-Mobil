@@ -3,6 +3,9 @@ plugins {
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
     id("org.jetbrains.kotlin.kapt")
+    // Faz 5 Dalga 4A: FCM push bildirimi — apply false YOK burada (kök
+    // build.gradle.kts'teki tersine), asıl uygulama BU modülde gerçekleşir.
+    id("com.google.gms.google-services")
 }
 
 android {
@@ -141,6 +144,13 @@ dependencies {
     implementation(platform("io.github.jan-tennert.supabase:bom:3.1.4"))
     implementation("io.github.jan-tennert.supabase:realtime-kt")
     implementation("io.ktor:ktor-client-okhttp:3.1.2")
+
+    // Faz 5 Dalga 4A: FCM push bildirimi — google-services.json ZATEN yerinde
+    // (paket com.umuterayaltay.sosyal.native, proje gen-lang-client-07070261-4a9fa).
+    // BOM ile firebase-messaging-ktx'in sürümü otomatik hizalanır (ayrı sürüm
+    // numarası YAZILMAZ — BOM'un garantisi bu).
+    implementation(platform("com.google.firebase:firebase-bom:33.7.0"))
+    implementation("com.google.firebase:firebase-messaging-ktx")
 
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")

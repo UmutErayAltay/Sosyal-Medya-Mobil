@@ -1,5 +1,7 @@
 package com.umuterayaltay.sosyal.nativeapp.repository
 
+import com.google.firebase.messaging.FirebaseMessaging
+import com.umuterayaltay.sosyal.nativeapp.ServiceLocator
 import com.umuterayaltay.sosyal.nativeapp.data.TokenStore
 import com.umuterayaltay.sosyal.nativeapp.network.AuthApi
 import com.umuterayaltay.sosyal.nativeapp.network.ForgotPasswordRequest
@@ -10,9 +12,12 @@ import com.umuterayaltay.sosyal.nativeapp.network.RegisterRequest
 import com.umuterayaltay.sosyal.nativeapp.network.RetrofitClient
 import com.umuterayaltay.sosyal.nativeapp.network.UserDto
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import retrofit2.Response
 import java.io.IOException
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 /** Login sonucu — backend'in döndüğü hata kodlarını (bkz. app/api_v1.py) ayırt eder. */
 sealed class AuthResult {
@@ -190,6 +195,23 @@ class AuthRepository(
     suspend fun logout() {
         withContext(Dispatchers.IO) {
             try {
+                // FCM token'ını temizlemeden ÖNCE (Faz 5 Dalga 4A) sunucuya "bu
+                // token artık bu kullanıcıya ait değil" bilgisi iletiliyor —
+                // aksi halde çıkış yapan kullanıcı bu cihazda kalan eski bir
+                // FCM token üzerinden başka birinin push bildirimini almaya
+                // devam edebilirdi. Hata olursa logout akışı KESİNTİYE
+                // UĞRAMAZ (bkz. ServiceLocator.pushRepository.unregisterToken
+                // zaten kendi try/catch'inde network/unknown hatasını yutar,
+                // burada da ayrıca sarmalanır — FirebaseMessaging.getInstance()
+                // .token'ın kendisi de başarısız olabilir).
+                try {
+                    val fcmToken = currentFcmToken()
+                    if (fcmToken != null) {
+                        ServiceLocator.pushRepository.unregisterToken(fcmToken)
+                    }
+                } catch (e: Exception) {
+                    // Token alınamadı/sunucuya ulaşılamadı — logout'u ENGELLEMEZ.
+                }
                 authApi.logout()
             } catch (e: Exception) {
                 // Ağ hatası olsa bile yerelde çıkış yapılır — sunucu tarafında token
@@ -199,5 +221,17 @@ class AuthRepository(
                 tokenStore.clearToken()
             }
         }
+    }
+
+    /** FirebaseMessaging.getInstance().token bir Play Services Task<String>
+     * döner — projede kotlinx-coroutines-play-services BAĞIMLILIĞI YOK (bkz.
+     * app/build.gradle.kts, sadece coroutines-android var), bu yüzden Task'ın
+     * .await() uzantısı KULLANILAMAZ. Aynı callback->suspend dönüşümü elle
+     * (suspendCancellableCoroutine ile) yapılıyor — yeni bir bağımlılık
+     * EKLEMEDEN. */
+    private suspend fun currentFcmToken(): String? = suspendCancellableCoroutine { continuation ->
+        FirebaseMessaging.getInstance().token
+            .addOnSuccessListener { token -> continuation.resume(token) }
+            .addOnFailureListener { e -> continuation.resumeWithException(e) }
     }
 }
