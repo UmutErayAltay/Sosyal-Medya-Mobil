@@ -42,6 +42,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -54,6 +55,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -123,8 +125,14 @@ fun DiscoverScreen(
 
     val isSearchActive = query.length >= 2
 
+    // FeedScreen.kt'deki AYNI desen (kullanıcı raporu: bu ekranda scroll-hide
+    // hiç çalışmıyordu) - enterAlwaysScrollBehavior() + Scaffold'a nestedScroll
+    // modifier'ı + TopAppBar'a scrollBehavior parametresi.
+    val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
+
     Scaffold(
-        topBar = { TopAppBar(title = { Text("Keşfet") }) },
+        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
+        topBar = { TopAppBar(title = { Text("Keşfet") }, scrollBehavior = scrollBehavior) },
     ) { padding ->
         LazyColumn(
             state = listState,

@@ -50,6 +50,7 @@ import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -60,6 +61,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -146,10 +148,19 @@ fun ProfileScreen(
         }
     }
 
+    // FeedScreen.kt'deki AYNI desen (kullanıcı raporu: bu ekranda scroll-hide
+    // hiç çalışmıyordu, SADECE "Profil" bottom-nav sekmesi ve push edilen
+    // "profile/{username}" ikisi de bu TEK composable'ı paylaştığı için tek
+    // yerde eklemek yetiyor) - enterAlwaysScrollBehavior() + Scaffold'a
+    // nestedScroll modifier'ı + TopAppBar'a scrollBehavior parametresi.
+    val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
+
     Scaffold(
+        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
             TopAppBar(
                 title = { Text(profile?.username ?: "Profil") },
+                scrollBehavior = scrollBehavior,
                 navigationIcon = {
                     if (onNavigateBack != null) {
                         IconButton(onClick = onNavigateBack) {

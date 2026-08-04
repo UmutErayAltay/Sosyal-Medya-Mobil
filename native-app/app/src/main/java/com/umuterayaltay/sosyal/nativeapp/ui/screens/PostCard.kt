@@ -107,7 +107,14 @@ fun PostCard(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp),
+            .padding(horizontal = 12.dp)
+            // Kullanıcı raporu: kartın boş alanına dokununca hiçbir şey
+            // olmuyordu (SADECE beğeni/yorum satırları tıklanabilirdi) -
+            // Instagram/Twitter alışkanlığı: kartın HERHANGİ bir yerine
+            // dokununca post detayına gidilsin. Beğeni/yorum satırlarının
+            // KENDİ .clickable'ları Compose'un iç-dış çakışma davranışında
+            // ÖNCELİKLİDİR (içteki tüketir) - çift tetiklenme olmaz.
+            .clickable { onCommentClick(post) },
         shape = MaterialTheme.shapes.large,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),

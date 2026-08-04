@@ -59,6 +59,14 @@ fun FeedScreen(
     // KARIŞTIRILMADI (görev tanımı), ayrı `viewModel()` instance'ı.
     onNavigateToStoryViewer: (String) -> Unit = {},
     onNavigateToStoryCreate: () -> Unit = {},
+    // Kullanıcı raporu: hikaye paylaşıldıktan sonra bu çubuk yenilenmiyordu -
+    // StoryBarViewModel sekme değişiminde KORUNDUĞU için sadece bir kez
+    // `init { loadBar() }` çalışıyordu. MainScaffold, NavController'ın
+    // savedStateHandle'ından okuduğu "story_created" bayrağını buraya iletir;
+    // true olunca çubuk yeniden yüklenir, sonra bayrak MainScaffold'da false'a
+    // döndürülür (bkz. MainScaffold.kt).
+    storyCreated: Boolean = false,
+    onStoryBarRefreshHandled: () -> Unit = {},
     viewModel: FeedViewModel = viewModel(),
     storyBarViewModel: StoryBarViewModel = viewModel(),
 ) {
@@ -84,6 +92,15 @@ fun FeedScreen(
         }
     }
 
+    // storyCreated true olunca çubuğu yeniden yükle, sonra bayrağı MainScaffold'da
+    // false'a döndür - aksi halde her recomposition'da tekrar tetiklenir.
+    LaunchedEffect(storyCreated) {
+        if (storyCreated) {
+            storyBarViewModel.loadBar()
+            onStoryBarRefreshHandled()
+        }
+    }
+
     // Web'in navbar.js'indeki "aşağı kaydırınca gizlen, yukarı kaydırınca geri
     // gel" davranışının native karşılığı — Material3'ün hazır
     // enterAlwaysScrollBehavior()'ı TAM OLARAK bunu yapar (elle NestedScrollConnection
@@ -97,6 +114,16 @@ fun FeedScreen(
             TopAppBar(
                 title = { Text("Ana Sayfa") },
                 scrollBehavior = scrollBehavior,
+                // Kullanıcı raporu (gerçek cihaz): kısmi kaydırmalarda üstte
+                // "karartı" takılı kalıyordu. Kök neden: varsayılan
+                // topAppBarColors()'ta scrolledContainerColor, containerColor'dan
+                // (surface) FARKLI bir tonal-elevated renk - enterAlwaysScrollBehavior'ın
+                // overlappedFraction'ına bağlı bu geçiş yarım kaydırmada donuk bir
+                // karartı gibi görünüyordu. İkisini AYNI değere sabitleyince geçiş
+                // hiç olmuyor, "karartı" hissi ortadan kalkıyor.
+                colors = TopAppBarDefaults.topAppBarColors(
+                    scrolledContainerColor = MaterialTheme.colorScheme.surface,
+                ),
                 actions = {
                     // InboxScreen'in ikon-butonları DESENİYLE tutarlı — yeni bir
                     // ikonun YANINA eklendi, var olanın yerine geçmedi.

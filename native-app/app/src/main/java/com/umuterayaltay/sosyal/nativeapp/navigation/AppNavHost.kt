@@ -540,7 +540,18 @@ fun AppNavHost() {
         composable("storyCreate") {
             StoryCreateScreen(
                 onNavigateBack = { navController.navigateUp() },
-                onStoryCreated = { navController.navigateUp() },
+                onStoryCreated = {
+                    // Kullanıcı raporu: hikaye paylaşıldıktan sonra feed'deki hikaye
+                    // çubuğu yenilenmiyordu (StoryBarViewModel Feed sekmesinde
+                    // korunduğu için sadece bir kez `init { loadBar() }` çağırıyor).
+                    // Compose Navigation'ın standart "geri dönüşte sinyal" deseni:
+                    // previousBackStackEntry (ROUTE_MAIN'in kendisi) üzerine bir
+                    // savedStateHandle bayrağı bırakılır, MainScaffold bunu
+                    // navController.currentBackStackEntryAsState() ile dinleyip
+                    // StoryBarViewModel.loadBar()'ı tetikler (bkz. MainScaffold.kt).
+                    navController.previousBackStackEntry?.savedStateHandle?.set("story_created", true)
+                    navController.navigateUp()
+                },
                 onSessionExpired = {
                     navController.navigate(ROUTE_LOGIN) {
                         popUpTo(ROUTE_MAIN) { inclusive = true }
