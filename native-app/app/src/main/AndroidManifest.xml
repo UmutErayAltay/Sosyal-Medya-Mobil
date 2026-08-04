@@ -6,6 +6,21 @@
          de gerekir (bkz. MainActivity.onCreate()), ama manifest deklarasyonu
          HER durumda şart. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Instagram tarzı hikaye oluşturma akışı (StoryCreateScreen.kt) — canlı
+         kamera önizlemesi + foto/video çekimi için runtime izin de gerekir
+         (izin akışı ekranın KENDİSİNDE isteniyor, MainActivity'de DEĞİL —
+         bkz. StoryCreateScreen.kt yorumu, bu ekrana özel bir izin her
+         uygulama açılışında istenmemeli). RECORD_AUDIO: Instagram'da hikaye
+         videosu sesli kaydedilir, bu yüzden video kaydı için de isteniyor —
+         mesajlaşmadaki "ses mesajı kapsam dışı" notundan BAĞIMSIZ, farklı bir
+         özellik. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- required="false": kamerası olmayan cihazlarda da galeri yoluyla
+         hikaye paylaşımı çalışmaya devam etmeli, Play Store bu cihazları
+         filtrelemesin. -->
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.any" android:required="false" />
 
     <application
         android:name=".SosyalApplication"
@@ -36,5 +51,20 @@
                 <action android:name="com.google.firebase.MESSAGING_EVENT" />
             </intent-filter>
         </service>
+
+        <!-- CameraX'in çektiği fotoğraf/videonun content:// Uri'sine çevrilmesi
+             için (galeri Uri'leri zaten MediaStore'un kendi provider'ından
+             geliyor, bunlar için ayrı bir şey gerekmiyordu — sadece kendi
+             çektiğimiz geçici dosyalar için FileProvider şart). Bkz.
+             res/xml/file_paths.xml ve StoryCreateScreen.kt. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
     </application>
 </manifest>

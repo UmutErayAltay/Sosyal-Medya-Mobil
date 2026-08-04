@@ -1,9 +1,29 @@
 package com.umuterayaltay.sosyal.nativeapp.ui.screens
 
+import android.Manifest
+import android.content.Context
+import android.content.pm.PackageManager
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageCapture
+import androidx.camera.core.ImageCaptureException
+import androidx.camera.core.Preview
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.video.FallbackStrategy
+import androidx.camera.video.FileOutputOptions
+import androidx.camera.video.Quality
+import androidx.camera.video.QualitySelector
+import androidx.camera.video.Recorder
+import androidx.camera.video.Recording
+import androidx.camera.video.VideoCapture
+import androidx.camera.video.VideoRecordEvent
+import androidx.camera.view.PreviewView
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,14 +40,16 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.FlipCameraAndroid
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Movie
+import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Star
-import androidx.compose.material.icons.filled.VideoLibrary
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -42,20 +64,36 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.StoryCreateEvent
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.StoryCreateViewModel
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import java.io.File
 
 private data class StoryVisibilityOption(val value: String, val label: String, val icon: ImageVector)
 
@@ -65,13 +103,31 @@ private val STORY_VISIBILITY_OPTIONS = listOf(
     StoryVisibilityOption("close_friends", "Yakın Arkadaşlar", Icons.Filled.Star),
 )
 
+// Basılı tutma eşiği — bundan KISA bir dokunuş fotoğraf, bundan UZUN bir
+// basılı-tutma video kaydı sayılır (Instagram'ın shutter davranışıyla aynı fikir).
+private const val LONG_PRESS_THRESHOLD_MS = 250L
+
+// Maksimum hikaye video kayıt süresi — Instagram'daki ~15sn sınırıyla aynı.
+private const val MAX_VIDEO_RECORD_MS = 15_000L
+
 /**
  * "Yeni Hikaye" ekranı — app/api_v1/stories.py api_create_story() sözleşmesiyle
  * AYNI BİLİNÇLİ SINIR (bkz. StoryCreateViewModel): caption + (TEK opsiyonel
  * görsel VEYA TEK opsiyonel video, mutually exclusive) + opsiyonel anket (0-4
- * seçenek) + görünürlük. CreatePostScreen'deki VisibilityFilterRow (private,
- * dosyaya özgü) ile GÖRSEL DİL tutarlı ama AYRI bir composable — CreatePostScreen'e
- * DOKUNULMADI.
+ * seçenek) + görünürlük.
+ *
+ * Instagram tarzı iki adımlı akış (kullanıcı talimatıyla form-tabanlı eski
+ * halinden dönüştürüldü — bkz. görev notu):
+ *   1) Kamera adımı (StoryCameraStep) — ekran AÇILIR AÇILMAZ canlı kamera,
+ *      kısa dokunuş=foto, basılı tutma=video (ilerleme halkasıyla), sol altta
+ *      galeri kısayolu. "Yazıyla Paylaş" ile medya olmadan da devam edilebilir
+ *      (backend caption/anket-only hikayeyi zaten destekliyor, bu yetenek
+ *      kaybolmasın diye eklendi — YENİ bir ViewModel state İCAT EDİLMEDİ,
+ *      sadece bu ekrana özel yerel bir UI bayrağı).
+ *   2) Form adımı (StoryFormStep) — MEVCUT caption/görünürlük/anket editörü,
+ *      medya seçildikten (kamera VEYA galeri) veya "Yazıyla Paylaş" sonrası
+ *      gösterilir. StoryCreateViewModel'in submit/caption/visibility/poll
+ *      mantığına DOKUNULMADI.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -99,25 +155,484 @@ fun StoryCreateScreen(
         }
     }
 
-    val imagePickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickVisualMedia(),
-    ) { uri -> viewModel.onImageSelected(uri) }
+    // Kamera + ses izin durumu — ekranın KENDİSİNDE isteniyor (MainActivity'de
+    // DEĞİL), çünkü bu ekrana özel bir izin, her uygulama açılışında istenmemeli.
+    var hasCameraPermission by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
+                PackageManager.PERMISSION_GRANTED,
+        )
+    }
+    var hasAudioPermission by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
+                PackageManager.PERMISSION_GRANTED,
+        )
+    }
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions(),
+    ) { result ->
+        hasCameraPermission = result[Manifest.permission.CAMERA] ?: hasCameraPermission
+        hasAudioPermission = result[Manifest.permission.RECORD_AUDIO] ?: hasAudioPermission
+    }
+    LaunchedEffect(Unit) {
+        if (!hasCameraPermission || !hasAudioPermission) {
+            permissionLauncher.launch(arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO))
+        }
+    }
 
-    val videoPickerLauncher = rememberLauncherForActivityResult(
+    // Galeri kısayolu — MEVCUT ActivityResultContracts.PickVisualMedia() ile
+    // AYNI mekanizma (eski iki-butonlu formdan taşındı), tek bir küçük kısayol
+    // butonu olduğu için görsel/video AYRIMI mime type'a bakılarak yapılıyor.
+    val galleryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia(),
-    ) { uri -> viewModel.onVideoSelected(uri) }
+    ) { uri ->
+        if (uri != null) {
+            val mimeType = context.contentResolver.getType(uri)
+            if (mimeType?.startsWith("video/") == true) {
+                viewModel.onVideoSelected(uri)
+            } else {
+                viewModel.onImageSelected(uri)
+            }
+        }
+    }
+
+    // "Yazıyla Paylaş" — kamera adımını atlayıp doğrudan forma geçmek için
+    // yerel UI bayrağı (ViewModel state DEĞİL — sadece bu ekranın adım
+    // yönlendirmesi, backend/submit mantığını etkilemiyor).
+    var showTextOnlyForm by remember { mutableStateOf(false) }
+
+    val hasSelectedMedia = selectedImageUri != null || selectedVideoUri != null
+    val showForm = hasSelectedMedia || showTextOnlyForm
 
     val filledPollOptionCount = pollOptions.count { it.isNotBlank() }
     val canSubmit = (caption.isNotBlank() || selectedImageUri != null || selectedVideoUri != null ||
         filledPollOptionCount >= 2) && !submitting
 
+    if (showForm) {
+        StoryFormStep(
+            caption = caption,
+            visibility = visibility,
+            selectedImageUri = selectedImageUri,
+            selectedVideoUri = selectedVideoUri,
+            pollOptions = pollOptions,
+            submitting = submitting,
+            error = error,
+            canSubmit = canSubmit,
+            onCaptionChange = viewModel::onCaptionChange,
+            onVisibilityChange = viewModel::onVisibilityChange,
+            onRemoveImage = {
+                viewModel.onImageSelected(null)
+                showTextOnlyForm = false
+            },
+            onRemoveVideo = {
+                viewModel.onVideoSelected(null)
+                showTextOnlyForm = false
+            },
+            onAddPollOption = viewModel::addPollOption,
+            onRemovePollOption = viewModel::removePollOption,
+            onPollOptionChange = viewModel::onPollOptionChange,
+            onBackToCamera = {
+                // Geri/X'e basınca kameraya DÖN — mevcut medya seçimini temizle,
+                // metin-only moddan da çık (kullanıcı fikrini değiştirip yeniden
+                // çekim/galeri seçimi yapabilsin).
+                viewModel.onImageSelected(null)
+                viewModel.onVideoSelected(null)
+                showTextOnlyForm = false
+            },
+            onSubmit = { viewModel.submit(context) },
+        )
+    } else {
+        StoryCameraStep(
+            hasCameraPermission = hasCameraPermission,
+            hasAudioPermission = hasAudioPermission,
+            onRequestPermission = {
+                permissionLauncher.launch(arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO))
+            },
+            onImageCaptured = { uri -> viewModel.onImageSelected(uri) },
+            onVideoCaptured = { uri -> viewModel.onVideoSelected(uri) },
+            onGalleryClick = {
+                galleryLauncher.launch(
+                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo),
+                )
+            },
+            onClose = onNavigateBack,
+            onSwitchToTextOnly = { showTextOnlyForm = true },
+        )
+    }
+}
+
+/**
+ * Kamera adımı — Instagram tarzı: tam ekran canlı önizleme + alt ortada
+ * shutter (tap=foto, basılı tutma=video) + sol altta galeri kısayolu + sağ
+ * üstte kamera değiştir + sol üstte kapat / sağ üstte "Yazıyla Paylaş".
+ * Kamera izni yoksa/reddedildiyse önizleme yerine bilgilendirme + galeri
+ * yoluna yönlendirme gösterilir (tamamen KİLİTLEMEZ).
+ */
+@Composable
+private fun StoryCameraStep(
+    hasCameraPermission: Boolean,
+    hasAudioPermission: Boolean,
+    onRequestPermission: () -> Unit,
+    onImageCaptured: (Uri) -> Unit,
+    onVideoCaptured: (Uri) -> Unit,
+    onGalleryClick: () -> Unit,
+    onClose: () -> Unit,
+    onSwitchToTextOnly: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black),
+    ) {
+        if (hasCameraPermission) {
+            CameraPreviewAndShutter(
+                hasAudioPermission = hasAudioPermission,
+                onImageCaptured = onImageCaptured,
+                onVideoCaptured = onVideoCaptured,
+                onGalleryClick = onGalleryClick,
+            )
+        } else {
+            Column(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .padding(32.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.PhotoCamera,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(48.dp),
+                )
+                Text(
+                    text = "Kamera izni gerekli",
+                    color = Color.White,
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                Text(
+                    text = "Hikaye çekmek için kamera iznini verin, ya da galeriden bir görsel/video seçin.",
+                    color = Color.White.copy(alpha = 0.8f),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Button(onClick = onRequestPermission) {
+                    Text("İzin Ver")
+                }
+                OutlinedButton(onClick = onGalleryClick) {
+                    Text("Galeriden Seç", color = Color.White)
+                }
+            }
+        }
+
+        // Üst bar — sol: kapat, sağ: metin-only kısayolu.
+        Row(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth()
+                .padding(8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconButton(onClick = onClose) {
+                Icon(Icons.Filled.Close, contentDescription = "Vazgeç", tint = Color.White)
+            }
+            TextButton(onClick = onSwitchToTextOnly) {
+                Text("Yazıyla Paylaş", color = Color.White)
+            }
+        }
+    }
+}
+
+/**
+ * CameraX önizleme + shutter — Preview + ImageCapture + VideoCapture<Recorder>
+ * AYNI ANDA bağlanmaya çalışılır (foto/video AYNI shutter'dan çekilebilsin).
+ * Bazı cihazlar/kalite kombinasyonları üçünü birden desteklemeyebilir — o
+ * durumda Preview+ImageCapture'a düşülür, basılı-tutma video kaydı o cihazda
+ * sessizce devre dışı kalır (shutter yalnızca foto çeker).
+ */
+@Composable
+private fun CameraPreviewAndShutter(
+    hasAudioPermission: Boolean,
+    onImageCaptured: (Uri) -> Unit,
+    onVideoCaptured: (Uri) -> Unit,
+    onGalleryClick: () -> Unit,
+) {
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val previewView = remember { PreviewView(context) }
+
+    var imageCapture by remember { mutableStateOf<ImageCapture?>(null) }
+    var videoCapture by remember { mutableStateOf<VideoCapture<Recorder>?>(null) }
+    var activeRecording by remember { mutableStateOf<Recording?>(null) }
+    var lensFacing by remember { mutableStateOf(CameraSelector.LENS_FACING_BACK) }
+    var isRecording by remember { mutableStateOf(false) }
+    var recordProgress by remember { mutableStateOf(0f) }
+
+    DisposableEffect(lensFacing) {
+        val providerFuture = ProcessCameraProvider.getInstance(context)
+        val mainExecutor = ContextCompat.getMainExecutor(context)
+        providerFuture.addListener({
+            val provider = providerFuture.get()
+            provider.unbindAll()
+
+            val preview = Preview.Builder().build().also {
+                it.setSurfaceProvider(previewView.surfaceProvider)
+            }
+            val newImageCapture = ImageCapture.Builder().build()
+            val recorder = Recorder.Builder()
+                .setQualitySelector(
+                    QualitySelector.from(Quality.HD, FallbackStrategy.higherQualityOrLowerThan(Quality.SD)),
+                )
+                .build()
+            val newVideoCapture = VideoCapture.withOutput(recorder)
+            val selector = CameraSelector.Builder().requireLensFacing(lensFacing).build()
+
+            try {
+                // Önce ÜÇÜNÜ BİRDEN bağlamayı dene.
+                provider.bindToLifecycle(lifecycleOwner, selector, preview, newImageCapture, newVideoCapture)
+                imageCapture = newImageCapture
+                videoCapture = newVideoCapture
+            } catch (concurrentBindError: Exception) {
+                // Cihaz üçünü birden desteklemiyor — foto-only'e düş.
+                try {
+                    provider.unbindAll()
+                    provider.bindToLifecycle(lifecycleOwner, selector, preview, newImageCapture)
+                    imageCapture = newImageCapture
+                    videoCapture = null
+                } catch (fallbackError: Exception) {
+                    imageCapture = null
+                    videoCapture = null
+                }
+            }
+        }, mainExecutor)
+
+        onDispose {
+            try {
+                providerFuture.get().unbindAll()
+            } catch (_: Exception) {
+                // Provider henüz hazır değilse veya lifecycle zaten kapandıysa yut.
+            }
+        }
+    }
+
+    fun takePhoto() {
+        val capture = imageCapture ?: return
+        val file = createStoryMediaFile(context, ".jpg")
+        val outputOptions = ImageCapture.OutputFileOptions.Builder(file).build()
+        capture.takePicture(
+            outputOptions,
+            ContextCompat.getMainExecutor(context),
+            object : ImageCapture.OnImageSavedCallback {
+                override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
+                    onImageCaptured(uriForStoryFile(context, file))
+                }
+
+                override fun onError(exception: ImageCaptureException) {
+                    // Sessizce yut — MVP kapsamı, kullanıcı tekrar deneyebilir
+                    // (shutter tekrar dokunmaya açık kalıyor, ekran kilitlenmiyor).
+                }
+            },
+        )
+    }
+
+    fun startRecording() {
+        val capture = videoCapture ?: return
+        if (activeRecording != null) return
+        val file = createStoryMediaFile(context, ".mp4")
+        val outputOptions = FileOutputOptions.Builder(file).build()
+        var pending = capture.output.prepareRecording(context, outputOptions)
+        if (hasAudioPermission) {
+            pending = pending.withAudioEnabled()
+        }
+        isRecording = true
+        activeRecording = pending.start(ContextCompat.getMainExecutor(context)) { event ->
+            if (event is VideoRecordEvent.Finalize) {
+                isRecording = false
+                activeRecording = null
+                if (!event.hasError()) {
+                    onVideoCaptured(uriForStoryFile(context, file))
+                }
+            }
+        }
+    }
+
+    fun stopRecording() {
+        activeRecording?.stop()
+    }
+
+    // Basılı tutma süresince ilerleme halkasını dolduran döngü — maksimum
+    // süreye ulaşınca kaydı otomatik durdurur (Instagram'daki ~15sn sınırı).
+    LaunchedEffect(isRecording) {
+        if (isRecording) {
+            val start = System.currentTimeMillis()
+            while (isRecording) {
+                val elapsed = System.currentTimeMillis() - start
+                recordProgress = (elapsed.toFloat() / MAX_VIDEO_RECORD_MS).coerceIn(0f, 1f)
+                if (elapsed >= MAX_VIDEO_RECORD_MS) {
+                    stopRecording()
+                    break
+                }
+                delay(30)
+            }
+        } else {
+            recordProgress = 0f
+        }
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        AndroidView(factory = { previewView }, modifier = Modifier.fillMaxSize())
+
+        // Kamera değiştir (ön/arka) — sağ üst köşe, opsiyonel bir kolaylık.
+        IconButton(
+            onClick = {
+                lensFacing = if (lensFacing == CameraSelector.LENS_FACING_BACK) {
+                    CameraSelector.LENS_FACING_FRONT
+                } else {
+                    CameraSelector.LENS_FACING_BACK
+                }
+            },
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(top = 56.dp, end = 16.dp)
+                .size(40.dp)
+                .clip(CircleShape)
+                .background(Color.Black.copy(alpha = 0.35f)),
+        ) {
+            Icon(Icons.Filled.FlipCameraAndroid, contentDescription = "Kamerayı değiştir", tint = Color.White)
+        }
+
+        // Galeri kısayolu — shutter'ın SOLUNDA, küçük bir ikon-buton (gerçek
+        // "son çekilen fotoğraf" önizlemesi kapsam dışı bırakıldı, zaman
+        // kısıtlaması nedeniyle sabit bir ikon yeterli görüldü).
+        IconButton(
+            onClick = onGalleryClick,
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .padding(start = 32.dp, bottom = 44.dp)
+                .size(48.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(Color.White.copy(alpha = 0.25f)),
+        ) {
+            Icon(Icons.Filled.PhotoLibrary, contentDescription = "Galeriden seç", tint = Color.White)
+        }
+
+        // Shutter — tap: foto, basılı tutma: video (bırakınca durur).
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 40.dp)
+                .size(84.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(CircleShape)
+                    .background(Color.White.copy(alpha = 0.25f)),
+            )
+            if (isRecording) {
+                RecordingProgressRing(
+                    progress = recordProgress,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(4.dp),
+                )
+            }
+            Box(
+                modifier = Modifier
+                    .size(64.dp)
+                    .clip(CircleShape)
+                    .background(if (isRecording) Color.Red else Color.White)
+                    .pointerInput(Unit) {
+                        detectTapGestures(
+                            onPress = {
+                                var startedRecording = false
+                                coroutineScope {
+                                    val holdJob = launch {
+                                        delay(LONG_PRESS_THRESHOLD_MS)
+                                        // videoCapture NULL ise cihaz üçlü bağlamayı
+                                        // desteklemiyor demektir — basılı tutma foto-only
+                                        // cihazda sessizce hiçbir şey yapmaz (elini kaldırınca
+                                        // startedRecording false kalacağı için takePhoto çağrılır).
+                                        if (videoCapture != null) {
+                                            startedRecording = true
+                                            startRecording()
+                                        }
+                                    }
+                                    val released = tryAwaitRelease()
+                                    holdJob.cancel()
+                                    if (startedRecording) {
+                                        stopRecording()
+                                    } else if (released) {
+                                        takePhoto()
+                                    }
+                                }
+                            },
+                        )
+                    },
+            )
+        }
+    }
+}
+
+@Composable
+private fun RecordingProgressRing(progress: Float, modifier: Modifier = Modifier) {
+    Canvas(modifier = modifier) {
+        drawArc(
+            color = Color.Red,
+            startAngle = -90f,
+            sweepAngle = 360f * progress,
+            useCenter = false,
+            style = Stroke(width = 5.dp.toPx(), cap = StrokeCap.Round),
+        )
+    }
+}
+
+/** context.cacheDir/story_media/ altına geçici bir dosya — res/xml/file_paths.xml'deki
+ * cache-path("story_media") ile eşleşiyor. */
+private fun createStoryMediaFile(context: Context, extension: String): File {
+    val dir = File(context.cacheDir, "story_media").apply { mkdirs() }
+    return File(dir, "story_${System.currentTimeMillis()}$extension")
+}
+
+private fun uriForStoryFile(context: Context, file: File): Uri =
+    FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+
+/**
+ * Form adımı — MEVCUT caption/görünürlük/anket editörü (eski tek-adımlı
+ * ekranın form kısmı, DEĞİŞTİRİLMEDEN taşındı). Medya seçim butonları
+ * KALDIRILDI — bu rol artık StoryCameraStep'e ait, form adımına SADECE
+ * medya seçildikten (kamera/galeri) veya "Yazıyla Paylaş" sonrası girilir.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun StoryFormStep(
+    caption: String,
+    visibility: String,
+    selectedImageUri: Uri?,
+    selectedVideoUri: Uri?,
+    pollOptions: List<String>,
+    submitting: Boolean,
+    error: String?,
+    canSubmit: Boolean,
+    onCaptionChange: (String) -> Unit,
+    onVisibilityChange: (String) -> Unit,
+    onRemoveImage: () -> Unit,
+    onRemoveVideo: () -> Unit,
+    onAddPollOption: () -> Unit,
+    onRemovePollOption: (Int) -> Unit,
+    onPollOptionChange: (Int, String) -> Unit,
+    onBackToCamera: () -> Unit,
+    onSubmit: () -> Unit,
+) {
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("Yeni Hikaye") },
                 navigationIcon = {
-                    IconButton(onClick = onNavigateBack, enabled = !submitting) {
-                        Icon(Icons.Filled.Close, contentDescription = "Vazgeç")
+                    IconButton(onClick = onBackToCamera, enabled = !submitting) {
+                        Icon(Icons.Filled.Close, contentDescription = "Kameraya dön")
                     }
                 },
                 actions = {
@@ -129,7 +644,7 @@ fun StoryCreateScreen(
                             strokeWidth = 2.dp,
                         )
                     } else {
-                        TextButton(onClick = { viewModel.submit(context) }, enabled = canSubmit) {
+                        TextButton(onClick = onSubmit, enabled = canSubmit) {
                             Text("Paylaş")
                         }
                     }
@@ -151,12 +666,12 @@ fun StoryCreateScreen(
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                StoryVisibilityFilterRow(selected = visibility, onSelect = viewModel::onVisibilityChange)
+                StoryVisibilityFilterRow(selected = visibility, onSelect = onVisibilityChange)
             }
 
             OutlinedTextField(
                 value = caption,
-                onValueChange = viewModel::onCaptionChange,
+                onValueChange = onCaptionChange,
                 modifier = Modifier.fillMaxWidth(),
                 placeholder = { Text("Bir şeyler yaz...") },
                 minLines = 2,
@@ -179,7 +694,7 @@ fun StoryCreateScreen(
                         modifier = Modifier.fillMaxSize(),
                     )
                     IconButton(
-                        onClick = { viewModel.onImageSelected(null) },
+                        onClick = onRemoveImage,
                         enabled = !submitting,
                         modifier = Modifier
                             .align(Alignment.TopEnd)
@@ -207,37 +722,8 @@ fun StoryCreateScreen(
                             .padding(start = 8.dp)
                             .weight(1f),
                     )
-                    IconButton(onClick = { viewModel.onVideoSelected(null) }, enabled = !submitting) {
+                    IconButton(onClick = onRemoveVideo, enabled = !submitting) {
                         Icon(Icons.Filled.Close, contentDescription = "Videoyu kaldır")
-                    }
-                }
-            } else {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(
-                        onClick = {
-                            imagePickerLauncher.launch(
-                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
-                            )
-                        },
-                        enabled = !submitting,
-                        shape = MaterialTheme.shapes.medium,
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        Icon(Icons.Filled.AddPhotoAlternate, contentDescription = null)
-                        Text(text = "Görsel", modifier = Modifier.padding(start = 8.dp))
-                    }
-                    OutlinedButton(
-                        onClick = {
-                            videoPickerLauncher.launch(
-                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly),
-                            )
-                        },
-                        enabled = !submitting,
-                        shape = MaterialTheme.shapes.medium,
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        Icon(Icons.Filled.VideoLibrary, contentDescription = null)
-                        Text(text = "Video", modifier = Modifier.padding(start = 8.dp))
                     }
                 }
             }
@@ -254,19 +740,19 @@ fun StoryCreateScreen(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         OutlinedTextField(
                             value = option,
-                            onValueChange = { viewModel.onPollOptionChange(index, it) },
+                            onValueChange = { onPollOptionChange(index, it) },
                             modifier = Modifier.weight(1f),
                             placeholder = { Text("Seçenek ${index + 1}") },
                             singleLine = true,
                             enabled = !submitting,
                         )
-                        IconButton(onClick = { viewModel.removePollOption(index) }, enabled = !submitting) {
+                        IconButton(onClick = { onRemovePollOption(index) }, enabled = !submitting) {
                             Icon(Icons.Filled.Close, contentDescription = "Seçeneği kaldır")
                         }
                     }
                 }
                 if (pollOptions.size < 4) {
-                    TextButton(onClick = { viewModel.addPollOption() }, enabled = !submitting) {
+                    TextButton(onClick = onAddPollOption, enabled = !submitting) {
                         Text("+ Seçenek Ekle")
                     }
                 }
@@ -287,7 +773,7 @@ fun StoryCreateScreen(
                         modifier = Modifier.size(18.dp),
                     )
                     Text(
-                        text = error ?: "",
+                        text = error,
                         color = MaterialTheme.colorScheme.onErrorContainer,
                         style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.padding(start = 8.dp),

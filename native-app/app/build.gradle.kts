@@ -85,6 +85,19 @@ dependencies {
     // Görsel yükleme (post kartlarındaki opsiyonel görsel için)
     implementation("io.coil-kt:coil-compose:2.7.0")
 
+    // CameraX — hikaye oluşturma ekranında Instagram tarzı canlı kamera
+    // önizlemesi + tek dokunuşla foto / basılı-tutmayla video çekimi (bkz.
+    // StoryCreateScreen.kt). 1.4.1 seçildi: minSdk 26/compileSdk 36 ile uyumlu
+    // güncel stabil sürüm, video kaydı için gereken Recorder/VideoCapture API'si
+    // bu sürüm hattında stabil (camera-video 1.4.x). Hepsi AYNI sürüm numarası
+    // ile alınıyor (CameraX'in kendi gerekliliği — modüller birbirine sıkı bağımlı).
+    val cameraxVersion = "1.4.1"
+    implementation("androidx.camera:camera-core:$cameraxVersion")
+    implementation("androidx.camera:camera-camera2:$cameraxVersion")
+    implementation("androidx.camera:camera-lifecycle:$cameraxVersion")
+    implementation("androidx.camera:camera-view:$cameraxVersion")
+    implementation("androidx.camera:camera-video:$cameraxVersion")
+
     // Ağ katmanı — Retrofit2 + OkHttp + Gson (kotlinx.serialization DEĞİL, spesifikasyon gereği)
     implementation("com.squareup.retrofit2:retrofit:2.11.0")
     implementation("com.squareup.retrofit2:converter-gson:2.11.0")

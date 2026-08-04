@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    CameraX'in çektiği fotoğraf/videoyu FileProvider ile content:// Uri'sine
+    çevirmek için gerekli (StoryCreateScreen.kt — kamera akışı, Instagram tarzı
+    hikaye oluşturma). Galeri Uri'leri zaten sistemin kendi content provider'ından
+    (MediaStore) geldiği için bu dosya SADECE uygulamanın kendi çektiği/kaydettiği
+    geçici dosyalar için gerekiyor. context.cacheDir/story_media/ altına
+    kaydediyoruz (StoryCreateScreen.kt createStoryMediaFile()) — bu yüzden
+    cache-path, "story_media/" alt dizinini eşliyor.
+-->
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <cache-path name="story_media" path="story_media/" />
+</paths>
