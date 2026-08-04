@@ -5,13 +5,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Send
-import androidx.compose.material.icons.filled.Bookmark
-import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -34,22 +30,17 @@ import com.umuterayaltay.sosyal.nativeapp.repository.Post
  * Bir postun overflow (üç-nokta) menüsü — PostCard.kt'nin ŞU ANA KADAR hiç
  * aksiyon sheet'i YOKTU, bu Faz 5 Dalga 2A'da SIFIRDAN kuruldu.
  *
- * BİLİNÇLİ OLARAK GENİŞLETİLEBİLİR TASARLANDI: Dalga 2A'da SADECE "Postu
- * Sessize Al / Sesini Aç" vardı, Dalga 3A'da "Kaydet / Kaydedildi" eklendi,
- * Faz 5 sonrası eksik giderme turunda "Yeniden Paylaş"/"Gönder"/"Bildir"
- * eklendi (Sil hâlâ kapsam dışı) — o yüzden imza şimdiden yeni parametreler
- * alabilecek şekilde bırakıldı. Yeni 3 callback de VARSAYILAN DEĞERLİ ({}) —
- * onMutePost/onBookmark'ın PostCard'daki AYNI gerekçesiyle, henüz bağlanmamış
- * çağrı yerleri DEĞİŞMEDEN derlenmeye devam eder. İlk turda collection_id
- * her zaman null (Genel'e kaydedilir) — koleksiyon seçimi kaydedilenler
- * ekranında yapılır, bu basit toggle'a KARIŞTIRILMAZ.
+ * PostCard aksiyon satırı yeniden düzenlemesi (kullanıcı isteği, Instagram
+ * tarzı düzen): "Kaydet"/"Yeniden Paylaş"/"Gönder" artık PostCard'ın aksiyon
+ * SATIRINDA doğrudan görünür ikonlar (bkz. PostCard.kt) — bu sheet'ten
+ * KALDIRILDI, onBookmark/onRepost/onShare parametreleri de bu yüzden
+ * TAMAMEN kaldırıldı (artık hiçbir çağrı yeri bunları geçmiyor). Bu menüde
+ * SADECE "Postu Sessize Al / Sesini Aç" ve "Bildir" kalıyor.
  *
- * "Yeniden Paylaş" bu turda alıntı-yorumsuz (Twitter retweet gibi) hızlı
- * repost — backend content'siz repost'u destekliyor, alıntılı repost UI'ı
- * kapsam dışı. "Bildir" web'deki basit confirm-dialog'un (data-confirm)
- * native karşılığı olarak AlertDialog ile onay ister (sebep seçimi YOK,
- * backend'de zaten reason alanı yok) ve KIRMIZI/error tonunda gösterilir —
- * web'de de bu aksiyon dikkat çekici renktedir.
+ * "Bildir" web'deki basit confirm-dialog'un (data-confirm) native karşılığı
+ * olarak AlertDialog ile onay ister (sebep seçimi YOK, backend'de zaten
+ * reason alanı yok) ve KIRMIZI/error tonunda gösterilir — web'de de bu
+ * aksiyon dikkat çekici renktedir.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -57,9 +48,6 @@ fun PostActionsSheet(
     post: Post,
     onMutePost: (String) -> Unit,
     onDismiss: () -> Unit,
-    onBookmark: (String) -> Unit = {},
-    onRepost: (String) -> Unit = {},
-    onShare: (String) -> Unit = {},
     onReport: (String) -> Unit = {},
 ) {
     val sheetState = rememberModalBottomSheetState()
@@ -70,34 +58,10 @@ fun PostActionsSheet(
         sheetState = sheetState,
     ) {
         PostActionItem(
-            icon = if (post.bookmarkedByMe) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
-            label = if (post.bookmarkedByMe) "Kaydedildi" else "Kaydet",
-            onClick = {
-                onBookmark(post.id)
-                onDismiss()
-            },
-        )
-        PostActionItem(
             icon = if (post.mutedByMe) Icons.Filled.Notifications else Icons.Filled.NotificationsOff,
             label = if (post.mutedByMe) "Postu Sesini Aç" else "Postu Sessize Al",
             onClick = {
                 onMutePost(post.id)
-                onDismiss()
-            },
-        )
-        PostActionItem(
-            icon = Icons.Filled.Repeat,
-            label = "Yeniden Paylaş",
-            onClick = {
-                onRepost(post.id)
-                onDismiss()
-            },
-        )
-        PostActionItem(
-            icon = Icons.AutoMirrored.Filled.Send,
-            label = "Gönder",
-            onClick = {
-                onShare(post.id)
                 onDismiss()
             },
         )

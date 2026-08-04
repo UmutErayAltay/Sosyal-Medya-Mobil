@@ -65,10 +65,6 @@ fun HashtagScreen(
     val error by viewModel.error.collectAsState()
     val context = LocalContext.current
 
-    // FeedScreen.kt'deki AYNI gerekçe — "Gönder" için ayrı bir ViewModel state'i
-    // İCAT EDİLMEDİ, PostShareSheet kendi başına yeterli.
-    var shareTargetPostId by remember { mutableStateOf<String?>(null) }
-
     LaunchedEffect(Unit) {
         viewModel.events.collect { event ->
             when (event) {
@@ -175,20 +171,12 @@ fun HashtagScreen(
                         onMutePost = { postId -> viewModel.toggleMutePost(postId) },
                         onBookmark = { postId -> viewModel.toggleBookmark(postId) },
                         onRepost = { postId -> viewModel.repost(postId) },
-                        onShare = { postId -> shareTargetPostId = postId },
                         onReport = { postId -> viewModel.report(postId) },
+                        onSessionExpired = onSessionExpired,
                     )
                 }
             }
         }
-    }
-
-    shareTargetPostId?.let { postId ->
-        PostShareSheet(
-            postId = postId,
-            onDismiss = { shareTargetPostId = null },
-            onSessionExpired = onSessionExpired,
-        )
     }
 }
 

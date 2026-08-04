@@ -624,12 +624,31 @@ private fun MessageBubble(message: MessageDto, isMine: Boolean, onLongPress: () 
                                 .clip(MaterialTheme.shapes.medium),
                         )
                     }
+                    // Sticker — kullanıcı raporu: mesajlarda hiç görünmüyordu (kök
+                    // neden: MessageDto.sticker bilerek Any? tipindeydi, bkz.
+                    // ApiModels.kt). Görsel ekiyle AYNI desende (AsyncImage), ama
+                    // gerçek bir sticker/emoji boyutunda — tam ekran görsel GİBİ
+                    // BÜYÜK değil. Görsel VE sticker aynı anda gelirse (backend bunu
+                    // engellemiyor) ikisi de gösterilir, çakışma riski yok.
+                    val stickerUrl = message.sticker?.imageUrl
+                    if (!stickerUrl.isNullOrBlank()) {
+                        AsyncImage(
+                            model = stickerUrl,
+                            contentDescription = "Çıkartma",
+                            contentScale = ContentScale.Fit,
+                            modifier = Modifier
+                                .padding(top = if (replyTo != null || !imageUrl.isNullOrBlank()) 6.dp else 0.dp)
+                                .size(96.dp),
+                        )
+                    }
                     if (!message.content.isNullOrBlank()) {
                         Text(
                             text = message.content,
                             style = MaterialTheme.typography.bodyLarge,
                             color = contentColor,
-                            modifier = Modifier.padding(top = if (replyTo != null || !imageUrl.isNullOrBlank()) 6.dp else 0.dp),
+                            modifier = Modifier.padding(
+                                top = if (replyTo != null || !imageUrl.isNullOrBlank() || !stickerUrl.isNullOrBlank()) 6.dp else 0.dp,
+                            ),
                         )
                     }
                     Row(

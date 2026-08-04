@@ -17,8 +17,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -51,7 +53,6 @@ import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -62,7 +63,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
@@ -143,10 +143,6 @@ fun ProfileScreen(
     var showBlockConfirmDialog by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
-    // FeedScreen.kt'deki AYNI gerekçe — "Gönder" için ayrı bir ViewModel state'i
-    // İCAT EDİLMEDİ, PostShareSheet kendi başına yeterli.
-    var shareTargetPostId by remember { mutableStateOf<String?>(null) }
-
     LaunchedEffect(Unit) {
         viewModel.events.collect { event ->
             when (event) {
@@ -156,80 +152,82 @@ fun ProfileScreen(
         }
     }
 
-    // FeedScreen.kt'deki AYNI desen (kullanıcı raporu: bu ekranda scroll-hide
-    // hiç çalışmıyordu, SADECE "Profil" bottom-nav sekmesi ve push edilen
-    // "profile/{username}" ikisi de bu TEK composable'ı paylaştığı için tek
-    // yerde eklemek yetiyor) - enterAlwaysScrollBehavior() + Scaffold'a
-    // nestedScroll modifier'ı + TopAppBar'a scrollBehavior parametresi.
-    val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
+    // FeedScreen.kt'deki AYNI karar (bkz. HideableTopBar.kt) — nested-scroll
+    // tabanlı enterAlwaysScrollBehavior() TERK EDİLDİ, listState ProfileContent'e
+    // aktarılıp asıl LazyColumn'a (ProfileContent içinde) bağlanır, görünürlük
+    // burada (Scaffold/TopAppBar seviyesinde) hesaplanır. SADECE "Profil"
+    // bottom-nav sekmesi ve push edilen "profile/{username}" ikisi de bu TEK
+    // composable'ı paylaştığı için tek yerde eklemek yetiyor.
+    val listState = rememberLazyListState()
+    val isTopBarVisible by rememberTopBarVisibility(listState)
 
     Scaffold(
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            TopAppBar(
-                title = { Text(profile?.username ?: "Profil") },
-                scrollBehavior = scrollBehavior,
-                navigationIcon = {
-                    if (onNavigateBack != null) {
-                        IconButton(onClick = onNavigateBack) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Geri")
+            HideableTopBar(visible = isTopBarVisible) {
+                TopAppBar(
+                    title = { Text(profile?.username ?: "Profil") },
+                    navigationIcon = {
+                        if (onNavigateBack != null) {
+                            IconButton(onClick = onNavigateBack) {
+                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Geri")
+                            }
                         }
-                    }
-                },
-                actions = {
-                    if (isSelf && !isDeactivated) {
-                        IconButton(onClick = onNavigateToFollowRequests) {
-                            Icon(Icons.Filled.PersonAdd, contentDescription = "Takip İstekleri")
+                    },
+                    actions = {
+                        if (isSelf && !isDeactivated) {
+                            IconButton(onClick = onNavigateToFollowRequests) {
+                                Icon(Icons.Filled.PersonAdd, contentDescription = "Takip İstekleri")
+                            }
+                            IconButton(onClick = onNavigateToInsights) {
+                                Icon(Icons.Filled.BarChart, contentDescription = "İstatistikler")
+                            }
+                            IconButton(onClick = onNavigateToSettings) {
+                                Icon(Icons.Filled.Settings, contentDescription = "Ayarlar")
+                            }
+                        } else if (!isSelf && !isDeactivated) {
+                            // Başkasının profili: engelle/engeli kaldır aksiyonu üç-nokta
+                            // overflow menüde - "Takip Et" butonuyla aynı hizada ayrı bir
+                            // buton yerine, yanlışlıkla dokunmayı zorlaştıran bilinçli tercih.
+                            IconButton(onClick = { showBlockMenu = true }) {
+                                Icon(Icons.Filled.MoreVert, contentDescription = "Diğer seçenekler")
+                            }
+                            DropdownMenu(expanded = showBlockMenu, onDismissRequest = { showBlockMenu = false }) {
+                                DropdownMenuItem(
+                                    text = { Text(if (isBlockedByMe) "Engeli Kaldır" else "Engelle") },
+                                    leadingIcon = { Icon(Icons.Filled.Block, contentDescription = null) },
+                                    onClick = {
+                                        showBlockMenu = false
+                                        if (isBlockedByMe) {
+                                            // Engeli kaldırma geri dönüşü kolay bir aksiyon -
+                                            // ekstra onay diyaloğu istenmedi (CloseFriendsScreen'in
+                                            // "Kaldır" ikonuyla AYNI düşük-sürtünme yaklaşımı).
+                                            viewModel.toggleBlock()
+                                        } else {
+                                            showBlockConfirmDialog = true
+                                        }
+                                    },
+                                )
+                                // Faz 5 Dalga 2A: AYNI overflow menüde ikinci bir aksiyon —
+                                // ayrı bir buton İCAT EDİLMEDİ. Engelleme'nin AKSİNE onay
+                                // diyaloğu yok (geri dönüşü kolay, düşük riskli bir aksiyon).
+                                DropdownMenuItem(
+                                    text = { Text(if (isMuted) "Sesi Aç" else "Sessize Al") },
+                                    leadingIcon = {
+                                        Icon(
+                                            if (isMuted) Icons.Filled.Notifications else Icons.Filled.NotificationsOff,
+                                            contentDescription = null,
+                                        )
+                                    },
+                                    onClick = {
+                                        showBlockMenu = false
+                                        viewModel.toggleUserMute()
+                                    },
+                                )
+                            }
                         }
-                        IconButton(onClick = onNavigateToInsights) {
-                            Icon(Icons.Filled.BarChart, contentDescription = "İstatistikler")
-                        }
-                        IconButton(onClick = onNavigateToSettings) {
-                            Icon(Icons.Filled.Settings, contentDescription = "Ayarlar")
-                        }
-                    } else if (!isSelf && !isDeactivated) {
-                        // Başkasının profili: engelle/engeli kaldır aksiyonu üç-nokta
-                        // overflow menüde - "Takip Et" butonuyla aynı hizada ayrı bir
-                        // buton yerine, yanlışlıkla dokunmayı zorlaştıran bilinçli tercih.
-                        IconButton(onClick = { showBlockMenu = true }) {
-                            Icon(Icons.Filled.MoreVert, contentDescription = "Diğer seçenekler")
-                        }
-                        DropdownMenu(expanded = showBlockMenu, onDismissRequest = { showBlockMenu = false }) {
-                            DropdownMenuItem(
-                                text = { Text(if (isBlockedByMe) "Engeli Kaldır" else "Engelle") },
-                                leadingIcon = { Icon(Icons.Filled.Block, contentDescription = null) },
-                                onClick = {
-                                    showBlockMenu = false
-                                    if (isBlockedByMe) {
-                                        // Engeli kaldırma geri dönüşü kolay bir aksiyon -
-                                        // ekstra onay diyaloğu istenmedi (CloseFriendsScreen'in
-                                        // "Kaldır" ikonuyla AYNI düşük-sürtünme yaklaşımı).
-                                        viewModel.toggleBlock()
-                                    } else {
-                                        showBlockConfirmDialog = true
-                                    }
-                                },
-                            )
-                            // Faz 5 Dalga 2A: AYNI overflow menüde ikinci bir aksiyon —
-                            // ayrı bir buton İCAT EDİLMEDİ. Engelleme'nin AKSİNE onay
-                            // diyaloğu yok (geri dönüşü kolay, düşük riskli bir aksiyon).
-                            DropdownMenuItem(
-                                text = { Text(if (isMuted) "Sesi Aç" else "Sessize Al") },
-                                leadingIcon = {
-                                    Icon(
-                                        if (isMuted) Icons.Filled.Notifications else Icons.Filled.NotificationsOff,
-                                        contentDescription = null,
-                                    )
-                                },
-                                onClick = {
-                                    showBlockMenu = false
-                                    viewModel.toggleUserMute()
-                                },
-                            )
-                        }
-                    }
-                },
-            )
+                    },
+                )
+            }
         },
     ) { padding ->
         when {
@@ -261,6 +259,7 @@ fun ProfileScreen(
 
             else -> ProfileContent(
                 padding = padding,
+                listState = listState,
                 profile = profile!!,
                 stats = stats,
                 isSelf = isSelf,
@@ -288,18 +287,10 @@ fun ProfileScreen(
                 onMutePost = { postId -> viewModel.toggleMutePost(postId) },
                 onBookmarkPost = { postId -> viewModel.toggleBookmark(postId) },
                 onRepost = { postId -> viewModel.repost(postId) },
-                onShare = { postId -> shareTargetPostId = postId },
                 onReport = { postId -> viewModel.report(postId) },
+                onSessionExpired = onSessionExpired,
             )
         }
-    }
-
-    shareTargetPostId?.let { postId ->
-        PostShareSheet(
-            postId = postId,
-            onDismiss = { shareTargetPostId = null },
-            onSessionExpired = onSessionExpired,
-        )
     }
 
     if (showBlockConfirmDialog) {
@@ -404,6 +395,7 @@ private fun ProfileAvatar(avatarUrl: String?, size: Dp = 64.dp) {
 @Composable
 private fun ProfileContent(
     padding: PaddingValues,
+    listState: LazyListState,
     profile: ProfileDto,
     stats: ProfileStatsDto?,
     isSelf: Boolean,
@@ -427,8 +419,9 @@ private fun ProfileContent(
     onMutePost: (String) -> Unit,
     onBookmarkPost: (String) -> Unit,
     onRepost: (String) -> Unit,
-    onShare: (String) -> Unit,
     onReport: (String) -> Unit,
+    // PostCard'ın kendi PostShareSheet'i için — bkz. PostCard.kt yorumu.
+    onSessionExpired: () -> Unit,
 ) {
     var selectedTab by remember { mutableStateOf(ProfileTab.Posts) }
     val hidden = isPrivate && !isSelf && !isFollowing
@@ -452,6 +445,7 @@ private fun ProfileContent(
     val mediaPosts = remember(posts) { posts.filter { !it.imageUrl.isNullOrBlank() } }
 
     LazyColumn(
+        state = listState,
         modifier = Modifier
             .fillMaxSize()
             .padding(padding),
@@ -554,8 +548,8 @@ private fun ProfileContent(
                         onMutePost = onMutePost,
                         onBookmark = onBookmarkPost,
                         onRepost = onRepost,
-                        onShare = onShare,
                         onReport = onReport,
+                        onSessionExpired = onSessionExpired,
                     )
                 }
             }

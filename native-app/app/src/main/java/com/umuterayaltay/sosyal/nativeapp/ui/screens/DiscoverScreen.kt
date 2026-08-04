@@ -43,7 +43,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -56,7 +55,6 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -104,10 +102,6 @@ fun DiscoverScreen(
     val discoverError by viewModel.discoverError.collectAsState()
     val context = LocalContext.current
 
-    // FeedScreen.kt'deki AYNI gerekçe: "Gönder" (post paylaşımı) için ayrı bir
-    // ViewModel state'i İCAT EDİLMEDİ, PostShareSheet kendi başına yeterli.
-    var shareTargetPostId by remember { mutableStateOf<String?>(null) }
-
     LaunchedEffect(Unit) {
         viewModel.events.collect { event ->
             when (event) {
@@ -133,14 +127,18 @@ fun DiscoverScreen(
 
     val isSearchActive = query.length >= 2
 
-    // FeedScreen.kt'deki AYNI desen (kullanıcı raporu: bu ekranda scroll-hide
-    // hiç çalışmıyordu) - enterAlwaysScrollBehavior() + Scaffold'a nestedScroll
-    // modifier'ı + TopAppBar'a scrollBehavior parametresi.
-    val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
+    // FeedScreen.kt'deki AYNI karar (bkz. HideableTopBar.kt) — nested-scroll
+    // tabanlı enterAlwaysScrollBehavior() TERK EDİLDİ, [listState] (zaten
+    // yukarıda sonsuz kaydırma için var) üzerinden elle scroll-yönü tespiti
+    // kullanılıyor.
+    val isTopBarVisible by rememberTopBarVisibility(listState)
 
     Scaffold(
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
-        topBar = { TopAppBar(title = { Text("Keşfet") }, scrollBehavior = scrollBehavior) },
+        topBar = {
+            HideableTopBar(visible = isTopBarVisible) {
+                TopAppBar(title = { Text("Keşfet") })
+            }
+        },
     ) { padding ->
         LazyColumn(
             state = listState,
@@ -224,8 +222,8 @@ fun DiscoverScreen(
                                         onMutePost = { postId -> viewModel.toggleMutePost(postId) },
                                         onBookmark = { postId -> viewModel.toggleBookmark(postId) },
                                         onRepost = { postId -> viewModel.repost(postId) },
-                                        onShare = { postId -> shareTargetPostId = postId },
                                         onReport = { postId -> viewModel.report(postId) },
+                                        onSessionExpired = onSessionExpired,
                                     )
                                 }
                             }
@@ -292,8 +290,8 @@ fun DiscoverScreen(
                                 onMutePost = { postId -> viewModel.toggleMutePost(postId) },
                                 onBookmark = { postId -> viewModel.toggleBookmark(postId) },
                                 onRepost = { postId -> viewModel.repost(postId) },
-                                onShare = { postId -> shareTargetPostId = postId },
                                 onReport = { postId -> viewModel.report(postId) },
+                                onSessionExpired = onSessionExpired,
                             )
                         }
                         item {
@@ -311,14 +309,6 @@ fun DiscoverScreen(
                 }
             }
         }
-    }
-
-    shareTargetPostId?.let { postId ->
-        PostShareSheet(
-            postId = postId,
-            onDismiss = { shareTargetPostId = null },
-            onSessionExpired = onSessionExpired,
-        )
     }
 }
 

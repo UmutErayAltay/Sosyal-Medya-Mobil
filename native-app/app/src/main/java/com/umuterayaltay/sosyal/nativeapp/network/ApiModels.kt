@@ -409,9 +409,12 @@ data class MessageReactionDto(
     val mine: Boolean = false,
 )
 
-/** Tek mesaj satırı. `sticker` bu turda hiç render edilmiyor (kapsam dışı:
- * sticker GÖNDERME) — bu yüzden bilinçli olarak dar tipli (Any?), sadece
- * null/dolu ayrımı JSON'dan bozulmadan geçsin diye. */
+/** Tek mesaj satırı. `sticker` artık RENDER ediliyor (kullanıcı raporu: mesajda
+ * gösterilmiyordu) — app/api_v1/messaging.py'de select() ifadesi
+ * `sticker:stickers(id, image_url)` şeklinde embed edildiği için (bkz. o
+ * dosyanın satır ~135'i), CommentDto.sticker ile AYNI JSON şekli (`{id,
+ * image_url}`); bu yüzden ayrı bir DTO İCAT EDİLMEDİ, CommentStickerDto reuse
+ * edildi (önceki turda bilerek dar tutulan Any? tipi TERK EDİLDİ). */
 data class MessageDto(
     val id: String,
     @SerializedName("sender_id") val senderId: String,
@@ -422,7 +425,7 @@ data class MessageDto(
     val profiles: MessageSenderDto? = null,
     @SerializedName("reply_to") val replyTo: ReplyToDto? = null,
     val reactions: List<MessageReactionDto>? = null,
-    val sticker: Any? = null,
+    val sticker: CommentStickerDto? = null,
     @SerializedName("image_url") val imageUrl: String? = null,
     // Faz 5 Dalga 1B: düzenle/sabitle/ilet — okuma yolunda backend değişikliği
     // GEREKMEDİ (api_message_conversation_detail() zaten select("*") kullanıyor),
@@ -542,7 +545,8 @@ data class ToggleLikeResponse(
     val error: String? = null,
 )
 
-/** stickers tablosundan {id, image_url} özeti — bu turda render edilmiyor. */
+/** stickers tablosundan {id, image_url} özeti — hem yorumlarda (CommentDto.sticker)
+ * hem mesajlarda (MessageDto.sticker, AYNI JSON şekli) render edilir. */
 data class CommentStickerDto(
     val id: String?,
     @SerializedName("image_url") val imageUrl: String?,

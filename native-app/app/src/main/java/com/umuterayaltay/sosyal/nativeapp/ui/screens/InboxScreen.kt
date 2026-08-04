@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -28,7 +29,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -36,7 +36,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -77,26 +76,27 @@ fun InboxScreen(
         }
     }
 
-    // FeedScreen.kt'deki AYNI desen (kullanıcı raporu: bu ekranda scroll-hide
-    // hiç çalışmıyordu) - enterAlwaysScrollBehavior() + Scaffold'a nestedScroll
-    // modifier'ı + TopAppBar'a scrollBehavior parametresi.
-    val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
+    // FeedScreen.kt'deki AYNI karar (bkz. HideableTopBar.kt) — nested-scroll
+    // tabanlı enterAlwaysScrollBehavior() TERK EDİLDİ, listState üzerinden
+    // elle scroll-yönü tespiti kullanılıyor.
+    val listState = rememberLazyListState()
+    val isTopBarVisible by rememberTopBarVisibility(listState)
 
     Scaffold(
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            TopAppBar(
-                title = { Text("Mesajlar") },
-                scrollBehavior = scrollBehavior,
-                actions = {
-                    IconButton(onClick = onNewGroupClick) {
-                        Icon(Icons.Filled.GroupAdd, contentDescription = "Yeni Grup")
-                    }
-                    IconButton(onClick = onNewMessageClick) {
-                        Icon(Icons.Filled.Add, contentDescription = "Yeni Mesaj")
-                    }
-                },
-            )
+            HideableTopBar(visible = isTopBarVisible) {
+                TopAppBar(
+                    title = { Text("Mesajlar") },
+                    actions = {
+                        IconButton(onClick = onNewGroupClick) {
+                            Icon(Icons.Filled.GroupAdd, contentDescription = "Yeni Grup")
+                        }
+                        IconButton(onClick = onNewMessageClick) {
+                            Icon(Icons.Filled.Add, contentDescription = "Yeni Mesaj")
+                        }
+                    },
+                )
+            }
         },
     ) { padding ->
         when {
@@ -121,6 +121,7 @@ fun InboxScreen(
                 )
             }
             else -> LazyColumn(
+                state = listState,
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding),

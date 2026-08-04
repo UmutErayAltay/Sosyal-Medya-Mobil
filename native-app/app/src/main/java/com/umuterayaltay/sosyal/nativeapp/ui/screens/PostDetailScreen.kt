@@ -95,10 +95,6 @@ fun PostDetailScreen(
     val error by viewModel.error.collectAsState()
     val context = LocalContext.current
 
-    // FeedScreen.kt'deki AYNI gerekçe — "Gönder" için ayrı bir ViewModel state'i
-    // İCAT EDİLMEDİ, PostShareSheet kendi başına yeterli.
-    var showShareSheet by remember { mutableStateOf(false) }
-
     LaunchedEffect(Unit) {
         viewModel.events.collect { event ->
             when (event) {
@@ -182,8 +178,8 @@ fun PostDetailScreen(
                         onMutePost = { viewModel.toggleMutePost() },
                         onBookmark = { viewModel.toggleBookmark() },
                         onRepost = { viewModel.repost() },
-                        onShare = { showShareSheet = true },
                         onReport = { viewModel.report() },
+                        onSessionExpired = onSessionExpired,
                     )
                 }
 
@@ -250,14 +246,6 @@ fun PostDetailScreen(
                 }
             }
         }
-    }
-
-    if (showShareSheet) {
-        PostShareSheet(
-            postId = postId,
-            onDismiss = { showShareSheet = false },
-            onSessionExpired = onSessionExpired,
-        )
     }
 }
 
@@ -330,6 +318,20 @@ private fun CommentRow(
                     text = comment.content,
                     style = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier.padding(top = 2.dp),
+                )
+            }
+            // Sticker — kullanıcı raporu: yorumlarda hiç görünmüyordu (CommentDto.sticker
+            // doğru tipliydi ama render eden kod hiç yazılmamıştı). ConversationScreen'in
+            // MessageBubble'ındaki AYNI boyut/desen (gerçek bir çıkartma boyutu, tam
+            // ekran görsel gibi büyük değil).
+            comment.sticker?.imageUrl?.takeIf { it.isNotBlank() }?.let { stickerUrl ->
+                AsyncImage(
+                    model = stickerUrl,
+                    contentDescription = "Çıkartma",
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier
+                        .padding(top = 4.dp)
+                        .size(if (isReply) 64.dp else 80.dp),
                 )
             }
             Row(

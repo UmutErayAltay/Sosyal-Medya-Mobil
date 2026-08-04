@@ -6,17 +6,23 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.ClickableText
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -105,10 +111,21 @@ fun PostCard(
     // ile AYNI gerekçeyle VARSAYILAN DEĞERLİ (henüz bağlanmamış çağrı yerleri
     // değişmeden derlenmeye devam eder, bkz. PostActionsSheet.kt).
     onRepost: (postId: String) -> Unit = {},
-    onShare: (postId: String) -> Unit = {},
     onReport: (postId: String) -> Unit = {},
+    // PostCard aksiyon satırı yeniden düzenlemesi: "Gönder" ikonu artık
+    // PostActionsSheet'in İÇİNDEN değil, DOĞRUDAN PostCard'ın kendi
+    // PostShareSheet'inden açılıyor (aşağıdaki showShareSheet state'i) — bu
+    // yüzden PostShareSheet'in zaten gerektirdiği onSessionExpired PostCard'a
+    // da bir parametre olarak eklendi. VARSAYILAN DEĞERLİ ({}) — diğer
+    // opsiyonel callback'lerle AYNI gerekçe, henüz bağlanmamış çağrı yerleri
+    // (varsa) değişmeden derlenmeye devam eder.
+    onSessionExpired: () -> Unit = {},
 ) {
     var showActionsSheet by remember { mutableStateOf(false) }
+    // "Gönder" ikonu (aksiyon satırında) tıklanınca açılır — showActionsSheet
+    // ile AYNI desen, PostCard'ın KENDİ İÇİNDE tutulan yerel bir state
+    // (ViewModel'e taşınmadı, PostShareSheet kendi başına yeterli).
+    var showShareSheet by remember { mutableStateOf(false) }
 
     Card(
         modifier = Modifier
@@ -225,6 +242,11 @@ fun PostCard(
 
             HorizontalDivider(modifier = Modifier.padding(top = 12.dp))
 
+            // Aksiyon satırı yeniden düzenlendi (kullanıcı isteği): Instagram
+            // tarzı düzen — Beğen/Yorum/Yeniden-Paylaş/Gönder SATIRDA görünür,
+            // Kaydet Spacer(weight(1f)) ile SAĞA yaslı AYRI bir ikon. Eskiden
+            // hepsi ⋮ (PostActionsSheet) menüsünün ARKASINDAydı; artık sheet'te
+            // SADECE Bildir/Sessize-Al kalıyor (bkz. PostActionsSheet.kt).
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -268,6 +290,38 @@ fun PostCard(
                         style = MaterialTheme.typography.labelMedium,
                     )
                 }
+                // Yeniden Paylaş — PostActionsSheet'teki "Yeniden Paylaş"ın AKSİNE
+                // onay diyaloğu YOK, tek-tık hızlı repost (backend content'siz
+                // repost'u zaten destekliyor, alıntılı repost UI'ı kapsam dışı).
+                IconButton(onClick = { onRepost(post.id) }) {
+                    Icon(
+                        imageVector = Icons.Filled.Repeat,
+                        contentDescription = "Yeniden paylaş",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+                // Gönder — eskiden PostActionsSheet'in İÇİNDEYDİ, şimdi PostCard
+                // kendi showShareSheet state'iyle DOĞRUDAN PostShareSheet'i açıyor.
+                IconButton(onClick = { showShareSheet = true }) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.Send,
+                        contentDescription = "Gönder",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+                Spacer(modifier = Modifier.weight(1f))
+                // Kaydet — Instagram'daki bookmark ikonunun konumuyla AYNI: satırın
+                // EN SAĞINDA, diğer aksiyonlardan Spacer'la ayrılmış.
+                IconButton(onClick = { onBookmark(post.id) }) {
+                    Icon(
+                        imageVector = if (post.bookmarkedByMe) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
+                        contentDescription = if (post.bookmarkedByMe) "Kaydedildi" else "Kaydet",
+                        tint = if (post.bookmarkedByMe) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
             }
         }
     }
@@ -276,11 +330,16 @@ fun PostCard(
         PostActionsSheet(
             post = post,
             onMutePost = onMutePost,
-            onBookmark = onBookmark,
-            onRepost = onRepost,
-            onShare = onShare,
             onReport = onReport,
             onDismiss = { showActionsSheet = false },
+        )
+    }
+
+    if (showShareSheet) {
+        PostShareSheet(
+            postId = post.id,
+            onDismiss = { showShareSheet = false },
+            onSessionExpired = onSessionExpired,
         )
     }
 }
