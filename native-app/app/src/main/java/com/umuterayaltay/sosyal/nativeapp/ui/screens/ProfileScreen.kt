@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
@@ -61,6 +62,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -68,6 +70,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.umuterayaltay.sosyal.nativeapp.network.ProfileDto
 import com.umuterayaltay.sosyal.nativeapp.network.ProfileStatsDto
+import com.umuterayaltay.sosyal.nativeapp.repository.Highlight
 import com.umuterayaltay.sosyal.nativeapp.repository.Post
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.ProfileEvent
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.ProfileViewModel
@@ -106,6 +109,11 @@ fun ProfileScreen(
     onNavigateToPostDetail: (String) -> Unit,
     onNavigateToSettings: () -> Unit,
     onNavigateToHashtag: (String) -> Unit,
+    // Faz 5 Dalga 4B — HighlightsScreen (Dalga 2C'de zaten hazırdı) ZATEN
+    // "highlights/{userId}" route'unda duruyordu, SADECE ProfileScreen'den
+    // bağlanmıyordu (bkz. AppNavHost.kt eski yorumu). Varsayılan {} ile mevcut
+    // çağrı yerleri (ör. testler) kırılmadan derlenmeye devam eder.
+    onNavigateToHighlights: (String) -> Unit = {},
     onSessionExpired: () -> Unit,
     onNavigateBack: (() -> Unit)? = null,
     viewModel: ProfileViewModel = viewModel(factory = ProfileViewModelFactory(username)),
@@ -114,6 +122,7 @@ fun ProfileScreen(
     val posts by viewModel.posts.collectAsState()
     val likedPosts by viewModel.likedPosts.collectAsState()
     val bookmarkedPosts by viewModel.bookmarkedPosts.collectAsState()
+    val highlights by viewModel.highlights.collectAsState()
     val archivedPosts by viewModel.archivedPosts.collectAsState()
     val isSelf by viewModel.isSelf.collectAsState()
     val isFollowing by viewModel.isFollowing.collectAsState()
@@ -244,9 +253,15 @@ fun ProfileScreen(
                 likedPosts = likedPosts,
                 bookmarkedPosts = bookmarkedPosts,
                 archivedPosts = archivedPosts,
+                highlights = highlights,
                 onToggleFollow = viewModel::toggleFollow,
                 onNavigateToFollowers = { profile?.username?.let(onNavigateToFollowers) },
                 onNavigateToFollowing = { profile?.username?.let(onNavigateToFollowing) },
+                // HighlightsScreen KENDİSİ zaten tam grid+görüntüleme deneyimi
+                // (Dalga 2C'den hazır) — hangi bubble'a tıklanırsa tıklansın
+                // AYNI "highlights/{userId}" listesine gidilir, o ekranda
+                // kullanıcı istediği highlight'ı seçer.
+                onHighlightClick = { profile?.id?.let(onNavigateToHighlights) },
                 onLikeClick = { viewModel.toggleLike(it.id) },
                 onCommentClick = { onNavigateToPostDetail(it.id) },
                 onHashtagClick = onNavigateToHashtag,
@@ -370,9 +385,11 @@ private fun ProfileContent(
     likedPosts: List<Post>,
     bookmarkedPosts: List<Post>,
     archivedPosts: List<Post>,
+    highlights: List<Highlight>,
     onToggleFollow: () -> Unit,
     onNavigateToFollowers: () -> Unit,
     onNavigateToFollowing: () -> Unit,
+    onHighlightClick: () -> Unit,
     onLikeClick: (Post) -> Unit,
     onCommentClick: (Post) -> Unit,
     onHashtagClick: (String) -> Unit,
@@ -412,6 +429,8 @@ private fun ProfileContent(
             ProfileHeader(
                 profile = profile,
                 stats = stats,
+                highlights = highlights,
+                onHighlightClick = onHighlightClick,
                 isSelf = isSelf,
                 isFollowing = isFollowing,
                 isPendingRequest = isPendingRequest,
@@ -512,6 +531,8 @@ private fun ProfileContent(
 private fun ProfileHeader(
     profile: ProfileDto,
     stats: ProfileStatsDto?,
+    highlights: List<Highlight>,
+    onHighlightClick: () -> Unit,
     isSelf: Boolean,
     isFollowing: Boolean,
     isPendingRequest: Boolean,
@@ -550,6 +571,22 @@ private fun ProfileHeader(
             )
         }
 
+        // Faz 5 Dalga 4B — web'in profile.html .highlight-bar'ının AYNI konumu
+        // (bio'dan SONRA, istatistik satırından ÖNCE). Liste boşsa hiç
+        // gösterilmez (web'in `{% if highlights %}`'ıyla AYNI).
+        if (highlights.isNotEmpty()) {
+            LazyRow(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 14.dp),
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                items(highlights, key = { it.id }) { highlight ->
+                    HighlightBubble(highlight = highlight, onClick = onHighlightClick)
+                }
+            }
+        }
+
         if (stats != null) {
             Row(
                 modifier = Modifier
@@ -575,6 +612,46 @@ private fun ProfileHeader(
                 onToggleFollow = onToggleFollow,
             )
         }
+    }
+}
+
+/** Bir highlight balonu — web'in `.highlight-item`/`.highlight-cover` görsel
+ * dilinin AYNI native karşılığı (dairesel kapak + altında başlık). Kapak
+ * yoksa [ProfileAvatar]'ın avatarsız-kullanıcı hâliyle AYNI nötr daire. */
+@Composable
+private fun HighlightBubble(highlight: Highlight, onClick: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .width(72.dp)
+            .clip(MaterialTheme.shapes.medium)
+            .clickable(onClick = onClick),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        if (!highlight.coverUrl.isNullOrBlank()) {
+            AsyncImage(
+                model = highlight.coverUrl,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .size(64.dp)
+                    .clip(CircleShape),
+            )
+        } else {
+            Box(
+                modifier = Modifier
+                    .size(64.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+            )
+        }
+        Text(
+            text = highlight.title,
+            style = MaterialTheme.typography.labelSmall,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(top = 4.dp),
+        )
     }
 }
 

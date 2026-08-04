@@ -8,6 +8,8 @@ import com.umuterayaltay.sosyal.nativeapp.network.CollectionDto
 import com.umuterayaltay.sosyal.nativeapp.network.ProfileDto
 import com.umuterayaltay.sosyal.nativeapp.network.ProfileStatsDto
 import com.umuterayaltay.sosyal.nativeapp.repository.CollectionsResult
+import com.umuterayaltay.sosyal.nativeapp.repository.Highlight
+import com.umuterayaltay.sosyal.nativeapp.repository.HighlightsResult
 import com.umuterayaltay.sosyal.nativeapp.repository.Post
 import com.umuterayaltay.sosyal.nativeapp.repository.ProfileResult
 import com.umuterayaltay.sosyal.nativeapp.repository.ToggleBlockResult
@@ -45,6 +47,7 @@ class ProfileViewModel(private val requestedUsername: String?) : ViewModel() {
     private val pollsRepository = ServiceLocator.pollsRepository
     private val mutesRepository = ServiceLocator.mutesRepository
     private val bookmarksRepository = ServiceLocator.bookmarksRepository
+    private val storiesRepository = ServiceLocator.storiesRepository
     private val tokenStore = ServiceLocator.tokenStore
 
     private var resolvedUsername: String? = requestedUsername
@@ -70,6 +73,12 @@ class ProfileViewModel(private val requestedUsername: String?) : ViewModel() {
 
     private val _archivedPosts = MutableStateFlow<List<Post>>(emptyList())
     val archivedPosts: StateFlow<List<Post>> = _archivedPosts.asStateFlow()
+
+    // Faz 5 Dalga 4B — web'in profile.html'deki AYNI highlight-bar'ı: herkese
+    // AÇIK (isSelf şartı YOK, _collections'ın AKSİNE), bu yüzden hem kendi hem
+    // başkasının profilinde yüklenir.
+    private val _highlights = MutableStateFlow<List<Highlight>>(emptyList())
+    val highlights: StateFlow<List<Highlight>> = _highlights.asStateFlow()
 
     private val _isSelf = MutableStateFlow(false)
     val isSelf: StateFlow<Boolean> = _isSelf.asStateFlow()
@@ -150,6 +159,7 @@ class ProfileViewModel(private val requestedUsername: String?) : ViewModel() {
                     // SADECE kendi profilimizde anlamlı (bkz. _collections yorumu) —
                     // başkasının profilinde gereksiz bir istek atılmasın.
                     if (body.isSelf) loadCollections()
+                    body.profile?.id?.let { loadHighlights(it) }
                 }
                 is ProfileResult.Error -> {
                     if (result.code == "unauthorized") {
@@ -270,6 +280,18 @@ class ProfileViewModel(private val requestedUsername: String?) : ViewModel() {
                         _events.emit(ProfileEvent.SessionExpired)
                     }
                 }
+            }
+        }
+    }
+
+    /** Profil başlığındaki highlight-bar için — loadProfile() HER ZAMAN çeker
+     * (kendi/başkasının profili farketmez, web'in `{% if highlights %}`'ıyla
+     * AYNI: liste boşsa ProfileScreen bar'ı hiç göstermez). */
+    private fun loadHighlights(userId: String) {
+        viewModelScope.launch {
+            when (val result = storiesRepository.getHighlights(userId)) {
+                is HighlightsResult.Success -> _highlights.value = result.highlights
+                is HighlightsResult.Error -> Unit // sessizce yutulur, toggleUserMute() ile AYNI gerekçe
             }
         }
     }

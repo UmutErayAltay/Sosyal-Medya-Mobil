@@ -187,6 +187,10 @@ fun AppNavHost() {
                 onNavigateToPostDetail = { postId -> navController.navigate("postDetail/$postId") },
                 onNavigateToSettings = { navController.navigate("settings") },
                 onNavigateToHashtag = { tag -> navController.navigate("hashtag/$tag") },
+                // Faz 5 Dalga 4B — "highlights/{userId}" route'u Dalga 2C'de zaten
+                // hazırdı, SADECE ProfileScreen'den bağlanmıyordu (bkz. aşağıdaki
+                // composable("highlights/{userId}") üzerindeki eski yorum).
+                onNavigateToHighlights = { userId -> navController.navigate("highlights/$userId") },
                 onNavigateBack = { navController.navigateUp() },
                 onSessionExpired = {
                     navController.navigate(ROUTE_LOGIN) {
@@ -513,10 +517,11 @@ fun AppNavHost() {
 
         // Faz 5 Dalga 2C: Hikayeler — FeedScreen'in hikaye çubuğundan
         // ("storyViewer/{userId}") ve oradaki "+" / StoryBar'ın "Hikaye Ekle"
-        // öğesinden ("storyCreate") erişilir. "highlights/{userId}"/
-        // "highlightView/{highlightId}" bu turda HİÇBİR YERDEN bağlanmıyor
-        // (ProfileScreen'e BAĞLANMAYACAK, Dalga 4'e ertelendi — bkz. görev
-        // tanımı) ama route'ları/ekranları HAZIR, ileride tek satırla bağlanır.
+        // öğesinden ("storyCreate") erişilir. "highlights/{userId}" artık
+        // ProfileScreen'in highlight-bar'ından bağlanıyor (Dalga 4B, yukarıdaki
+        // composable("profile/{username}") içindeki onNavigateToHighlights).
+        // "highlightView/{highlightId}" HighlightsScreen'in KENDİ içinde
+        // kullanılıyor (dıştan doğrudan navigate edilmiyor).
         composable(
             route = "storyViewer/{userId}",
             arguments = listOf(navArgument("userId") { type = NavType.StringType }),
