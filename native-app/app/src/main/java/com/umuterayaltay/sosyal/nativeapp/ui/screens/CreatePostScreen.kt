@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddPhotoAlternate
+import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Gif
@@ -101,6 +102,8 @@ fun CreatePostScreen(
     val selectedVideoUri by viewModel.selectedVideoUri.collectAsState()
     val isReel by viewModel.isReel.collectAsState()
     val selectedGifUrl by viewModel.selectedGifUrl.collectAsState()
+    val showPollEditor by viewModel.showPollEditor.collectAsState()
+    val pollOptions by viewModel.pollOptions.collectAsState()
     val submitting by viewModel.submitting.collectAsState()
     val error by viewModel.error.collectAsState()
 
@@ -129,8 +132,12 @@ fun CreatePostScreen(
         contract = ActivityResultContracts.PickVisualMedia(),
     ) { uri -> viewModel.onVideoSelected(uri) }
 
+    // Anket editörü açıkken en az 2 dolu seçenek de "içerik var" sayılır —
+    // ViewModel.submit()'teki AYNI eşik (backend api_create_post() ile AYNI).
+    val hasPoll = showPollEditor && pollOptions.count { it.isNotBlank() } >= 2
     val canSubmit = (
-        content.isNotBlank() || selectedImageUri != null || selectedVideoUri != null || !selectedGifUrl.isNullOrBlank()
+        content.isNotBlank() || selectedImageUri != null || selectedVideoUri != null ||
+            !selectedGifUrl.isNullOrBlank() || hasPoll
         ) && !submitting
 
     if (showMediaPicker) {
@@ -345,6 +352,62 @@ fun CreatePostScreen(
                     ) {
                         Icon(Icons.Filled.VideoLibrary, contentDescription = null)
                         Text(text = "Video Ekle", modifier = Modifier.padding(start = 8.dp))
+                    }
+                }
+            }
+
+            // Anket ekle/kaldır (Faz 5 Dalga 4C) — görsel/video/GIF ile
+            // mutually-exclusive DEĞİL (backend api_create_post() ile AYNI
+            // kural, GIF'in aksine birlikte gönderilebilir), bu yüzden diğer
+            // medya butonlarının durumundan BAĞIMSIZ her zaman görünür.
+            OutlinedButton(
+                onClick = { viewModel.togglePollEditor() },
+                enabled = !submitting,
+                shape = MaterialTheme.shapes.medium,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Icon(Icons.Filled.BarChart, contentDescription = null)
+                Text(
+                    text = if (showPollEditor) "Anketi Kaldır" else "Anket Ekle",
+                    modifier = Modifier.padding(start = 8.dp),
+                )
+            }
+
+            if (showPollEditor) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    pollOptions.forEachIndexed { index, optionText ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            OutlinedTextField(
+                                value = optionText,
+                                onValueChange = { viewModel.onPollOptionChange(index, it) },
+                                modifier = Modifier.weight(1f),
+                                placeholder = { Text("Seçenek ${index + 1}") },
+                                singleLine = true,
+                                enabled = !submitting,
+                                shape = MaterialTheme.shapes.medium,
+                            )
+                            // İlk 2 seçenek kaldırılamaz — "en az 2 seçenek"
+                            // kuralı ViewModel.removePollOption() ile AYNI.
+                            if (index >= 2) {
+                                IconButton(
+                                    onClick = { viewModel.removePollOption(index) },
+                                    enabled = !submitting,
+                                ) {
+                                    Icon(Icons.Filled.Close, contentDescription = "Seçeneği kaldır")
+                                }
+                            }
+                        }
+                    }
+                    if (pollOptions.size < 4) {
+                        TextButton(
+                            onClick = { viewModel.addPollOption() },
+                            enabled = !submitting,
+                        ) {
+                            Text("Seçenek Ekle")
+                        }
                     }
                 }
             }

@@ -78,6 +78,17 @@ class CreatePostViewModel : ViewModel() {
     private val _selectedGifUrl = MutableStateFlow<String?>(null)
     val selectedGifUrl: StateFlow<String?> = _selectedGifUrl.asStateFlow()
 
+    // Anket editörü (Faz 5 Dalga 4C) — GIF'in showMediaPicker deseniyle BENZER:
+    // kullanıcı bilerek "Anket Ekle" butonuna basmadıkça alanlar görünmez.
+    // Görsel/video/GIF ile mutually-exclusive DEĞİL (backend api_create_post()
+    // ile AYNI kural) — bu yüzden diğer seçimler burada TEMİZLENMİYOR.
+    private val _showPollEditor = MutableStateFlow(false)
+    val showPollEditor: StateFlow<Boolean> = _showPollEditor.asStateFlow()
+
+    // Başlangıçta 2 boş seçenek — "en az 2 seçenek" kuralı UI'da baştan görünür.
+    private val _pollOptions = MutableStateFlow(listOf("", ""))
+    val pollOptions: StateFlow<List<String>> = _pollOptions.asStateFlow()
+
     private val _submitting = MutableStateFlow(false)
     val submitting: StateFlow<Boolean> = _submitting.asStateFlow()
 
@@ -134,6 +145,38 @@ class CreatePostViewModel : ViewModel() {
         _selectedGifUrl.value = null
     }
 
+    /** "Anket Ekle" butonuna basınca editörü aç/kapat — kapatınca girilen
+     * seçenekler DE sıfırlanır (yeniden açılınca temiz 2 boş alanla başlasın,
+     * yarım kalmış bir anket sessizce gönderilmesin). */
+    fun togglePollEditor() {
+        val next = !_showPollEditor.value
+        _showPollEditor.value = next
+        if (!next) {
+            _pollOptions.value = listOf("", "")
+        }
+    }
+
+    fun onPollOptionChange(index: Int, value: String) {
+        _pollOptions.value = _pollOptions.value.toMutableList().also {
+            if (index in it.indices) it[index] = value
+        }
+    }
+
+    /** Maksimum 4 seçenek — backend poll_option_1..4 ile AYNI sınır. */
+    fun addPollOption() {
+        if (_pollOptions.value.size < 4) {
+            _pollOptions.value = _pollOptions.value + ""
+        }
+    }
+
+    /** Minimum 2 seçeneğin altına inmez — "en az 2 dolu seçenek anket sayılır"
+     * kuralının UI'da baştan garanti edilmesi için. */
+    fun removePollOption(index: Int) {
+        if (_pollOptions.value.size > 2 && index in _pollOptions.value.indices) {
+            _pollOptions.value = _pollOptions.value.toMutableList().also { it.removeAt(index) }
+        }
+    }
+
     /** [context] SADECE seçilen görsel/video Uri'sinin byte'larını/mime tipini
      * okumak için gerekiyor (ContentResolver) — ViewModel Context'i SAKLAMAZ,
      * sadece bu tek çağrı sırasında kullanır. */
@@ -143,8 +186,23 @@ class CreatePostViewModel : ViewModel() {
         val imageUri = _selectedImageUri.value
         val videoUri = _selectedVideoUri.value
         val gifUrl = _selectedGifUrl.value
-        if (text.isEmpty() && imageUri == null && videoUri == null && gifUrl.isNullOrBlank()) {
+        // En az 2 dolu seçenek varsa "anket var" sayılır — backend
+        // api_create_post() ile AYNI eşik (bkz. InteractionsRepository).
+        val filledPollOptions = if (_showPollEditor.value) {
+            _pollOptions.value.map { it.trim() }.filter { it.isNotEmpty() }
+        } else {
+            emptyList()
+        }
+        val hasPoll = filledPollOptions.size >= 2
+        if (text.isEmpty() && imageUri == null && videoUri == null && gifUrl.isNullOrBlank() && !hasPoll) {
             _error.value = "Bir şeyler yaz, bir görsel veya video seç"
+            return
+        }
+        // Backend'in "anket varsa content zorunlu" kuralının UI'daki hızlı
+        // geri bildirimi — tek doğruluk kaynağı hâlâ backend, bu sadece
+        // isteği hiç GÖNDERMEDEN önce kullanıcıyı uyarır.
+        if (hasPoll && text.isEmpty()) {
+            _error.value = "Anket için bir soru yaz"
             return
         }
 
@@ -225,6 +283,7 @@ class CreatePostViewModel : ViewModel() {
                     videoFileName = videoFileName,
                     isReel = _isReel.value,
                     gifUrl = gifUrl,
+                    pollOptions = filledPollOptions,
                 )
             ) {
                 is CreatePostResult.Success -> _events.emit(CreatePostEvent.Success)

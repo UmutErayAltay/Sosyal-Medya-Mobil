@@ -43,6 +43,10 @@ interface InteractionsApi {
     // (backend'de request.files.get(...) None döner, has_image/has_video
     // False olur) — eski (sadece görsel) çağrı yerleri BOZULMAZ. `gif_url`
     // (Faz 5 Dalga 3B) SADECE görsel/video YOKSA backend'de kullanılır.
+    // `poll_option_1..4` (Faz 5 Dalga 4C) — web'in routes/posts.py
+    // create_post()'undaki AYNI sözleşme: request.form.get(f"poll_option_{i}")
+    // ile birebir isim eşleşmesi, en az 2 dolu seçenek "anket var" sayılır,
+    // görsel/video ile mutually-exclusive DEĞİL (GIF'in aksine birlikte olabilir).
     @Multipart
     @POST("posts")
     suspend fun createPost(
@@ -52,5 +56,9 @@ interface InteractionsApi {
         @Part video: MultipartBody.Part?,
         @Part("is_reel") isReel: RequestBody,
         @Part("gif_url") gifUrl: RequestBody?,
+        @Part("poll_option_1") pollOption1: RequestBody?,
+        @Part("poll_option_2") pollOption2: RequestBody?,
+        @Part("poll_option_3") pollOption3: RequestBody?,
+        @Part("poll_option_4") pollOption4: RequestBody?,
     ): Response<CreatePostResponse>
 }

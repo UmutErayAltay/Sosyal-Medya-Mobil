@@ -126,7 +126,12 @@ class InteractionsRepository(
      * görsel deseninin AKSİNE burada sabit bir dosya adı YETERSİZ. `gifUrl`
      * (Faz 5 Dalga 3B) SADECE görsel/video YOKSA backend'de kullanılır
      * (api_create_post()'daki AYNI mutually-exclusive kural) — burada ayrıca
-     * bir ön-kontrol YAPILMIYOR, tek doğruluk kaynağı backend.
+     * bir ön-kontrol YAPILMIYOR, tek doğruluk kaynağı backend. `pollOptions`
+     * (Faz 5 Dalga 4C) — web'in routes/posts.py create_post()'undaki AYNI
+     * sözleşme: en fazla 4 seçenek, `poll_option_1..4` form alanlarına
+     * sırayla yazılır, listedeki eleman sayısı 4'ten azsa kalan alanlar null
+     * geçilir (Retrofit o alanları isteğe hiç eklemez). Görsel/video ile
+     * mutually-exclusive DEĞİL — GIF'in aksine birlikte gönderilebilir.
      */
     suspend fun createPost(
         content: String,
@@ -139,6 +144,7 @@ class InteractionsRepository(
         videoFileName: String? = null,
         isReel: Boolean = false,
         gifUrl: String? = null,
+        pollOptions: List<String> = emptyList(),
     ): CreatePostResult = withContext(Dispatchers.IO) {
         try {
             val contentBody: RequestBody = content.toRequestBody("text/plain".toMediaTypeOrNull())
@@ -154,9 +160,20 @@ class InteractionsRepository(
                 MultipartBody.Part.createFormData("video", videoFileName ?: "upload.mp4", videoBody)
             }
             val gifUrlBody: RequestBody? = gifUrl?.toRequestBody("text/plain".toMediaTypeOrNull())
+            // pollOptions[0..3] -> poll_option_1..4, index sınırların dışındaysa null
+            // (gifUrlBody'nin null-atlama deseniyle AYNI).
+            val pollOption1Body: RequestBody? = pollOptions.getOrNull(0)
+                ?.toRequestBody("text/plain".toMediaTypeOrNull())
+            val pollOption2Body: RequestBody? = pollOptions.getOrNull(1)
+                ?.toRequestBody("text/plain".toMediaTypeOrNull())
+            val pollOption3Body: RequestBody? = pollOptions.getOrNull(2)
+                ?.toRequestBody("text/plain".toMediaTypeOrNull())
+            val pollOption4Body: RequestBody? = pollOptions.getOrNull(3)
+                ?.toRequestBody("text/plain".toMediaTypeOrNull())
 
             val response = interactionsApi.createPost(
                 contentBody, visibilityBody, imagePart, videoPart, isReelBody, gifUrlBody,
+                pollOption1Body, pollOption2Body, pollOption3Body, pollOption4Body,
             )
             val body = response.body()
             val post = body?.post
