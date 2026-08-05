@@ -333,12 +333,14 @@ fun ProfileScreen(
 // Madde 6: padding parametresi Scaffold ile birlikte KALDIRILDI - artık
 // TOP_BAR_HEIGHT ile SABİT bir üst boşluk bırakılıyor (InboxScreen.kt'deki
 // CenteredMessage ile AYNI karar).
+// Madde 1 (navbar üst-binme fix): TOP_BAR_HEIGHT yerine status bar inset'ini
+// de içeren rememberTopBarContentPadding() kullanılıyor (bkz. HideableTopBar.kt).
 @Composable
 private fun FullScreenCenter(content: @Composable () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .padding(top = TOP_BAR_HEIGHT)
+            .padding(top = rememberTopBarContentPadding())
             .padding(32.dp),
         contentAlignment = Alignment.Center,
     ) {
@@ -456,8 +458,12 @@ private fun ProfileContent(
         modifier = Modifier.fillMaxSize(),
         // Madde 6: üst boşluk artık Scaffold'un DEĞİŞKEN padding'inden DEĞİL,
         // TOP_BAR_HEIGHT ile SABİT ayrılıyor (bkz. yukarıdaki ProfileScreen
-        // Box yorumu).
-        contentPadding = PaddingValues(top = TOP_BAR_HEIGHT, bottom = 24.dp),
+        // Box yorumu). Madde 1 (navbar üst-binme fix): TOP_BAR_HEIGHT yerine
+        // status bar inset'ini de içeren rememberTopBarContentPadding()
+        // kullanılıyor (bkz. HideableTopBar.kt) — ProfileContent kendisi de
+        // @Composable olduğu için parametre eklemeye gerek kalmadan DOĞRUDAN
+        // çağrılabiliyor.
+        contentPadding = PaddingValues(top = rememberTopBarContentPadding(), bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {

@@ -80,6 +80,9 @@ fun InboxScreen(
     // elle scroll-yönü tespiti kullanılıyor.
     val listState = rememberLazyListState()
     val isTopBarVisible by rememberTopBarVisibility(listState)
+    // Madde 1 (navbar üst-binme fix, bkz. HideableTopBar.kt) — SADECE
+    // TOP_BAR_HEIGHT yerine status bar inset'ini de içeren gerçek yükseklik.
+    val topBarContentPadding = rememberTopBarContentPadding()
 
     // Madde 6 (top bar mimarisi rewrite): FeedScreen.kt'deki AYNI karar -
     // Scaffold'un topBar slotu TAMAMEN KALDIRILDI, bar artık bir Box overlay
@@ -110,7 +113,7 @@ fun InboxScreen(
             else -> LazyColumn(
                 state = listState,
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(top = TOP_BAR_HEIGHT + 4.dp, bottom = 4.dp),
+                contentPadding = PaddingValues(top = topBarContentPadding + 4.dp, bottom = 4.dp),
             ) {
                 items(conversations, key = { it.id }) { conversation ->
                     ConversationRow(conversation, onClick = { onConversationClick(conversation.id) })
@@ -234,12 +237,14 @@ private fun ConversationRow(conversation: ConversationSummaryDto, onClick: () ->
 // Madde 6: padding parametresi Scaffold ile birlikte KALDIRILDI - artık
 // TOP_BAR_HEIGHT ile SABİT bir üst boşluk bırakılıyor (bkz. yukarıdaki Box
 // yorumu), Scaffold'un DEĞİŞKEN padding'ine bağımlılık YOK.
+// Madde 1 (navbar üst-binme fix): TOP_BAR_HEIGHT yerine status bar inset'ini
+// de içeren rememberTopBarContentPadding() kullanılıyor (bkz. HideableTopBar.kt).
 @Composable
 private fun CenteredMessage(content: @Composable () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .padding(top = TOP_BAR_HEIGHT)
+            .padding(top = rememberTopBarContentPadding())
             .padding(32.dp),
         contentAlignment = Alignment.Center,
     ) {

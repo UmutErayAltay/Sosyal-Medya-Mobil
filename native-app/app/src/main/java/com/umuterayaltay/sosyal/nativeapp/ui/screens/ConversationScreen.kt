@@ -6,6 +6,7 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
@@ -91,16 +92,45 @@ import kotlinx.coroutines.launch
 
 // Madde 9 (kullanıcı raporu: chatte paylaşılan post'a tıklanmıyor) — backend'in
 // (app/api_v1/messaging.py api_share_post() / app/messaging/sending.py)
-// ürettiği paylaşılan-post mesaj formatı: "📎 Paylaşılan post: /post/{id}\n\"...\"".
-// Web'in chat.js'i AYNI prefiksi metin ayrıştırmasıyla kart görünümüne çeviriyor
-// (bkz. app/static/js/chat.js satır ~205) — burada TAM görsel kart YAPILMADI
-// (kapsam dışı bırakıldı, görev tanımı), SADECE tıklanabilirlik eklendi.
+// ürettiği paylaşılan-post mesaj formatı: "[not]\n\n📎 Paylaşılan post: /post/{id}\n\"...\"\n— @kullanıcı".
+// Web'in chat.js'i (formatSharedPosts, bkz. app/static/js/chat.js ~213-266) AYNI
+// prefiksi ayrıştırıp GERÇEK bir görsel kart'a çeviriyor (not ayrı, kart İÇİNDE
+// görsel+yazar+içerik, "Gönderiyi Gör" gibi bir aksiyon metni YOK - kartın
+// tamamı zaten tıklanabilir). ÖNCEKİ tur SADECE tıklanabilirlik eklemişti
+// (sadece ID çıkarımı) - bu tur (madde 3) o karta BİREBİR native karşılığını
+// tamamlıyor, bkz. SharedPostCard composable'ı.
 private const val SHARED_POST_PREFIX = "📎 Paylaşılan post:"
 private val SHARED_POST_ID_REGEX = Regex("/post/([\\w-]+)")
+// Web'in postContent ayrıştırmasındaki `"..."` alıntısının AYNISI — backend
+// içeriği `\"{content[:100]}\"` şeklinde tırnak içine alıyor (bkz.
+// app/messaging/sending.py share_post_multiple()).
+private val SHARED_POST_EXCERPT_REGEX = Regex("\"([^\"]*)\"")
+// Web'in "— @username" satırının AYNISI (bkz. chat.js "author.startsWith('—')").
+private val SHARED_POST_AUTHOR_REGEX = Regex("—\\s*@([\\w.]+)")
 
 private fun extractSharedPostId(content: String?): String? {
     if (content.isNullOrBlank() || !content.contains(SHARED_POST_PREFIX)) return null
     return SHARED_POST_ID_REGEX.find(content)?.groupValues?.getOrNull(1)
+}
+
+/** Madde 3 — kart için gereken TÜM alanları TEK seferde ayrıştırır: kullanıcının
+ * paylaşırken eklediği opsiyonel not (kartın DIŞINDA, web'in `.share-note`'u
+ * gibi normal metin olarak gösterilir), postun ilk 100 karakterlik alıntısı ve
+ * yazarın kullanıcı adı. */
+private data class SharedPostInfo(
+    val postId: String,
+    val note: String?,
+    val excerpt: String?,
+    val author: String?,
+)
+
+private fun extractSharedPostInfo(content: String?): SharedPostInfo? {
+    val postId = extractSharedPostId(content) ?: return null
+    val safeContent = content!!
+    val note = safeContent.substringBefore(SHARED_POST_PREFIX).trim().takeIf { it.isNotEmpty() }
+    val excerpt = SHARED_POST_EXCERPT_REGEX.find(safeContent)?.groupValues?.getOrNull(1)?.trim()?.takeIf { it.isNotEmpty() }
+    val author = SHARED_POST_AUTHOR_REGEX.find(safeContent)?.groupValues?.getOrNull(1)
+    return SharedPostInfo(postId, note, excerpt, author)
 }
 
 /**
@@ -563,7 +593,11 @@ private fun MessageBubble(
     // gerekçe (bkz. ConversationScreen fonksiyon imzası yorumu).
     onPostClick: (String) -> Unit = {},
 ) {
-    val sharedPostId = extractSharedPostId(message.content)
+    // Madde 3 (Instagram tarzı görsel kart) — SADECE ID DEĞİL, kartın ihtiyaç
+    // duyduğu not/alıntı/yazar da TEK seferde ayrıştırılır (bkz. yukarıdaki
+    // SharedPostInfo/extractSharedPostInfo).
+    val sharedPostInfo = extractSharedPostInfo(message.content)
+    val sharedPostId = sharedPostInfo?.postId
     val bubbleColor = if (isMine) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
     val contentColor = if (isMine) {
         MaterialTheme.colorScheme.onPrimaryContainer
@@ -648,43 +682,72 @@ private fun MessageBubble(
                         }
                     }
                     val imageUrl = message.imageUrl
-                    if (!imageUrl.isNullOrBlank()) {
-                        AsyncImage(
-                            model = imageUrl,
-                            contentDescription = null,
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier
-                                .padding(top = if (replyTo != null) 6.dp else 0.dp)
-                                .size(200.dp)
-                                .clip(MaterialTheme.shapes.medium),
-                        )
-                    }
-                    // Sticker — kullanıcı raporu: mesajlarda hiç görünmüyordu (kök
-                    // neden: MessageDto.sticker bilerek Any? tipindeydi, bkz.
-                    // ApiModels.kt). Görsel ekiyle AYNI desende (AsyncImage), ama
-                    // gerçek bir sticker/emoji boyutunda — tam ekran görsel GİBİ
-                    // BÜYÜK değil. Görsel VE sticker aynı anda gelirse (backend bunu
-                    // engellemiyor) ikisi de gösterilir, çakışma riski yok.
-                    val stickerUrl = message.sticker?.imageUrl
-                    if (!stickerUrl.isNullOrBlank()) {
-                        AsyncImage(
-                            model = stickerUrl,
-                            contentDescription = "Çıkartma",
-                            contentScale = ContentScale.Fit,
-                            modifier = Modifier
-                                .padding(top = if (replyTo != null || !imageUrl.isNullOrBlank()) 6.dp else 0.dp)
-                                .size(96.dp),
-                        )
-                    }
-                    if (!message.content.isNullOrBlank()) {
-                        Text(
-                            text = message.content,
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = contentColor,
+                    if (sharedPostInfo != null) {
+                        // Madde 3 — backend paylaşırken image_url'e postun İLK
+                        // görselini zaten koyuyor (bkz. sending.py share_post_multiple()),
+                        // bu yüzden GENEL imageUrl bloğu (üstte, normal görsel
+                        // mesajları için) burada BİLEREK atlanıyor — görsel
+                        // SharedPostCard'ın KENDİ İÇİNDE, kartın üst kısmında
+                        // gösterilir (web'in .shared-card-img'iyle AYNI konum).
+                        if (!sharedPostInfo.note.isNullOrBlank()) {
+                            Text(
+                                text = sharedPostInfo.note,
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = contentColor,
+                                modifier = Modifier.padding(
+                                    top = if (replyTo != null) 6.dp else 0.dp,
+                                    bottom = 6.dp,
+                                ),
+                            )
+                        }
+                        SharedPostCard(
+                            imageUrl = imageUrl,
+                            excerpt = sharedPostInfo.excerpt,
+                            author = sharedPostInfo.author,
+                            contentColor = contentColor,
                             modifier = Modifier.padding(
-                                top = if (replyTo != null || !imageUrl.isNullOrBlank() || !stickerUrl.isNullOrBlank()) 6.dp else 0.dp,
+                                top = if (replyTo != null && sharedPostInfo.note.isNullOrBlank()) 6.dp else 0.dp,
                             ),
                         )
+                    } else {
+                        if (!imageUrl.isNullOrBlank()) {
+                            AsyncImage(
+                                model = imageUrl,
+                                contentDescription = null,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .padding(top = if (replyTo != null) 6.dp else 0.dp)
+                                    .size(200.dp)
+                                    .clip(MaterialTheme.shapes.medium),
+                            )
+                        }
+                        // Sticker — kullanıcı raporu: mesajlarda hiç görünmüyordu (kök
+                        // neden: MessageDto.sticker bilerek Any? tipindeydi, bkz.
+                        // ApiModels.kt). Görsel ekiyle AYNI desende (AsyncImage), ama
+                        // gerçek bir sticker/emoji boyutunda — tam ekran görsel GİBİ
+                        // BÜYÜK değil. Görsel VE sticker aynı anda gelirse (backend bunu
+                        // engellemiyor) ikisi de gösterilir, çakışma riski yok.
+                        val stickerUrl = message.sticker?.imageUrl
+                        if (!stickerUrl.isNullOrBlank()) {
+                            AsyncImage(
+                                model = stickerUrl,
+                                contentDescription = "Çıkartma",
+                                contentScale = ContentScale.Fit,
+                                modifier = Modifier
+                                    .padding(top = if (replyTo != null || !imageUrl.isNullOrBlank()) 6.dp else 0.dp)
+                                    .size(96.dp),
+                            )
+                        }
+                        if (!message.content.isNullOrBlank()) {
+                            Text(
+                                text = message.content,
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = contentColor,
+                                modifier = Modifier.padding(
+                                    top = if (replyTo != null || !imageUrl.isNullOrBlank() || !stickerUrl.isNullOrBlank()) 6.dp else 0.dp,
+                                ),
+                            )
+                        }
                     }
                     Row(
                         modifier = Modifier
@@ -722,6 +785,63 @@ private fun MessageBubble(
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     reactions.forEach { reaction -> ReactionChip(reaction) }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Madde 3 (Instagram tarzı görsel kart) — PostCard.kt'deki RepostEmbedCard
+ * (kenarlıklı/yuvarlak köşeli Column) ile AYNI görsel dil, ama KOPYALANMADI:
+ * burada görsel varsa EN ÜSTTE (web'in `.shared-card-img`'i, `insertAdjacentElement`
+ * ile kartın İÇİNE en başa eklenen görselle AYNI konum), altında yazar (küçük/
+ * ikincil - web'in son hâlinde de yazar İKİNCİL) + postun alıntısı. Web'deki
+ * gibi "Gönderiyi Gör" türü bir aksiyon metni YOK - MessageBubble'daki
+ * `combinedClickable(onClick = { sharedPostId?.let(onPostClick) })` zaten
+ * TÜM baloncuğu (bu kart dahil) tıklanabilir yapıyor, bu yüzden bu composable
+ * KENDİ clickable'ını EKLEMEZ (çift jest algılayıcı çakışmasın diye).
+ */
+@Composable
+private fun SharedPostCard(
+    imageUrl: String?,
+    excerpt: String?,
+    author: String?,
+    contentColor: androidx.compose.ui.graphics.Color,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(MaterialTheme.shapes.medium)
+            .border(1.dp, contentColor.copy(alpha = 0.3f), MaterialTheme.shapes.medium),
+    ) {
+        if (!imageUrl.isNullOrBlank()) {
+            AsyncImage(
+                model = imageUrl,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(160.dp),
+            )
+        }
+        if (!author.isNullOrBlank() || !excerpt.isNullOrBlank()) {
+            Column(modifier = Modifier.padding(10.dp)) {
+                if (!author.isNullOrBlank()) {
+                    Text(
+                        text = "@$author",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = contentColor.copy(alpha = 0.75f),
+                    )
+                }
+                if (!excerpt.isNullOrBlank()) {
+                    Text(
+                        text = excerpt,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = contentColor,
+                        modifier = Modifier.padding(top = if (!author.isNullOrBlank()) 2.dp else 0.dp),
+                    )
                 }
             }
         }

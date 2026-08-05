@@ -127,6 +127,9 @@ fun FeedScreen(
     // olmadığı için PullToRefreshBox'la çakışma ihtimali de ortadan kalkar.
     val listState = rememberLazyListState()
     val isTopBarVisible by rememberTopBarVisibility(listState)
+    // Madde 1 (navbar üst-binme fix, bkz. HideableTopBar.kt) — SADECE
+    // TOP_BAR_HEIGHT yerine status bar inset'ini de içeren gerçek yükseklik.
+    val topBarContentPadding = rememberTopBarContentPadding()
 
     // Madde 1 (sonsuz kaydırma) — DiscoverScreen.kt'deki AYNI desen: son
     // görünür item listenin sonuna (son 3 item) yaklaşınca sonraki sayfa
@@ -221,7 +224,7 @@ fun FeedScreen(
                     // Madde 6: üst boşluk artık Scaffold'un topBar slotundan DEĞİL,
                     // burada TOP_BAR_HEIGHT ile SABİT ayrılıyor (bkz. yukarıdaki Box
                     // yorumu) — bar görünürlüğü değişse bile bu değer HİÇ değişmez.
-                    contentPadding = PaddingValues(top = TOP_BAR_HEIGHT + 12.dp, bottom = 12.dp),
+                    contentPadding = PaddingValues(top = topBarContentPadding + 12.dp, bottom = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     // Faz 5 Dalga 2C: hikaye çubuğu — post listesinden ÖNCE,

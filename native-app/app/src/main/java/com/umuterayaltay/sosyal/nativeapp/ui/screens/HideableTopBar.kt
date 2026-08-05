@@ -9,7 +9,9 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -21,6 +23,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 // web'in navbar.js'indeki AYNI iki sabit: touchmove'daki "10px tolerans
@@ -162,4 +165,35 @@ fun OverlayTopBar(
     Box(modifier = modifier.offset(y = offsetY)) {
         content()
     }
+}
+
+/**
+ * KULLANICI RAPORU (madde 1, navbar hikayelerin/keşfetin/aramanın ÜSTÜNE
+ * biniyor) — kök neden: [MainActivity]'nin `enableEdgeToEdge()` kullanması,
+ * Material3'ün `TopAppBar`'ının VARSAYILAN `TopAppBarDefaults.windowInsets`'i
+ * (status bar yüksekliğini İÇEREN) uygulaması demek — yani GERÇEK render
+ * edilen bar yüksekliği `TOP_BAR_HEIGHT + status bar yüksekliği`, SADECE
+ * `TOP_BAR_HEIGHT` (64dp) DEĞİL. Ama 4 ekranın (Feed/Discover/Inbox/Profile)
+ * `LazyColumn`'ları content padding'i SADECE `TOP_BAR_HEIGHT` ile ayırıyordu
+ * — bar'ın status-bar-inset kadarlık ALT kısmı (cihaza göre ~24-34dp değişir)
+ * içeriğin (hikaye çubuğu, arama kutusu, ilk post/konuşma satırı) ÜSTÜNE
+ * biniyordu.
+ *
+ * Fix: gerçek bar yüksekliğini `onGloballyPositioned` ile ÖLÇÜP bir
+ * callback'le geri vermek yerine (bu, ilk karede TOP_BAR_HEIGHT TAHMİNİYLE
+ * başlayıp ölçüm gelince state güncelleneceği için bir karelik görünür
+ * "zıplama" riski taşırdı) `WindowInsets.statusBars`'ı DOĞRUDAN okuyup
+ * `TOP_BAR_HEIGHT`'a EKLEYEN bu yardımcı tercih edildi — status bar
+ * yüksekliği sistem tarafından İLK COMPOSITION'DAN İTİBAREN bilinir, bu
+ * yüzden hiçbir gecikme/zıplama olmadan doğru değeri verir. `TOP_BAR_HEIGHT`
+ * sabiti bilerek SİLİNMEDİ — `OverlayTopBar`'ın offset animasyonu hâlâ ona
+ * göre çalışır, sadece content padding hesaplaması artık bunu status bar
+ * inset'iyle TOPLAR.
+ */
+@Composable
+fun rememberTopBarContentPadding(): Dp {
+    val density = LocalDensity.current
+    val statusBarHeightPx = WindowInsets.statusBars.getTop(density)
+    val statusBarHeight = with(density) { statusBarHeightPx.toDp() }
+    return TOP_BAR_HEIGHT + statusBarHeight
 }

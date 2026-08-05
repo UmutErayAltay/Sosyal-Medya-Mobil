@@ -131,6 +131,9 @@ fun DiscoverScreen(
     // yukarıda sonsuz kaydırma için var) üzerinden elle scroll-yönü tespiti
     // kullanılıyor.
     val isTopBarVisible by rememberTopBarVisibility(listState)
+    // Madde 1 (navbar üst-binme fix, bkz. HideableTopBar.kt) — SADECE
+    // TOP_BAR_HEIGHT yerine status bar inset'ini de içeren gerçek yükseklik.
+    val topBarContentPadding = rememberTopBarContentPadding()
 
     // Madde 6 (top bar mimarisi rewrite): FeedScreen.kt'deki AYNI karar -
     // Scaffold'un topBar slotu TAMAMEN KALDIRILDI, bar artık bir Box overlay
@@ -140,7 +143,7 @@ fun DiscoverScreen(
         LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(top = TOP_BAR_HEIGHT + 8.dp, bottom = 8.dp),
+            contentPadding = PaddingValues(top = topBarContentPadding + 8.dp, bottom = 8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             item {

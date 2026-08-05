@@ -3,6 +3,7 @@ package com.umuterayaltay.sosyal.nativeapp.ui.screens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -93,7 +94,7 @@ private fun buildContentAnnotatedString(content: String, hashtagColor: androidx.
         append(content.substring(lastEnd))
     }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun PostCard(
     post: Post,
@@ -128,6 +129,19 @@ fun PostCard(
     // ile AYNI desen, PostCard'ın KENDİ İÇİNDE tutulan yerel bir state
     // (ViewModel'e taşınmadı, PostShareSheet kendi başına yeterli).
     var showShareSheet by remember { mutableStateOf(false) }
+    // Madde 2 (kullanıcı raporu: Kaydet ikonuna basılı tutunca koleksiyon
+    // seçici açılsın) — PostActionsSheet/PostShareSheet'in showX state
+    // deseniyle AYNI, yeni bir callback parametresi GEREKMEDİ.
+    var showCollectionPicker by remember { mutableStateOf(false) }
+    // BookmarkCollectionPickerSheet ViewModel'e BAĞLANMADAN doğrudan
+    // BookmarksRepository çağırdığı için (bkz. o dosyanın yorumu), sheet'in
+    // başarılı bir atama sonrası bildirdiği durum burada YEREL olarak
+    // tutulur — aksi halde Kaydet ikonu bir sonraki tam listeleme
+    // yenilemesine kadar eski (dolu/boş) rengiyle kalırdı. post.id/
+    // post.bookmarkedByMe değiştiğinde (ör. liste yeniden yüklendiğinde)
+    // override SIFIRLANIR, sunucudan gelen GERÇEK değer tekrar geçerli olur.
+    var bookmarkedOverride by remember(post.id, post.bookmarkedByMe) { mutableStateOf<Boolean?>(null) }
+    val isBookmarked = bookmarkedOverride ?: post.bookmarkedByMe
 
     Card(
         modifier = Modifier
@@ -329,11 +343,24 @@ fun PostCard(
                 Spacer(modifier = Modifier.weight(1f))
                 // Kaydet — Instagram'daki bookmark ikonunun konumuyla AYNI: satırın
                 // EN SAĞINDA, diğer aksiyonlardan Spacer'la ayrılmış.
-                IconButton(onClick = { onBookmark(post.id) }) {
+                // Madde 2: IconButton (uzun-basmayı DESTEKLEMEZ) yerine
+                // combinedClickable'lı bir Box — KISA dokunuş MEVCUT davranışı
+                // (onBookmark, Genel'e toggle) AYNEN korur, UZUN basma
+                // koleksiyon seçiciyi açar.
+                Box(
+                    modifier = Modifier
+                        .clip(CircleShape)
+                        .combinedClickable(
+                            onClick = { onBookmark(post.id) },
+                            onLongClick = { showCollectionPicker = true },
+                        )
+                        .padding(12.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
                     Icon(
-                        imageVector = if (post.bookmarkedByMe) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
-                        contentDescription = if (post.bookmarkedByMe) "Kaydedildi" else "Kaydet",
-                        tint = if (post.bookmarkedByMe) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        imageVector = if (isBookmarked) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
+                        contentDescription = if (isBookmarked) "Kaydedildi" else "Kaydet",
+                        tint = if (isBookmarked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(20.dp),
                     )
                 }
@@ -355,6 +382,16 @@ fun PostCard(
             postId = post.id,
             onDismiss = { showShareSheet = false },
             onSessionExpired = onSessionExpired,
+        )
+    }
+
+    if (showCollectionPicker) {
+        BookmarkCollectionPickerSheet(
+            postId = post.id,
+            alreadyBookmarked = isBookmarked,
+            onDismiss = { showCollectionPicker = false },
+            onSessionExpired = onSessionExpired,
+            onBookmarked = { bookmarkedOverride = it },
         )
     }
 }
