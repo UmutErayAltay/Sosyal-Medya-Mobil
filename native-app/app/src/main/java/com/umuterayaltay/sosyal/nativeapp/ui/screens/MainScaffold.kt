@@ -20,6 +20,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -51,7 +52,15 @@ private enum class MainTab(val label: String, val icon: androidx.compose.ui.grap
  */
 @Composable
 fun MainScaffold(navController: NavHostController, onSessionExpired: () -> Unit) {
-    var selectedTab by remember { mutableStateOf(MainTab.Feed) }
+    // Kullanıcı raporu: "her geri geldiğimde ana sayfaya atıyor" (ör. Mesajlar
+    // sekmesindeyken bir konuşmaya girip navigateUp() ile dönünce Mesajlar
+    // yerine Ana Sayfa'ya düşüyordu). Kök neden: Navigation-Compose farklı bir
+    // route'a geçilince (ör. "conversation/{id}") BU composable'ın kompozisyonu
+    // TAMAMEN DISPOSE edilir — sade `remember` bu dispose/recompose döngüsünü
+    // ATLATAMAZ, sadece `rememberSaveable` (SavedStateHandle/Bundle üzerinden
+    // kalıcı) hayatta kalır. MainTab bir enum olduğu için (JVM'de otomatik
+    // Serializable) ekstra bir Saver YAZILMASI GEREKMEDİ.
+    var selectedTab by rememberSaveable { mutableStateOf(MainTab.Feed) }
 
     // Kullanıcı raporu: hikaye paylaşıldıktan sonra feed'deki hikaye çubuğu
     // yenilenmiyordu. MainScaffold "main" route'unun composable'ı olduğu için
