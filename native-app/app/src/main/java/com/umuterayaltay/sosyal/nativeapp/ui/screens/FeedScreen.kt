@@ -6,8 +6,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -32,6 +34,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -287,37 +290,45 @@ fun FeedScreen(
                 .align(Alignment.TopCenter)
                 .fillMaxWidth(),
         ) {
-            TopAppBar(
-                title = { Text("Ana Sayfa") },
-                actions = {
-                    // InboxScreen'in ikon-butonları DESENİYLE tutarlı — yeni bir
-                    // ikonun YANINA eklendi, var olanın yerine geçmedi.
-                    IconButton(onClick = onNotificationsClick) {
-                        Box {
-                            Icon(Icons.Filled.Notifications, contentDescription = "Bildirimler")
-                            if (unreadNotificationsCount > 0) {
-                                // ConversationRow/InboxScreen'in unread nokta rozeti
-                                // deseniyle tutarlı - basit bir kırmızı/primary nokta.
-                                Box(
-                                    modifier = Modifier
-                                        .align(Alignment.TopEnd)
-                                        .size(8.dp)
-                                        .clip(CircleShape)
-                                        .background(MaterialTheme.colorScheme.error),
-                                )
+            // Kullanıcı raporu (5. tur, navbar renk uyuşmazlığı/boyu) — kök
+            // neden ve TopBarSurface/windowInsets=0/height(TOP_BAR_HEIGHT)
+            // üçlüsünün NEDEN gerektiği HideableTopBar.kt'de detaylı.
+            TopBarSurface {
+                TopAppBar(
+                    title = { Text("Ana Sayfa") },
+                    actions = {
+                        // InboxScreen'in ikon-butonları DESENİYLE tutarlı — yeni bir
+                        // ikonun YANINA eklendi, var olanın yerine geçmedi.
+                        IconButton(onClick = onNotificationsClick) {
+                            Box {
+                                Icon(Icons.Filled.Notifications, contentDescription = "Bildirimler")
+                                if (unreadNotificationsCount > 0) {
+                                    // ConversationRow/InboxScreen'in unread nokta rozeti
+                                    // deseniyle tutarlı - basit bir kırmızı/primary nokta.
+                                    Box(
+                                        modifier = Modifier
+                                            .align(Alignment.TopEnd)
+                                            .size(8.dp)
+                                            .clip(CircleShape)
+                                            .background(MaterialTheme.colorScheme.error),
+                                    )
+                                }
                             }
                         }
-                    }
-                    // Gündem (Faz 4 sonrası eksik giderme SONUNCUSU) - bildirim
-                    // zilinin YANINA, var olan ikonların yerine geçmeden eklendi.
-                    IconButton(onClick = onTrendingClick) {
-                        Icon(Icons.Filled.Tag, contentDescription = "Gündem")
-                    }
-                    IconButton(onClick = onNewPostClick) {
-                        Icon(Icons.Filled.Add, contentDescription = "Yeni Gönderi")
-                    }
-                },
-            )
+                        // Gündem (Faz 4 sonrası eksik giderme SONUNCUSU) - bildirim
+                        // zilinin YANINA, var olan ikonların yerine geçmeden eklendi.
+                        IconButton(onClick = onTrendingClick) {
+                            Icon(Icons.Filled.Tag, contentDescription = "Gündem")
+                        }
+                        IconButton(onClick = onNewPostClick) {
+                            Icon(Icons.Filled.Add, contentDescription = "Yeni Gönderi")
+                        }
+                    },
+                    windowInsets = WindowInsets(0, 0, 0, 0),
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
+                    modifier = Modifier.height(TOP_BAR_HEIGHT),
+                )
+            }
         }
     }
 }

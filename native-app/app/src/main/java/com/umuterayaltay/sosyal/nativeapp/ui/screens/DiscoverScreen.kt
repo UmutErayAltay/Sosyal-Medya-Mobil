@@ -8,8 +8,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -42,6 +44,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -314,7 +317,17 @@ fun DiscoverScreen(
                 .align(Alignment.TopCenter)
                 .fillMaxWidth(),
         ) {
-            TopAppBar(title = { Text("Keşfet") })
+            // Kullanıcı raporu (5. tur, navbar renk uyuşmazlığı/boyu) — kök
+            // neden ve TopBarSurface/windowInsets=0/height(TOP_BAR_HEIGHT)
+            // üçlüsünün NEDEN gerektiği HideableTopBar.kt'de detaylı.
+            TopBarSurface {
+                TopAppBar(
+                    title = { Text("Keşfet") },
+                    windowInsets = WindowInsets(0, 0, 0, 0),
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
+                    modifier = Modifier.height(TOP_BAR_HEIGHT),
+                )
+            }
         }
     }
 }

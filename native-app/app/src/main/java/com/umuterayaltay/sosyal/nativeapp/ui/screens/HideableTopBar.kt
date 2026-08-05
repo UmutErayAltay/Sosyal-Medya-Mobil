@@ -8,11 +8,17 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.windowInsetsTopHeight
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
@@ -33,12 +39,18 @@ private val JITTER_THRESHOLD_DP = 12.dp
 private val TOP_SAFE_ZONE_DP = 80.dp
 private const val TOP_BAR_ANIM_MS = 250
 
-// Madde 6 (top bar mimarisi rewrite, kullanıcı raporu: "kararıyor"/"ışınlanıyor")
-// — Material3 standart TopAppBar yüksekliği, TÜM 4 ekranda (Feed/Discover/
-// Inbox/Profile) tek satır olduğu doğrulandı. private DEĞİL: FeedScreen.kt/
-// DiscoverScreen.kt/InboxScreen.kt/ProfileScreen.kt AYNI paketten (ui.screens)
-// contentPadding hesaplarken bu sabiti reuse eder (import GEREKMEZ).
-val TOP_BAR_HEIGHT = 64.dp
+// KULLANICI RAPORU (5. tur, ekran görüntüsüyle doğrulandı): "Ana Sayfa" satırı
+// ile status bar şeridi arasında koyu/farklı renkte bir çizgi + bar bütün
+// olarak gereğinden büyük görünüyor. Kök neden aşağıdaki [OverlayTopBar] ve
+// [TopBarSurface] yorumlarında detaylı: bu sabit artık SADECE bir tahmin
+// değil, TopBarSurface içindeki gerçek TopAppBar'a `Modifier.height(...)` ile
+// DOĞRUDAN uygulanan, gerçekten bağlayıcı bir yükseklik — 64.dp (M3
+// varsayılanı) yerine 56.dp (klasik/kompakt app bar yüksekliği, ikon/metin
+// boyutlarına dokunmadan rahatça sığıyor) seçildi. private DEĞİL:
+// FeedScreen.kt/DiscoverScreen.kt/InboxScreen.kt/ProfileScreen.kt AYNI
+// paketten (ui.screens) hem TopAppBar'ın kendi `modifier`ında hem
+// contentPadding hesabında bu sabiti reuse eder (import GEREKMEZ).
+val TOP_BAR_HEIGHT = 56.dp
 
 /**
  * Feed/Discover/Inbox/Profile ekranlarının 3. deneme sonrası KULLANICI RAPORU:
@@ -157,8 +169,34 @@ fun OverlayTopBar(
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit,
 ) {
+    // KULLANICI RAPORU (5. tur) KÖK NEDEN: [MainScaffold]'un `Scaffold`'u bu
+    // ekranlar için `topBar` slotu KULLANMIYOR (bar buradaki [OverlayTopBar]
+    // ile Box overlay olarak veriliyor, bkz. yukarıdaki mimari notu) — bu
+    // yüzden Scaffold, hiçbir şeyin status bar inset'ini "tükettiğini"
+    // BİLMİYOR ve kendi `contentWindowInsets` varsayılanı (`safeDrawing`,
+    // status bar dahil) gereği `content` slotuna GERÇEK status bar
+    // yüksekliği kadar TEPEDEN padding uyguluyor (MainScaffold.kt: `Box(
+    // Modifier.padding(padding))`). Yani bu composable'ın "local y=0"ı zaten
+    // GERÇEK ekranın status-bar-sonrası noktası - status barın KENDİSİ
+    // DEĞİL. `content` (TopBarSurface + TopAppBar) İSE kendi
+    // `windowInsetsPadding`'iyle status bar için AYRICA yer ayırıyordu - iki
+    // kat status bar boşluğu üst üste biniyordu: biri Scaffold'un padding'i
+    // (gerçek status bar rengi/arka planı sızıyor - kullanıcının gördüğü
+    // "koyu çizgi" TAM OLARAK bu), biri de TopAppBar'ın kendi iç boşluğu (bar
+    // gereğinden büyük görünüyordu).
+    //
+    // Fix: bu Box'ı [statusBarHeight] kadar YUKARI (negatif offset) taşı - bu
+    // sadece Scaffold'un ZATEN uyguladığı padding'i telafi eder (gerçek
+    // ekranın en tepesine geri döner), Box'ın kendisi hiçbir ata tarafından
+    // KIRPILMIYOR (Modifier.padding/Scaffold clip UYGULAMAZ) yani negatif
+    // offset güvenle status bar bölgesine "geri render" edilebilir. Bundan
+    // sonra [TopBarSurface] KENDİ status bar boşluğunu TEK SEFER, doğru
+    // yerde (gerçek status bar bölgesinde, kendi arka plan rengiyle boyanmış
+    // olarak) açar - artık çift sayım YOK, sızan farklı renk YOK.
+    val density = LocalDensity.current
+    val statusBarHeight = with(density) { WindowInsets.statusBars.getTop(density).toDp() }
     val offsetY by animateDpAsState(
-        targetValue = if (visible) 0.dp else -TOP_BAR_HEIGHT,
+        targetValue = (if (visible) 0.dp else -TOP_BAR_HEIGHT) - statusBarHeight,
         animationSpec = tween(durationMillis = TOP_BAR_ANIM_MS, easing = FastOutSlowInEasing),
         label = "topBarOffsetY",
     )
@@ -168,32 +206,46 @@ fun OverlayTopBar(
 }
 
 /**
- * KULLANICI RAPORU (madde 1, navbar hikayelerin/keşfetin/aramanın ÜSTÜNE
- * biniyor) — kök neden: [MainActivity]'nin `enableEdgeToEdge()` kullanması,
- * Material3'ün `TopAppBar`'ının VARSAYILAN `TopAppBarDefaults.windowInsets`'i
- * (status bar yüksekliğini İÇEREN) uygulaması demek — yani GERÇEK render
- * edilen bar yüksekliği `TOP_BAR_HEIGHT + status bar yüksekliği`, SADECE
- * `TOP_BAR_HEIGHT` (64dp) DEĞİL. Ama 4 ekranın (Feed/Discover/Inbox/Profile)
- * `LazyColumn`'ları content padding'i SADECE `TOP_BAR_HEIGHT` ile ayırıyordu
- * — bar'ın status-bar-inset kadarlık ALT kısmı (cihaza göre ~24-34dp değişir)
- * içeriğin (hikaye çubuğu, arama kutusu, ilk post/konuşma satırı) ÜSTÜNE
- * biniyordu.
- *
- * Fix: gerçek bar yüksekliğini `onGloballyPositioned` ile ÖLÇÜP bir
- * callback'le geri vermek yerine (bu, ilk karede TOP_BAR_HEIGHT TAHMİNİYLE
- * başlayıp ölçüm gelince state güncelleneceği için bir karelik görünür
- * "zıplama" riski taşırdı) `WindowInsets.statusBars`'ı DOĞRUDAN okuyup
- * `TOP_BAR_HEIGHT`'a EKLEYEN bu yardımcı tercih edildi — status bar
- * yüksekliği sistem tarafından İLK COMPOSITION'DAN İTİBAREN bilinir, bu
- * yüzden hiçbir gecikme/zıplama olmadan doğru değeri verir. `TOP_BAR_HEIGHT`
- * sabiti bilerek SİLİNMEDİ — `OverlayTopBar`'ın offset animasyonu hâlâ ona
- * göre çalışır, sadece content padding hesaplaması artık bunu status bar
- * inset'iyle TOPLAR.
+ * [OverlayTopBar]'ın YUKARIDAKİ telafi offset'iyle BİRLİKTE çalışır: bu
+ * composable artık gerçek status bar bölgesinin TEPESİNDEN başladığı için,
+ * status bar boşluğunu TEK SEFER burada, EXPLICIT bir renkle (arka planla
+ * AYNI ton - `colorScheme.surface`, aşağıdaki TopAppBar'ın `containerColor`ı
+ * ile BİREBİR eşleşecek) açan bir `Spacer` + asıl TopAppBar'dan oluşan bir
+ * `Column`. TopAppBar'ı çağıran taraf (Feed/Discover/Inbox/Profile) KENDİ
+ * `windowInsets`'ini `WindowInsets(0,0,0,0)`'a, `colors`'ını bu composable
+ * ile AYNI `colorScheme.surface`'e ve `modifier`'ını `Modifier.height(
+ * TOP_BAR_HEIGHT)`'a SABİTLEMELİDİR - aksi halde TopAppBar KENDİ status bar
+ * boşluğunu TEKRAR açar (çift sayım tekrar geri döner) veya farklı bir
+ * renkle boyanıp yeni bir dikiş yaratır.
  */
 @Composable
-fun rememberTopBarContentPadding(): Dp {
-    val density = LocalDensity.current
-    val statusBarHeightPx = WindowInsets.statusBars.getTop(density)
-    val statusBarHeight = with(density) { statusBarHeightPx.toDp() }
-    return TOP_BAR_HEIGHT + statusBarHeight
+fun TopBarSurface(content: @Composable () -> Unit) {
+    Column {
+        Spacer(
+            modifier = Modifier
+                .fillMaxWidth()
+                .windowInsetsTopHeight(WindowInsets.statusBars)
+                .background(MaterialTheme.colorScheme.surface),
+        )
+        content()
+    }
 }
+
+/**
+ * KULLANICI RAPORU (madde 1, ESKİ tur — navbar hikayelerin/keşfetin/aramanın
+ * ÜSTÜNE biniyor) için önceki sürümde bu değer `TOP_BAR_HEIGHT + status bar
+ * yüksekliği` idi. 5. tur (yukarıdaki [OverlayTopBar]/[TopBarSurface]
+ * yorumlarında detaylı kök neden analizi) bunu DEĞİŞTİRDİ: artık
+ * [OverlayTopBar] kendi `-statusBarHeight` telafi offset'iyle gerçek status
+ * bar bölgesinin TEPESİNDEN başlıyor ve [TopBarSurface] o boşluğu KENDİ
+ * içinde (bir `Spacer` ile) açıyor — yani status bar yüksekliği artık
+ * [FeedScreen]/[DiscoverScreen]/[InboxScreen]/[ProfileScreen]'in LOCAL
+ * koordinat uzayında (bu ekranların kendi `Box`ı zaten [MainScaffold]'un
+ * `Scaffold`'u tarafından status bar kadar aşağı itilmiş durumda, bkz.
+ * MainScaffold.kt) ZATEN "harcanmış" oluyor — bu yardımcının onu BİR DAHA
+ * eklemesi ÇİFT SAYIM olurdu (content, bar'ın GERÇEKTE kapladığından FAZLA
+ * boşluk bırakırdı). Bu yüzden artık SADECE `TOP_BAR_HEIGHT` (56dp) — bar'ın
+ * LOCAL koordinat uzayındaki GERÇEK yüksekliği — döndürülüyor.
+ */
+@Composable
+fun rememberTopBarContentPadding(): Dp = TOP_BAR_HEIGHT

@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -52,6 +53,7 @@ import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -232,6 +234,10 @@ fun ProfileScreen(
                 .align(Alignment.TopCenter)
                 .fillMaxWidth(),
         ) {
+            // Kullanıcı raporu (5. tur, navbar renk uyuşmazlığı/boyu) — kök
+            // neden ve TopBarSurface/windowInsets=0/height(TOP_BAR_HEIGHT)
+            // üçlüsünün NEDEN gerektiği HideableTopBar.kt'de detaylı.
+            TopBarSurface {
             TopAppBar(
                 title = { Text(profile?.username ?: "Profil") },
                 navigationIcon = {
@@ -294,7 +300,11 @@ fun ProfileScreen(
                         }
                     }
                 },
+                windowInsets = WindowInsets(0, 0, 0, 0),
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
+                modifier = Modifier.height(TOP_BAR_HEIGHT),
             )
+            }
         }
     }
 
