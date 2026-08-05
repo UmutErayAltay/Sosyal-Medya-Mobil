@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.PersonOff
 import androidx.compose.material.icons.filled.Security
@@ -35,6 +36,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -56,6 +58,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.umuterayaltay.sosyal.nativeapp.ServiceLocator
+import com.umuterayaltay.sosyal.nativeapp.data.ThemeMode
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.SettingsEvent
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.SettingsViewModel
 
@@ -91,6 +95,8 @@ fun SettingsScreen(
     val loggingOut by viewModel.loggingOut.collectAsState()
     var showDeactivateDialog by remember { mutableStateOf(false) }
     var password by remember { mutableStateOf("") }
+    var showThemeDialog by remember { mutableStateOf(false) }
+    val themeMode by ServiceLocator.themePreferenceStore.themeMode.collectAsState()
 
     LaunchedEffect(Unit) {
         viewModel.events.collect { event ->
@@ -141,6 +147,13 @@ fun SettingsScreen(
                 icon = Icons.Filled.Stars,
                 label = "Yakın Arkadaşlar",
                 onClick = onNavigateToCloseFriends,
+            )
+
+            SettingsSectionHeader("Görünüm")
+            SettingsRow(
+                icon = Icons.Filled.DarkMode,
+                label = "Tema: ${themeModeLabel(themeMode)}",
+                onClick = { showThemeDialog = true },
             )
 
             SettingsSectionHeader("Gizlilik ve Güvenlik")
@@ -243,6 +256,77 @@ fun SettingsScreen(
                     Text("Vazgeç")
                 }
             },
+        )
+    }
+
+    if (showThemeDialog) {
+        AlertDialog(
+            onDismissRequest = { showThemeDialog = false },
+            icon = { Icon(Icons.Filled.DarkMode, contentDescription = null) },
+            title = { Text("Tema seç") },
+            text = {
+                Column {
+                    ThemeOptionRow(
+                        label = "Aydınlık",
+                        selected = themeMode == ThemeMode.LIGHT,
+                        onClick = {
+                            ServiceLocator.themePreferenceStore.setThemeMode(ThemeMode.LIGHT)
+                            showThemeDialog = false
+                        },
+                    )
+                    ThemeOptionRow(
+                        label = "Koyu",
+                        selected = themeMode == ThemeMode.DARK,
+                        onClick = {
+                            ServiceLocator.themePreferenceStore.setThemeMode(ThemeMode.DARK)
+                            showThemeDialog = false
+                        },
+                    )
+                    ThemeOptionRow(
+                        label = "Sistem varsayılanı",
+                        selected = themeMode == ThemeMode.SYSTEM,
+                        onClick = {
+                            ServiceLocator.themePreferenceStore.setThemeMode(ThemeMode.SYSTEM)
+                            showThemeDialog = false
+                        },
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showThemeDialog = false }) {
+                    Text("Kapat")
+                }
+            },
+        )
+    }
+}
+
+/** Ayarlar satırında gösterilen kısa tema etiketi. */
+private fun themeModeLabel(mode: ThemeMode): String = when (mode) {
+    ThemeMode.LIGHT -> "Aydınlık"
+    ThemeMode.DARK -> "Koyu"
+    ThemeMode.SYSTEM -> "Sistem varsayılanı"
+}
+
+/** Tema seçim diyalogundaki tek bir radio satırı. */
+@Composable
+private fun ThemeOptionRow(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        RadioButton(selected = selected, onClick = onClick)
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyLarge,
+            modifier = Modifier.padding(start = 8.dp),
         )
     }
 }

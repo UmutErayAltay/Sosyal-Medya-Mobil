@@ -9,11 +9,15 @@ import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.lifecycleScope
 import com.google.firebase.messaging.FirebaseMessaging
+import com.umuterayaltay.sosyal.nativeapp.data.ThemeMode
 import com.umuterayaltay.sosyal.nativeapp.navigation.AppNavHost
 import com.umuterayaltay.sosyal.nativeapp.ui.theme.SosyalNativeTheme
 import kotlinx.coroutines.launch
@@ -45,7 +49,16 @@ class MainActivity : ComponentActivity() {
             navigationBarStyle = SystemBarStyle.auto(AndroidColor.TRANSPARENT, AndroidColor.TRANSPARENT),
         )
         setContent {
-            SosyalNativeTheme {
+            // ThemePreferenceStore.themeMode bir StateFlow — kullanıcı Ayarlar'dan
+            // tema değiştirdiğinde uygulama yeniden başlatılmadan burada anında
+            // yansır (bkz. ThemePreferenceStore.kt / SettingsScreen.kt yorumları).
+            val themeMode by ServiceLocator.themePreferenceStore.themeMode.collectAsState()
+            val darkTheme = when (themeMode) {
+                ThemeMode.LIGHT -> false
+                ThemeMode.DARK -> true
+                ThemeMode.SYSTEM -> isSystemInDarkTheme()
+            }
+            SosyalNativeTheme(darkTheme = darkTheme) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     AppNavHost()
                 }

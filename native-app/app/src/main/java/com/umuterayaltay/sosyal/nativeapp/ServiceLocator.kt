@@ -1,6 +1,7 @@
 package com.umuterayaltay.sosyal.nativeapp
 
 import android.content.Context
+import com.umuterayaltay.sosyal.nativeapp.data.ThemePreferenceStore
 import com.umuterayaltay.sosyal.nativeapp.data.TokenStore
 import com.umuterayaltay.sosyal.nativeapp.data.local.AppDatabase
 import com.umuterayaltay.sosyal.nativeapp.network.AuthApi
@@ -57,6 +58,8 @@ object ServiceLocator {
 
     lateinit var tokenStore: TokenStore
         private set
+    lateinit var themePreferenceStore: ThemePreferenceStore
+        private set
     lateinit var authRepository: AuthRepository
         private set
     lateinit var feedRepository: FeedRepository
@@ -109,6 +112,7 @@ object ServiceLocator {
         val appContext = context.applicationContext
 
         tokenStore = TokenStore(appContext)
+        themePreferenceStore = ThemePreferenceStore(appContext)
         val retrofit = RetrofitClient.create(tokenStore)
         val authApi = retrofit.create(AuthApi::class.java)
         val feedApi = retrofit.create(FeedApi::class.java)
