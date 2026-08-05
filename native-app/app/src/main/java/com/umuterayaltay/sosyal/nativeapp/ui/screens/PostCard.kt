@@ -1,14 +1,15 @@
 package com.umuterayaltay.sosyal.nativeapp.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -47,6 +48,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.umuterayaltay.sosyal.nativeapp.repository.Post
+import com.umuterayaltay.sosyal.nativeapp.repository.RepostEmbed
 
 /**
  * Paylaşılan gönderi kartı — FeedScreen.kt'den ÇIKARILDI (Faz 3, Keşfet ekranı),
@@ -216,6 +218,14 @@ fun PostCard(
                 )
             }
 
+            // Madde 5 (kullanıcı raporu: repost içeriği hiç gösterilmiyor) —
+            // web'in `.repost-embed`'iyle AYNI konum: içerikten SONRA, görselden
+            // ÖNCE. repostOf SADECE ağdan gelen postta dolu (Room cache'inden
+            // gelende null, poll ile AYNI gerekçe — bkz. Post.kt yorumu).
+            post.repostOf?.let { repost ->
+                RepostEmbedCard(repost = repost, modifier = Modifier.padding(top = 12.dp))
+            }
+
             // Anket — web'in _post_card.html'indeki AYNI konum: içerikten SONRA,
             // görselden ÖNCE. Room cache'inden gelen postta poll null olduğu için
             // offline'da widget hiç çizilmez (bkz. PostEntity.toDomain() yorumu).
@@ -228,13 +238,18 @@ fun PostCard(
             }
 
             if (!post.imageUrl.isNullOrBlank()) {
+                // Madde 4 (kullanıcı raporu: post resmi kırpılmış, tam gözükmüyor)
+                // — sabit 4:3 aspectRatio + Crop KALDIRILDI (görselin GERÇEK
+                // oranıyla uyuşmadığında kenarlarından kırpıyordu). ContentScale.Fit
+                // + heightIn(max) ile görsel KENDİ oranında, en fazla 400dp
+                // yükseklikte TAM gösterilir (Instagram'ın "tam görsel" davranışı).
                 AsyncImage(
                     model = post.imageUrl,
                     contentDescription = null,
-                    contentScale = ContentScale.Crop,
+                    contentScale = ContentScale.Fit,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .aspectRatio(4f / 3f)
+                        .heightIn(max = 400.dp)
                         .padding(top = 12.dp)
                         .clip(MaterialTheme.shapes.medium),
                 )
@@ -341,5 +356,76 @@ fun PostCard(
             onDismiss = { showShareSheet = false },
             onSessionExpired = onSessionExpired,
         )
+    }
+}
+
+/**
+ * Madde 5 (kullanıcı raporu: "gönderilen postlar çok kötü görünüyor" — kök
+ * neden repostOf'un domain modele hiç taşınmaması, bkz. Post.kt yorumu) —
+ * repost atılan gönderinin orijinalini KÜÇÜK bir gömülü kart içinde gösterir.
+ * Web'in `.repost-embed`'inden (app/static/css/style.css ~3632-3690) ilham
+ * alındı ama native Compose deyimiyle basit tutuldu: kenarlıklı/yuvarlak
+ * köşeli Column içinde yazar (avatar+username) + içerik + (varsa) görsel.
+ */
+@Composable
+private fun RepostEmbedCard(repost: RepostEmbed, modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(MaterialTheme.shapes.medium)
+            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f), MaterialTheme.shapes.medium)
+            .padding(10.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (!repost.avatarUrl.isNullOrBlank()) {
+                AsyncImage(
+                    model = repost.avatarUrl,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .size(22.dp)
+                        .clip(CircleShape),
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .size(22.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Person,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(14.dp),
+                    )
+                }
+            }
+            Text(
+                text = repost.username ?: "Bilinmeyen kullanıcı",
+                style = MaterialTheme.typography.labelMedium,
+                modifier = Modifier.padding(start = 6.dp),
+            )
+        }
+        if (!repost.content.isNullOrBlank()) {
+            Text(
+                text = repost.content,
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(top = 6.dp),
+            )
+        }
+        if (!repost.imageUrl.isNullOrBlank()) {
+            AsyncImage(
+                model = repost.imageUrl,
+                contentDescription = null,
+                contentScale = ContentScale.Fit,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 200.dp)
+                    .padding(top = 8.dp)
+                    .clip(MaterialTheme.shapes.small),
+            )
+        }
     }
 }

@@ -35,4 +35,14 @@ interface PostDao {
     // Faz 5 Dalga 3A — kaydetme: updateMuteState() ile AYNI desen.
     @Query("UPDATE posts SET bookmarkedByMe = :bookmarkedByMe WHERE id = :postId")
     suspend fun updateBookmarkState(postId: String, bookmarkedByMe: Boolean)
+
+    // Madde 10 (önbellek tanı taraması, native görev tanımı): sonsuz kaydırma
+    // (FeedRepository.loadMore()) tabloya sürekli satır ekler, refresh()
+    // (pull-to-refresh) DIŞINDA hiçbir şey budamıyordu - bu yüzden uzun süre
+    // aşağı kaydırılıp yenilenmeyen bir oturumda tablo sınırsız büyüyebiliyordu.
+    // En yeni :keep satır (createdAt DESC) KORUNUR, geri kalanı silinir.
+    @Query(
+        "DELETE FROM posts WHERE id NOT IN (SELECT id FROM posts ORDER BY createdAt DESC LIMIT :keep)",
+    )
+    suspend fun pruneOldest(keep: Int)
 }

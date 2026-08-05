@@ -47,9 +47,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Scaffold
+import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -161,79 +160,15 @@ fun ProfileScreen(
     val listState = rememberLazyListState()
     val isTopBarVisible by rememberTopBarVisibility(listState)
 
-    Scaffold(
-        topBar = {
-            HideableTopBar(visible = isTopBarVisible) {
-                TopAppBar(
-                    title = { Text(profile?.username ?: "Profil") },
-                    navigationIcon = {
-                        if (onNavigateBack != null) {
-                            IconButton(onClick = onNavigateBack) {
-                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Geri")
-                            }
-                        }
-                    },
-                    actions = {
-                        if (isSelf && !isDeactivated) {
-                            IconButton(onClick = onNavigateToFollowRequests) {
-                                Icon(Icons.Filled.PersonAdd, contentDescription = "Takip İstekleri")
-                            }
-                            IconButton(onClick = onNavigateToInsights) {
-                                Icon(Icons.Filled.BarChart, contentDescription = "İstatistikler")
-                            }
-                            IconButton(onClick = onNavigateToSettings) {
-                                Icon(Icons.Filled.Settings, contentDescription = "Ayarlar")
-                            }
-                        } else if (!isSelf && !isDeactivated) {
-                            // Başkasının profili: engelle/engeli kaldır aksiyonu üç-nokta
-                            // overflow menüde - "Takip Et" butonuyla aynı hizada ayrı bir
-                            // buton yerine, yanlışlıkla dokunmayı zorlaştıran bilinçli tercih.
-                            IconButton(onClick = { showBlockMenu = true }) {
-                                Icon(Icons.Filled.MoreVert, contentDescription = "Diğer seçenekler")
-                            }
-                            DropdownMenu(expanded = showBlockMenu, onDismissRequest = { showBlockMenu = false }) {
-                                DropdownMenuItem(
-                                    text = { Text(if (isBlockedByMe) "Engeli Kaldır" else "Engelle") },
-                                    leadingIcon = { Icon(Icons.Filled.Block, contentDescription = null) },
-                                    onClick = {
-                                        showBlockMenu = false
-                                        if (isBlockedByMe) {
-                                            // Engeli kaldırma geri dönüşü kolay bir aksiyon -
-                                            // ekstra onay diyaloğu istenmedi (CloseFriendsScreen'in
-                                            // "Kaldır" ikonuyla AYNI düşük-sürtünme yaklaşımı).
-                                            viewModel.toggleBlock()
-                                        } else {
-                                            showBlockConfirmDialog = true
-                                        }
-                                    },
-                                )
-                                // Faz 5 Dalga 2A: AYNI overflow menüde ikinci bir aksiyon —
-                                // ayrı bir buton İCAT EDİLMEDİ. Engelleme'nin AKSİNE onay
-                                // diyaloğu yok (geri dönüşü kolay, düşük riskli bir aksiyon).
-                                DropdownMenuItem(
-                                    text = { Text(if (isMuted) "Sesi Aç" else "Sessize Al") },
-                                    leadingIcon = {
-                                        Icon(
-                                            if (isMuted) Icons.Filled.Notifications else Icons.Filled.NotificationsOff,
-                                            contentDescription = null,
-                                        )
-                                    },
-                                    onClick = {
-                                        showBlockMenu = false
-                                        viewModel.toggleUserMute()
-                                    },
-                                )
-                            }
-                        }
-                    },
-                )
-            }
-        },
-    ) { padding ->
+    // Madde 6 (top bar mimarisi rewrite): FeedScreen.kt'deki AYNI karar -
+    // Scaffold'un topBar slotu TAMAMEN KALDIRILDI, bar artık bir Box overlay
+    // katmanı (OverlayTopBar), içerik TOP_BAR_HEIGHT kadar SABİT üst boşluk
+    // bırakır (bar'ın görünürlüğü bu boşluğu ETKİLEMEZ).
+    Box(modifier = Modifier.fillMaxSize()) {
         when {
-            loading && profile == null -> FullScreenCenter(padding) { CircularProgressIndicator() }
+            loading && profile == null -> FullScreenCenter { CircularProgressIndicator() }
 
-            error != null && profile == null -> FullScreenCenter(padding) {
+            error != null && profile == null -> FullScreenCenter {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Icon(
                         imageVector = Icons.Filled.ErrorOutline,
@@ -253,12 +188,11 @@ fun ProfileScreen(
                 }
             }
 
-            profile == null -> FullScreenCenter(padding) { Text("Profil bulunamadı.") }
+            profile == null -> FullScreenCenter { Text("Profil bulunamadı.") }
 
-            isDeactivated -> DeactivatedProfileContent(padding, profile!!)
+            isDeactivated -> DeactivatedProfileContent(profile!!)
 
             else -> ProfileContent(
-                padding = padding,
                 listState = listState,
                 profile = profile!!,
                 stats = stats,
@@ -289,6 +223,77 @@ fun ProfileScreen(
                 onRepost = { postId -> viewModel.repost(postId) },
                 onReport = { postId -> viewModel.report(postId) },
                 onSessionExpired = onSessionExpired,
+            )
+        }
+
+        OverlayTopBar(
+            visible = isTopBarVisible,
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth(),
+        ) {
+            TopAppBar(
+                title = { Text(profile?.username ?: "Profil") },
+                navigationIcon = {
+                    if (onNavigateBack != null) {
+                        IconButton(onClick = onNavigateBack) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Geri")
+                        }
+                    }
+                },
+                actions = {
+                    if (isSelf && !isDeactivated) {
+                        IconButton(onClick = onNavigateToFollowRequests) {
+                            Icon(Icons.Filled.PersonAdd, contentDescription = "Takip İstekleri")
+                        }
+                        IconButton(onClick = onNavigateToInsights) {
+                            Icon(Icons.Filled.BarChart, contentDescription = "İstatistikler")
+                        }
+                        IconButton(onClick = onNavigateToSettings) {
+                            Icon(Icons.Filled.Settings, contentDescription = "Ayarlar")
+                        }
+                    } else if (!isSelf && !isDeactivated) {
+                        // Başkasının profili: engelle/engeli kaldır aksiyonu üç-nokta
+                        // overflow menüde - "Takip Et" butonuyla aynı hizada ayrı bir
+                        // buton yerine, yanlışlıkla dokunmayı zorlaştıran bilinçli tercih.
+                        IconButton(onClick = { showBlockMenu = true }) {
+                            Icon(Icons.Filled.MoreVert, contentDescription = "Diğer seçenekler")
+                        }
+                        DropdownMenu(expanded = showBlockMenu, onDismissRequest = { showBlockMenu = false }) {
+                            DropdownMenuItem(
+                                text = { Text(if (isBlockedByMe) "Engeli Kaldır" else "Engelle") },
+                                leadingIcon = { Icon(Icons.Filled.Block, contentDescription = null) },
+                                onClick = {
+                                    showBlockMenu = false
+                                    if (isBlockedByMe) {
+                                        // Engeli kaldırma geri dönüşü kolay bir aksiyon -
+                                        // ekstra onay diyaloğu istenmedi (CloseFriendsScreen'in
+                                        // "Kaldır" ikonuyla AYNI düşük-sürtünme yaklaşımı).
+                                        viewModel.toggleBlock()
+                                    } else {
+                                        showBlockConfirmDialog = true
+                                    }
+                                },
+                            )
+                            // Faz 5 Dalga 2A: AYNI overflow menüde ikinci bir aksiyon —
+                            // ayrı bir buton İCAT EDİLMEDİ. Engelleme'nin AKSİNE onay
+                            // diyaloğu yok (geri dönüşü kolay, düşük riskli bir aksiyon).
+                            DropdownMenuItem(
+                                text = { Text(if (isMuted) "Sesi Aç" else "Sessize Al") },
+                                leadingIcon = {
+                                    Icon(
+                                        if (isMuted) Icons.Filled.Notifications else Icons.Filled.NotificationsOff,
+                                        contentDescription = null,
+                                    )
+                                },
+                                onClick = {
+                                    showBlockMenu = false
+                                    viewModel.toggleUserMute()
+                                },
+                            )
+                        }
+                    }
+                },
             )
         }
     }
@@ -325,12 +330,15 @@ fun ProfileScreen(
     }
 }
 
+// Madde 6: padding parametresi Scaffold ile birlikte KALDIRILDI - artık
+// TOP_BAR_HEIGHT ile SABİT bir üst boşluk bırakılıyor (InboxScreen.kt'deki
+// CenteredMessage ile AYNI karar).
 @Composable
-private fun FullScreenCenter(padding: PaddingValues, content: @Composable () -> Unit) {
+private fun FullScreenCenter(content: @Composable () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .padding(padding)
+            .padding(top = TOP_BAR_HEIGHT)
             .padding(32.dp),
         contentAlignment = Alignment.Center,
     ) {
@@ -339,8 +347,8 @@ private fun FullScreenCenter(padding: PaddingValues, content: @Composable () -> 
 }
 
 @Composable
-private fun DeactivatedProfileContent(padding: PaddingValues, profile: ProfileDto) {
-    FullScreenCenter(padding) {
+private fun DeactivatedProfileContent(profile: ProfileDto) {
+    FullScreenCenter {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             ProfileAvatar(profile.avatarUrl, size = 80.dp)
             Text(
@@ -394,7 +402,6 @@ private fun ProfileAvatar(avatarUrl: String?, size: Dp = 64.dp) {
 
 @Composable
 private fun ProfileContent(
-    padding: PaddingValues,
     listState: LazyListState,
     profile: ProfileDto,
     stats: ProfileStatsDto?,
@@ -446,10 +453,11 @@ private fun ProfileContent(
 
     LazyColumn(
         state = listState,
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(padding),
-        contentPadding = PaddingValues(bottom = 24.dp),
+        modifier = Modifier.fillMaxSize(),
+        // Madde 6: üst boşluk artık Scaffold'un DEĞİŞKEN padding'inden DEĞİL,
+        // TOP_BAR_HEIGHT ile SABİT ayrılıyor (bkz. yukarıdaki ProfileScreen
+        // Box yorumu).
+        contentPadding = PaddingValues(top = TOP_BAR_HEIGHT, bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
@@ -495,7 +503,11 @@ private fun ProfileContent(
         } else {
             item {
                 val selectedIndex = tabs.indexOf(selectedTab).coerceAtLeast(0)
-                TabRow(selectedTabIndex = selectedIndex) {
+                // Madde 7 (kullanıcı raporu: "Gönderiler, Medya, Beğenilenler,
+                // Kaydedilenler, Arşiv" sekmeleri taşıyor/sıkışıyor) - sabit
+                // genişlikli TabRow YERİNE ScrollableTabRow: 5 uzun Türkçe etiket
+                // artık sıkışıp satır kaymasına yol açmadan yatay kaydırılabilir.
+                ScrollableTabRow(selectedTabIndex = selectedIndex, edgePadding = 16.dp) {
                     tabs.forEach { tab ->
                         Tab(
                             selected = tab == selectedTab,

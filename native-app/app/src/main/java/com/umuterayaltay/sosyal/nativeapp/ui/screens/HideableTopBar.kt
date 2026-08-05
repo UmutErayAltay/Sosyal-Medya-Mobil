@@ -2,11 +2,14 @@ package com.umuterayaltay.sosyal.nativeapp.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -26,6 +29,13 @@ import androidx.compose.ui.unit.dp
 private val JITTER_THRESHOLD_DP = 12.dp
 private val TOP_SAFE_ZONE_DP = 80.dp
 private const val TOP_BAR_ANIM_MS = 250
+
+// Madde 6 (top bar mimarisi rewrite, kullanıcı raporu: "kararıyor"/"ışınlanıyor")
+// — Material3 standart TopAppBar yüksekliği, TÜM 4 ekranda (Feed/Discover/
+// Inbox/Profile) tek satır olduğu doğrulandı. private DEĞİL: FeedScreen.kt/
+// DiscoverScreen.kt/InboxScreen.kt/ProfileScreen.kt AYNI paketten (ui.screens)
+// contentPadding hesaplarken bu sabiti reuse eder (import GEREKMEZ).
+val TOP_BAR_HEIGHT = 64.dp
 
 /**
  * Feed/Discover/Inbox/Profile ekranlarının 3. deneme sonrası KULLANICI RAPORU:
@@ -116,6 +126,40 @@ fun HideableTopBar(
         exit = slideOutVertically(animationSpec = offsetSpec, targetOffsetY = { -it }) +
             fadeOut(animationSpec = animSpec),
     ) {
+        content()
+    }
+}
+
+/**
+ * Madde 6 (top bar mimarisi rewrite) — [HideableTopBar]'ın (yukarıda, hâlâ
+ * var - AnimatedVisibility Scaffold topBar slotu için kullanılabilir kalsın
+ * diye SİLİNMEDİ) YERİNE Feed/Discover/Inbox/Profile'da kullanılan overlay
+ * deseni: bar'ı `Scaffold`'un `topBar` slotundan tamamen ÇIKARIP bir
+ * `Box(Modifier.align(TopCenter))` katmanına taşımak, bar'ın görünürlük
+ * değişiminin İÇERİĞİN layout'unu/content-padding'ini HİÇ ETKİLEMEMESİNİ
+ * sağlar — web'in `position: fixed` + SADECE `transform: translateY()`
+ * navbar'ının (`app/static/css/style.css`) birebir native karşılığı.
+ *
+ * BİLEREK fadeIn/fadeOut YOK (HideableTopBar'ın AKSİNE) - web'in navbar'ı da
+ * fade YAPMIYOR, SADECE transform. Bar'ın kendisi `AnimatedVisibility` ile
+ * DEĞİL sabit `offset()` ile kaydırılır - bar tam gizliyken bile layout'ta
+ * YER KAPLAMAYA DEVAM EDER (bu YAN ETKİ DEĞİL, TASARIM: çağıran taraf zaten
+ * içerik LazyColumn'una `contentPadding = PaddingValues(top = TOP_BAR_HEIGHT
+ * + ...)` ile SABİT bir üst boşluk ayırıyor, bar'ın kendi layout alanı bu
+ * boşluğun tam altında/üstünde çakışmaz).
+ */
+@Composable
+fun OverlayTopBar(
+    visible: Boolean,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    val offsetY by animateDpAsState(
+        targetValue = if (visible) 0.dp else -TOP_BAR_HEIGHT,
+        animationSpec = tween(durationMillis = TOP_BAR_ANIM_MS, easing = FastOutSlowInEasing),
+        label = "topBarOffsetY",
+    )
+    Box(modifier = modifier.offset(y = offsetY)) {
         content()
     }
 }

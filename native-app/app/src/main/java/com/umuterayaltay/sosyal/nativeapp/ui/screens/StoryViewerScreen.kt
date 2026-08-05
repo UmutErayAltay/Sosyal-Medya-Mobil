@@ -41,6 +41,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -213,6 +214,10 @@ fun StoryViewerScreen(
                             }
                         },
                         onReact = { emoji -> viewModel.reactToStory(emoji) },
+                        // Madde 8 (kullanıcı raporu: yanıt yazarken süre durmuyor) —
+                        // basılı-tutma gesture'ıyla AYNI `paused` değişkeni, reply
+                        // alanı odaklanınca/odağı kaybedince de güncellenir.
+                        onReplyFocusChanged = { focused -> paused = focused },
                         modifier = Modifier.align(Alignment.BottomCenter),
                     )
                 } else {
@@ -453,6 +458,11 @@ private fun StoryFooter(
     onToggleReplyField: () -> Unit,
     onSendReply: () -> Unit,
     onReact: (String) -> Unit,
+    // Madde 8 (kullanıcı raporu: hikayeye yanıt yazarken süre durmuyor) —
+    // reply alanı odaklanınca/odağı kaybedince StoryViewerScreen'deki `paused`
+    // state'ini günceller (basılı-tutma gesture'ıyla AYNI değişken, iki
+    // kaynaktan biri true olduğunda duraklat mantığı zaten doğal çalışır).
+    onReplyFocusChanged: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -465,7 +475,9 @@ private fun StoryFooter(
                 OutlinedTextField(
                     value = replyText,
                     onValueChange = onReplyTextChange,
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .onFocusChanged { focusState -> onReplyFocusChanged(focusState.isFocused) },
                     placeholder = { Text("Yanıt gönder...", color = Color.White.copy(alpha = 0.6f)) },
                     singleLine = true,
                     keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = ImeAction.Send),

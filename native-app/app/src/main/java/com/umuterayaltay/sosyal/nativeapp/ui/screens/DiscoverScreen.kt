@@ -39,7 +39,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.InputChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -133,19 +132,15 @@ fun DiscoverScreen(
     // kullanılıyor.
     val isTopBarVisible by rememberTopBarVisibility(listState)
 
-    Scaffold(
-        topBar = {
-            HideableTopBar(visible = isTopBarVisible) {
-                TopAppBar(title = { Text("Keşfet") })
-            }
-        },
-    ) { padding ->
+    // Madde 6 (top bar mimarisi rewrite): FeedScreen.kt'deki AYNI karar -
+    // Scaffold'un topBar slotu TAMAMEN KALDIRILDI, bar artık bir Box overlay
+    // katmanı (OverlayTopBar), LazyColumn'un contentPadding'i TOP_BAR_HEIGHT
+    // kadar SABİT üst boşluk bırakır (bar'ın görünürlüğü bu boşluğu ETKİLEMEZ).
+    Box(modifier = Modifier.fillMaxSize()) {
         LazyColumn(
             state = listState,
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding),
-            contentPadding = PaddingValues(vertical = 8.dp),
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(top = TOP_BAR_HEIGHT + 8.dp, bottom = 8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             item {
@@ -308,6 +303,15 @@ fun DiscoverScreen(
                     }
                 }
             }
+        }
+
+        OverlayTopBar(
+            visible = isTopBarVisible,
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth(),
+        ) {
+            TopAppBar(title = { Text("Keşfet") })
         }
     }
 }

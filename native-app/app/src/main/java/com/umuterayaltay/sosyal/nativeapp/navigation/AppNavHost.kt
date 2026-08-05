@@ -280,6 +280,12 @@ fun AppNavHost() {
                 // Faz 5 Dalga 1B: ConversationScreen'in taşma menüsündeki
                 // "Tüm sohbetlerde ara" öğesinden GLOBAL arama ekranına gider.
                 onNavigateToMessageSearch = { navController.navigate("messageSearch") },
+                // Madde 9 (kullanıcı raporu: paylaşılan post'a tıklanmıyor) -
+                // PostDetailScreen'in ZATEN var olan "postDetail/{postId}"
+                // route'u REUSE edilir (postDetail/{postId}'nin diğer çağrı
+                // yerleriyle AYNI desen, bkz. yukarıdaki "profile/{username}"
+                // composable'ındaki onNavigateToPostDetail).
+                onNavigateToPostDetail = { postId -> navController.navigate("postDetail/$postId") },
                 onSessionExpired = {
                     navController.navigate(ROUTE_LOGIN) {
                         popUpTo(ROUTE_MAIN) { inclusive = true }

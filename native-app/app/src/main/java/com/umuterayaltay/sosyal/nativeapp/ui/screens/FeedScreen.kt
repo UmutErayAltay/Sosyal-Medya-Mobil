@@ -10,14 +10,18 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Tag
 import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material3.Button
@@ -26,7 +30,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -37,13 +40,18 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import coil.compose.AsyncImage
+import com.umuterayaltay.sosyal.nativeapp.network.SuggestedUserDto
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.FeedEvent
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.FeedUiState
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.FeedViewModel
@@ -79,6 +87,10 @@ fun FeedScreen(
     val isRefreshing by viewModel.isRefreshing.collectAsState()
     val unreadNotificationsCount by viewModel.unreadNotificationsCount.collectAsState()
     val storyBarItems by storyBarViewModel.items.collectAsState()
+    // Madde 1 (sonsuz kaydırma) + madde 2 (önerilen kullanıcılar).
+    val hasMore by viewModel.hasMore.collectAsState()
+    val loadingMore by viewModel.loadingMore.collectAsState()
+    val suggestedUsers by viewModel.suggestedUsers.collectAsState()
     val context = LocalContext.current
 
     LaunchedEffect(Unit) {
@@ -116,49 +128,33 @@ fun FeedScreen(
     val listState = rememberLazyListState()
     val isTopBarVisible by rememberTopBarVisibility(listState)
 
-    Scaffold(
-        topBar = {
-            HideableTopBar(visible = isTopBarVisible) {
-                TopAppBar(
-                    title = { Text("Ana Sayfa") },
-                    actions = {
-                        // InboxScreen'in ikon-butonları DESENİYLE tutarlı — yeni bir
-                        // ikonun YANINA eklendi, var olanın yerine geçmedi.
-                        IconButton(onClick = onNotificationsClick) {
-                            Box {
-                                Icon(Icons.Filled.Notifications, contentDescription = "Bildirimler")
-                                if (unreadNotificationsCount > 0) {
-                                    // ConversationRow/InboxScreen'in unread nokta rozeti
-                                    // deseniyle tutarlı - basit bir kırmızı/primary nokta.
-                                    Box(
-                                        modifier = Modifier
-                                            .align(Alignment.TopEnd)
-                                            .size(8.dp)
-                                            .clip(CircleShape)
-                                            .background(MaterialTheme.colorScheme.error),
-                                    )
-                                }
-                            }
-                        }
-                        // Gündem (Faz 4 sonrası eksik giderme SONUNCUSU) - bildirim
-                        // zilinin YANINA, var olan ikonların yerine geçmeden eklendi.
-                        IconButton(onClick = onTrendingClick) {
-                            Icon(Icons.Filled.Tag, contentDescription = "Gündem")
-                        }
-                        IconButton(onClick = onNewPostClick) {
-                            Icon(Icons.Filled.Add, contentDescription = "Yeni Gönderi")
-                        }
-                    },
-                )
+    // Madde 1 (sonsuz kaydırma) — DiscoverScreen.kt'deki AYNI desen: son
+    // görünür item listenin sonuna (son 3 item) yaklaşınca sonraki sayfa
+    // istenir. loadMore() zaten hasMore/loadingMore guard'lı, tekrar tekrar
+    // tetiklenmesi zararsız (early-return).
+    LaunchedEffect(listState) {
+        snapshotFlow { listState.layoutInfo }.collect { layoutInfo ->
+            val total = layoutInfo.totalItemsCount
+            val lastVisible = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+            if (total > 0 && lastVisible >= total - 3) {
+                viewModel.loadMore()
             }
-        },
-    ) { padding ->
+        }
+    }
+
+    // Madde 6 (top bar mimarisi rewrite): Scaffold'un topBar slotu TAMAMEN
+    // KALDIRILDI — bar artık içeriğin ÜSTÜNE binen bir Box overlay katmanı
+    // (OverlayTopBar, bkz. HideableTopBar.kt), aşağıdaki LazyColumn'un
+    // contentPadding'i TOP_BAR_HEIGHT kadar sabit boşluk bırakır. Bu sayede
+    // bar'ın görünürlük değişimi (yukarı/aşağı kaydırma) içerik alanının
+    // YENİDEN ÖLÇÜLMESİNE (reflow) yol AÇMAZ — web'in `position: fixed`
+    // navbar'ıyla AYNI davranış, kullanıcı raporundaki "kararma"/"ışınlanma"
+    // hissinin kök nedeni buydu.
+    Box(modifier = Modifier.fillMaxSize()) {
         PullToRefreshBox(
             isRefreshing = isRefreshing,
             onRefresh = { viewModel.refresh() },
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding),
+            modifier = Modifier.fillMaxSize(),
         ) {
             when {
                 posts.isEmpty() && uiState is FeedUiState.Loading -> FullScreenMessage {
@@ -222,7 +218,10 @@ fun FeedScreen(
                 else -> LazyColumn(
                     state = listState,
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(vertical = 12.dp),
+                    // Madde 6: üst boşluk artık Scaffold'un topBar slotundan DEĞİL,
+                    // burada TOP_BAR_HEIGHT ile SABİT ayrılıyor (bkz. yukarıdaki Box
+                    // yorumu) — bar görünürlüğü değişse bile bu değer HİÇ değişmez.
+                    contentPadding = PaddingValues(top = TOP_BAR_HEIGHT + 12.dp, bottom = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     // Faz 5 Dalga 2C: hikaye çubuğu — post listesinden ÖNCE,
@@ -235,22 +234,87 @@ fun FeedScreen(
                             onStoryClick = onNavigateToStoryViewer,
                         )
                     }
-                    items(posts, key = { it.id }) { post ->
-                        PostCard(
-                            post = post,
-                            onLikeClick = { viewModel.toggleLike(it.id) },
-                            onCommentClick = { onNavigateToPostDetail(it.id) },
-                            onHashtagClick = onNavigateToHashtag,
-                            onPollVote = { postId, optionId -> viewModel.votePoll(postId, optionId) },
-                            onMutePost = { postId -> viewModel.toggleMutePost(postId) },
-                            onBookmark = { postId -> viewModel.toggleBookmark(postId) },
-                            onRepost = { postId -> viewModel.repost(postId) },
-                            onReport = { postId -> viewModel.report(postId) },
-                            onSessionExpired = onSessionExpired,
-                        )
+                    // Madde 2 (önerilen kullanıcılar): web'in "5. post civarı" deseniyle
+                    // AYNI konum — index 4 (5. post), o post'un HEMEN ALTINA tek seferlik
+                    // bir yatay öneri şeridi eklenir. itemsIndexed kullanıldı (posts.size
+                    // <= 5 olduğunda hiç tetiklenmez, bu KABUL EDİLEBİLİR bir sınır).
+                    itemsIndexed(posts, key = { _, post -> post.id }) { index, post ->
+                        Column {
+                            PostCard(
+                                post = post,
+                                onLikeClick = { viewModel.toggleLike(it.id) },
+                                onCommentClick = { onNavigateToPostDetail(it.id) },
+                                onHashtagClick = onNavigateToHashtag,
+                                onPollVote = { postId, optionId -> viewModel.votePoll(postId, optionId) },
+                                onMutePost = { postId -> viewModel.toggleMutePost(postId) },
+                                onBookmark = { postId -> viewModel.toggleBookmark(postId) },
+                                onRepost = { postId -> viewModel.repost(postId) },
+                                onReport = { postId -> viewModel.report(postId) },
+                                onSessionExpired = onSessionExpired,
+                            )
+                            if (index == 4 && suggestedUsers.isNotEmpty()) {
+                                SuggestedUsersRow(
+                                    users = suggestedUsers,
+                                    onFollowClick = { user -> viewModel.toggleSuggestedFollow(user) },
+                                    modifier = Modifier.padding(top = 12.dp),
+                                )
+                            }
+                        }
+                    }
+                    // Madde 1: sonsuz kaydırma yükleme göstergesi — listenin SONUNDA,
+                    // DiscoverScreen'in "Daha fazla yükle" butonunun KARŞILIĞI ama
+                    // burada buton YOK (otomatik tetiklenir), sadece bir dönen gösterge.
+                    if (loadingMore) {
+                        item {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 16.dp),
+                                contentAlignment = Alignment.Center,
+                            ) { CircularProgressIndicator(modifier = Modifier.size(28.dp)) }
+                        }
                     }
                 }
             }
+        }
+
+        OverlayTopBar(
+            visible = isTopBarVisible,
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth(),
+        ) {
+            TopAppBar(
+                title = { Text("Ana Sayfa") },
+                actions = {
+                    // InboxScreen'in ikon-butonları DESENİYLE tutarlı — yeni bir
+                    // ikonun YANINA eklendi, var olanın yerine geçmedi.
+                    IconButton(onClick = onNotificationsClick) {
+                        Box {
+                            Icon(Icons.Filled.Notifications, contentDescription = "Bildirimler")
+                            if (unreadNotificationsCount > 0) {
+                                // ConversationRow/InboxScreen'in unread nokta rozeti
+                                // deseniyle tutarlı - basit bir kırmızı/primary nokta.
+                                Box(
+                                    modifier = Modifier
+                                        .align(Alignment.TopEnd)
+                                        .size(8.dp)
+                                        .clip(CircleShape)
+                                        .background(MaterialTheme.colorScheme.error),
+                                )
+                            }
+                        }
+                    }
+                    // Gündem (Faz 4 sonrası eksik giderme SONUNCUSU) - bildirim
+                    // zilinin YANINA, var olan ikonların yerine geçmeden eklendi.
+                    IconButton(onClick = onTrendingClick) {
+                        Icon(Icons.Filled.Tag, contentDescription = "Gündem")
+                    }
+                    IconButton(onClick = onNewPostClick) {
+                        Icon(Icons.Filled.Add, contentDescription = "Yeni Gönderi")
+                    }
+                },
+            )
         }
     }
 }
@@ -259,5 +323,84 @@ fun FeedScreen(
 private fun FullScreenMessage(content: @Composable () -> Unit) {
     Box(modifier = Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
         content()
+    }
+}
+
+/** Madde 2 (önerilen kullanıcılar) — yatay kaydırılabilir öneri şeridi.
+ * "Takip Et" aksiyonu FeedViewModel.toggleSuggestedFollow() üzerinden
+ * ProfileRepository.toggleFollow() reuse eder (YENİ bir repository İCAT
+ * EDİLMEDİ, bkz. FeedViewModel yorumu). */
+@Composable
+private fun SuggestedUsersRow(
+    users: List<SuggestedUserDto>,
+    onFollowClick: (SuggestedUserDto) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier = modifier) {
+        Text(
+            text = "Önerilen kullanıcılar",
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
+        )
+        LazyRow(
+            contentPadding = PaddingValues(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            items(users, key = { it.id }) { user ->
+                SuggestedUserCard(user = user, onFollowClick = { onFollowClick(user) })
+            }
+        }
+    }
+}
+
+@Composable
+private fun SuggestedUserCard(user: SuggestedUserDto, onFollowClick: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .width(120.dp)
+            .clip(MaterialTheme.shapes.medium)
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+            .padding(12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        if (!user.avatarUrl.isNullOrBlank()) {
+            AsyncImage(
+                model = user.avatarUrl,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .size(56.dp)
+                    .clip(CircleShape),
+            )
+        } else {
+            Box(
+                modifier = Modifier
+                    .size(56.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Person,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        Text(
+            text = user.username ?: "bilinmeyen",
+            style = MaterialTheme.typography.labelMedium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(top = 8.dp),
+        )
+        Button(
+            onClick = onFollowClick,
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+            modifier = Modifier.padding(top = 8.dp),
+        ) {
+            Text("Takip Et", style = MaterialTheme.typography.labelSmall)
+        }
     }
 }

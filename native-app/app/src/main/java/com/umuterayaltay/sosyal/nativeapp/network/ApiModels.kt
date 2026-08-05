@@ -128,10 +128,21 @@ data class PostDto(
     val poll: PollDto? = null,
 )
 
+/** app/api_v1/feed.py'nin feed() yanıtına eklediği önerilen kullanıcılar
+ * alanı — SADECE ilk sayfada (cursor=0) dolu gelir (sonraki sayfalarda null),
+ * bkz. FeedRepository.loadMore() yorumu (madde 2: native görev tanımı). */
+data class SuggestedUserDto(
+    val id: String,
+    val username: String?,
+    @SerializedName("avatar_url") val avatarUrl: String?,
+    @SerializedName("full_name") val fullName: String?,
+)
+
 data class FeedResponse(
     val posts: List<PostDto>?,
     @SerializedName("has_next") val hasNext: Boolean = false,
     @SerializedName("next_cursor") val nextCursor: Int? = null,
+    @SerializedName("suggested_users") val suggestedUsers: List<SuggestedUserDto>? = null,
     val error: String?,
 )
 

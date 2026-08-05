@@ -3,6 +3,7 @@ package com.umuterayaltay.sosyal.nativeapp.repository
 import com.umuterayaltay.sosyal.nativeapp.data.local.PostDao
 import com.umuterayaltay.sosyal.nativeapp.network.FeedApi
 import com.umuterayaltay.sosyal.nativeapp.network.RetrofitClient
+import com.umuterayaltay.sosyal.nativeapp.network.SuggestedUserDto
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -10,11 +11,28 @@ import kotlinx.coroutines.withContext
 import java.io.IOException
 
 sealed class FeedRefreshResult {
-    data object Success : FeedRefreshResult()
+    // Madde 1 (sonsuz kaydırma): backend'in her zaman döndürdüğü has_next/
+    // next_cursor artık burada da taşınıyor (öncesinde Success tek bir
+    // data object'ti, bu ikisi TAMAMEN yok sayılıyordu). suggestedUsers
+    // SADECE refresh()'te (cursor=0) dolu gelir, loadMore()'da her zaman null
+    // (madde 2: backend sözleşmesi, bkz. ApiModels.kt SuggestedUserDto yorumu).
+    data class Success(
+        val hasNext: Boolean,
+        val nextCursor: Int?,
+        val suggestedUsers: List<SuggestedUserDto>?,
+    ) : FeedRefreshResult()
     data class Error(val code: String?) : FeedRefreshResult()
 }
 
 private const val FIRST_PAGE_LIMIT = 20
+
+// Madde 10 (önbellek tanı taraması): sonsuz kaydırma (loadMore) tabloya SÜREKLİ
+// yeni satır ekler, refresh() (pull-to-refresh) DIŞINDA hiçbir şey onu budamaz
+// - kullanıcı uzun süre aşağı kaydırıp pull-to-refresh yapmazsa "posts" tablosu
+// sınırsız büyür. Web'in AKSİNE (server-side sayfalama, client hafızası
+// tutmuyor) native cache'i bu üst sınırın ÜZERİNE çıkınca en eski satırlar
+// budanır (bkz. PostDao.pruneOldest()).
+private const val MAX_CACHED_POSTS = 200
 
 /**
  * "Cache önce göster, sonra tazele" deseni: [observePosts] Room'daki mevcut
@@ -55,7 +73,41 @@ class FeedRepository(
                 val entities = body.posts.map { it.toEntity(cachedAt = now) }
                 postDao.clearAll()
                 postDao.insertAll(entities)
-                FeedRefreshResult.Success
+                FeedRefreshResult.Success(
+                    hasNext = body.hasNext,
+                    nextCursor = body.nextCursor,
+                    suggestedUsers = body.suggestedUsers,
+                )
+            } else {
+                val code = body?.error ?: RetrofitClient.parseErrorCode(response)
+                FeedRefreshResult.Error(code)
+            }
+        } catch (e: IOException) {
+            FeedRefreshResult.Error("network_error")
+        } catch (e: Exception) {
+            FeedRefreshResult.Error("unknown_error")
+        }
+    }
+
+    /** Madde 1 (sonsuz kaydırma): refresh()'in AKSİNE Room'u TEMİZLEMEZ,
+     * sadece yeni sayfayı EKLER — observePosts() zaten TÜM tabloyu createdAt
+     * DESC sıralıyor, bu yüzden ekleme otomatik doğru sıraya düşer, ayrı bir
+     * "sona ekle" mantığı GEREKMEZ. insertAll()'dan SONRA madde 10'un
+     * pruneOldest() budaması çağrılır (tablo sınırsız büyümesin diye). */
+    suspend fun loadMore(cursor: Int): FeedRefreshResult = withContext(Dispatchers.IO) {
+        try {
+            val response = feedApi.getFeed(cursor = cursor, limit = FIRST_PAGE_LIMIT)
+            val body = response.body()
+            if (response.isSuccessful && body?.posts != null) {
+                val now = System.currentTimeMillis()
+                val entities = body.posts.map { it.toEntity(cachedAt = now) }
+                postDao.insertAll(entities)
+                postDao.pruneOldest(MAX_CACHED_POSTS)
+                FeedRefreshResult.Success(
+                    hasNext = body.hasNext,
+                    nextCursor = body.nextCursor,
+                    suggestedUsers = body.suggestedUsers,
+                )
             } else {
                 val code = body?.error ?: RetrofitClient.parseErrorCode(response)
                 FeedRefreshResult.Error(code)

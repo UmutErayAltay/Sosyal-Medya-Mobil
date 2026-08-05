@@ -20,6 +20,21 @@ data class Poll(
     val myVote: String?,
 )
 
+/** RepostOfDto'nun sadeleştirilmiş domain karşılığı — Faz 5 sonrası eksik
+ * giderme: repostOf ApiModels.kt'de ZATEN vardı ama buraya (domain modele)
+ * hiç taşınmıyordu, bu yüzden repost atılan içeriksiz postlar (content boş)
+ * PostCard'da TAMAMEN BOŞ görünüyordu. Poll ile AYNI gerekçeyle (bkz. Post.poll
+ * yorumu) SADECE ağdan gelen postta dolu — Room cache'e (PostEntity) YAZILMAZ. */
+data class RepostEmbed(
+    val id: String?,
+    val content: String?,
+    val imageUrl: String?,
+    val videoUrl: String?,
+    val createdAt: String?,
+    val username: String?,
+    val avatarUrl: String?,
+)
+
 /** UI'nin gördüğü sade post modeli — hem ağdan hem Room cache'inden aynı şekilde üretilir. */
 data class Post(
     val id: String,
@@ -46,6 +61,9 @@ data class Post(
     val bookmarkedByMe: Boolean = false,
     /** SADECE profil "Kaydedilenler" listesinde dolu (hangi koleksiyona ait). */
     val bookmarkCollectionId: String? = null,
+    // Faz 5 sonrası eksik giderme: repost embed — SADECE ağdan gelen postta
+    // dolu (bkz. yukarıdaki RepostEmbed yorumu), Room cache'inden gelende null.
+    val repostOf: RepostEmbed? = null,
 )
 
 fun PostDto.toDomain(): Post = Post(
@@ -63,6 +81,17 @@ fun PostDto.toDomain(): Post = Post(
     mutedByMe = mutedByMe,
     bookmarkedByMe = bookmarkedByMe,
     bookmarkCollectionId = bookmarkCollectionId,
+    repostOf = repostOf?.let { r ->
+        RepostEmbed(
+            id = r.id,
+            content = r.content,
+            imageUrl = r.imageUrl,
+            videoUrl = r.videoUrl,
+            createdAt = r.createdAt,
+            username = r.profiles?.username,
+            avatarUrl = r.profiles?.avatarUrl,
+        )
+    },
     poll = poll?.let { p ->
         Poll(
             id = p.id,

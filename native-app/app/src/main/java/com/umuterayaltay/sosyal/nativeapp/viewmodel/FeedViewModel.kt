@@ -3,12 +3,14 @@ package com.umuterayaltay.sosyal.nativeapp.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.umuterayaltay.sosyal.nativeapp.ServiceLocator
+import com.umuterayaltay.sosyal.nativeapp.network.SuggestedUserDto
 import com.umuterayaltay.sosyal.nativeapp.repository.FeedRefreshResult
 import com.umuterayaltay.sosyal.nativeapp.repository.Poll
 import com.umuterayaltay.sosyal.nativeapp.repository.Post
 import com.umuterayaltay.sosyal.nativeapp.repository.ReportResult
 import com.umuterayaltay.sosyal.nativeapp.repository.RepostResult
 import com.umuterayaltay.sosyal.nativeapp.repository.ToggleBookmarkResult
+import com.umuterayaltay.sosyal.nativeapp.repository.ToggleFollowResult
 import com.umuterayaltay.sosyal.nativeapp.repository.ToggleLikeResult
 import com.umuterayaltay.sosyal.nativeapp.repository.ToggleMutePostResult
 import com.umuterayaltay.sosyal.nativeapp.repository.UnreadCountResult
@@ -49,6 +51,9 @@ class FeedViewModel : ViewModel() {
     private val bookmarksRepository = ServiceLocator.bookmarksRepository
     private val repostsRepository = ServiceLocator.repostsRepository
     private val reportsRepository = ServiceLocator.reportsRepository
+    // Madde 2 (önerilen kullanıcılar "Takip Et"): YENİ bir repository İCAT
+    // EDİLMEDİ - ProfileRepository.toggleFollow() reuse edildi (görev tanımı).
+    private val profileRepository = ServiceLocator.profileRepository
     private val tokenStore = ServiceLocator.tokenStore
 
     // Room'da poll kolonu YOK (bkz. PostEntity.toDomain() yorumu) — observePosts()
@@ -81,6 +86,22 @@ class FeedViewModel : ViewModel() {
     private val _events = MutableSharedFlow<FeedEvent>()
     val events: SharedFlow<FeedEvent> = _events
 
+    // Madde 1 (sonsuz kaydırma) — DiscoverViewModel'in discoverHasMore/
+    // discoverLoading state'leriyle AYNI desen, Feed'e ÖZGÜ tek fark: sayfa
+    // numarası yerine backend'in döndürdüğü opak next_cursor taşınır.
+    private val _hasMore = MutableStateFlow(false)
+    val hasMore: StateFlow<Boolean> = _hasMore.asStateFlow()
+
+    private val _nextCursor = MutableStateFlow<Int?>(null)
+
+    private val _loadingMore = MutableStateFlow(false)
+    val loadingMore: StateFlow<Boolean> = _loadingMore.asStateFlow()
+
+    // Madde 2 (önerilen kullanıcılar) — SADECE refresh() (cursor=0) dolduruyor,
+    // backend sözleşmesi gereği (bkz. ApiModels.kt SuggestedUserDto yorumu).
+    private val _suggestedUsers = MutableStateFlow<List<SuggestedUserDto>>(emptyList())
+    val suggestedUsers: StateFlow<List<SuggestedUserDto>> = _suggestedUsers.asStateFlow()
+
     init {
         refresh()
         loadUnreadNotificationsCount()
@@ -104,7 +125,12 @@ class FeedViewModel : ViewModel() {
         viewModelScope.launch {
             _isRefreshing.value = true
             when (val result = feedRepository.refresh()) {
-                is FeedRefreshResult.Success -> _uiState.value = FeedUiState.Success
+                is FeedRefreshResult.Success -> {
+                    _uiState.value = FeedUiState.Success
+                    _hasMore.value = result.hasNext
+                    _nextCursor.value = result.nextCursor
+                    _suggestedUsers.value = result.suggestedUsers ?: emptyList()
+                }
                 is FeedRefreshResult.Error -> {
                     if (result.code == "unauthorized") {
                         // Token geçersiz/süresi dolmuş — MVP kararı: proaktif doğrulama
@@ -117,6 +143,56 @@ class FeedViewModel : ViewModel() {
                 }
             }
             _isRefreshing.value = false
+        }
+    }
+
+    /** Madde 1 (sonsuz kaydırma) — FeedScreen'in listState'i sona yaklaşınca
+     * çağrılır. DiscoverViewModel.loadMoreDiscover() ile AYNI guard deseni
+     * (hasMore/loading iken erken çıkış, tekrar tekrar tetiklenmesi zararsız). */
+    fun loadMore() {
+        val cursor = _nextCursor.value
+        if (!_hasMore.value || _loadingMore.value || cursor == null) return
+        viewModelScope.launch {
+            _loadingMore.value = true
+            when (val result = feedRepository.loadMore(cursor)) {
+                is FeedRefreshResult.Success -> {
+                    _hasMore.value = result.hasNext
+                    _nextCursor.value = result.nextCursor
+                    // suggestedUsers burada BİLEREK yok sayılır (backend zaten
+                    // sadece cursor=0'da dolduruyor) - mevcut liste KORUNUR.
+                }
+                is FeedRefreshResult.Error -> {
+                    if (result.code == "unauthorized") {
+                        tokenStore.clearToken()
+                        _events.emit(FeedEvent.SessionExpired)
+                    }
+                    // Diğer hatalar sessizce yutulur - toggleLike() ile AYNI gerekçe
+                    // (bir sayfa daha yüklenemezse tüm akışı hata durumuna düşürmek istenmiyor).
+                }
+            }
+            _loadingMore.value = false
+        }
+    }
+
+    /** Madde 2 (önerilen kullanıcılar kartındaki "Takip Et") — başarılı olunca
+     * kullanıcı öneriler listesinden ÇIKARILIR (Instagram'ın "takip edince
+     * öneri kaybolur" deseni), backend'e ayrı bir "öneriyi gizle" isteği
+     * GÖNDERİLMEZ (kapsam dışı, sadece client-side liste güncellenir). */
+    fun toggleSuggestedFollow(user: SuggestedUserDto) {
+        val username = user.username ?: return
+        viewModelScope.launch {
+            when (val result = profileRepository.toggleFollow(username)) {
+                is ToggleFollowResult.Success -> {
+                    _suggestedUsers.value = _suggestedUsers.value.filterNot { it.id == user.id }
+                }
+                is ToggleFollowResult.Error -> {
+                    if (result.code == "unauthorized") {
+                        tokenStore.clearToken()
+                        _events.emit(FeedEvent.SessionExpired)
+                    }
+                    // Diğer hatalar sessizce yutulur - toggleLike() ile AYNI gerekçe.
+                }
+            }
         }
     }
 

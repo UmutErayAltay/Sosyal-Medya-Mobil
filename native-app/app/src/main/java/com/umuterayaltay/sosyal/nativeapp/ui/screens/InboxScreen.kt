@@ -26,7 +26,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -82,26 +81,14 @@ fun InboxScreen(
     val listState = rememberLazyListState()
     val isTopBarVisible by rememberTopBarVisibility(listState)
 
-    Scaffold(
-        topBar = {
-            HideableTopBar(visible = isTopBarVisible) {
-                TopAppBar(
-                    title = { Text("Mesajlar") },
-                    actions = {
-                        IconButton(onClick = onNewGroupClick) {
-                            Icon(Icons.Filled.GroupAdd, contentDescription = "Yeni Grup")
-                        }
-                        IconButton(onClick = onNewMessageClick) {
-                            Icon(Icons.Filled.Add, contentDescription = "Yeni Mesaj")
-                        }
-                    },
-                )
-            }
-        },
-    ) { padding ->
+    // Madde 6 (top bar mimarisi rewrite): FeedScreen.kt'deki AYNI karar -
+    // Scaffold'un topBar slotu TAMAMEN KALDIRILDI, bar artık bir Box overlay
+    // katmanı (OverlayTopBar), içerik TOP_BAR_HEIGHT kadar SABİT üst boşluk
+    // bırakır (bar'ın görünürlüğü bu boşluğu ETKİLEMEZ).
+    Box(modifier = Modifier.fillMaxSize()) {
         when {
-            loading && conversations.isEmpty() -> CenteredMessage(padding) { CircularProgressIndicator() }
-            error != null && conversations.isEmpty() -> CenteredMessage(padding) {
+            loading && conversations.isEmpty() -> CenteredMessage { CircularProgressIndicator() }
+            error != null && conversations.isEmpty() -> CenteredMessage {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
                         text = error ?: "",
@@ -113,7 +100,7 @@ fun InboxScreen(
                     }
                 }
             }
-            conversations.isEmpty() -> CenteredMessage(padding) {
+            conversations.isEmpty() -> CenteredMessage {
                 Text(
                     text = "Henüz mesajın yok",
                     style = MaterialTheme.typography.bodyLarge,
@@ -122,15 +109,32 @@ fun InboxScreen(
             }
             else -> LazyColumn(
                 state = listState,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding),
-                contentPadding = PaddingValues(vertical = 4.dp),
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(top = TOP_BAR_HEIGHT + 4.dp, bottom = 4.dp),
             ) {
                 items(conversations, key = { it.id }) { conversation ->
                     ConversationRow(conversation, onClick = { onConversationClick(conversation.id) })
                 }
             }
+        }
+
+        OverlayTopBar(
+            visible = isTopBarVisible,
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth(),
+        ) {
+            TopAppBar(
+                title = { Text("Mesajlar") },
+                actions = {
+                    IconButton(onClick = onNewGroupClick) {
+                        Icon(Icons.Filled.GroupAdd, contentDescription = "Yeni Grup")
+                    }
+                    IconButton(onClick = onNewMessageClick) {
+                        Icon(Icons.Filled.Add, contentDescription = "Yeni Mesaj")
+                    }
+                },
+            )
         }
     }
 }
@@ -227,12 +231,15 @@ private fun ConversationRow(conversation: ConversationSummaryDto, onClick: () ->
     }
 }
 
+// Madde 6: padding parametresi Scaffold ile birlikte KALDIRILDI - artık
+// TOP_BAR_HEIGHT ile SABİT bir üst boşluk bırakılıyor (bkz. yukarıdaki Box
+// yorumu), Scaffold'un DEĞİŞKEN padding'ine bağımlılık YOK.
 @Composable
-private fun CenteredMessage(padding: PaddingValues, content: @Composable () -> Unit) {
+private fun CenteredMessage(content: @Composable () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .padding(padding)
+            .padding(top = TOP_BAR_HEIGHT)
             .padding(32.dp),
         contentAlignment = Alignment.Center,
     ) {

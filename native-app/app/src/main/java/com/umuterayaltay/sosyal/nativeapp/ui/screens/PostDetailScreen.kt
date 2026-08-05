@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -332,6 +333,23 @@ private fun CommentRow(
                     modifier = Modifier
                         .padding(top = 4.dp)
                         .size(if (isReply) 64.dp else 80.dp),
+                )
+            }
+            // Madde 3 (kullanıcı raporu: yorumlarda GIF gözükmüyor) — sticker ile
+            // AYNI kapsam-dışı-bırakma deseni: CommentDto.gifUrl doğru tipliydi
+            // ama render eden kod hiç yazılmamıştı. GIF'ler genelde sticker'dan
+            // daha geniş olduğu için fillMaxWidth + heightIn(max) kullanılır
+            // (sabit kare boyut YERİNE, GIF'in kendi oranı korunur).
+            comment.gifUrl?.takeIf { it.isNotBlank() }?.let { gifUrl ->
+                AsyncImage(
+                    model = gifUrl,
+                    contentDescription = "GIF",
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier
+                        .padding(top = 4.dp)
+                        .fillMaxWidth()
+                        .heightIn(max = if (isReply) 120.dp else 180.dp)
+                        .clip(MaterialTheme.shapes.small),
                 )
             }
             Row(

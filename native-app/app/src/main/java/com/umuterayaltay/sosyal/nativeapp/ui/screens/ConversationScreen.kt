@@ -89,6 +89,20 @@ import com.umuterayaltay.sosyal.nativeapp.viewmodel.ConversationViewModel
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.ConversationViewModelFactory
 import kotlinx.coroutines.launch
 
+// Madde 9 (kullanıcı raporu: chatte paylaşılan post'a tıklanmıyor) — backend'in
+// (app/api_v1/messaging.py api_share_post() / app/messaging/sending.py)
+// ürettiği paylaşılan-post mesaj formatı: "📎 Paylaşılan post: /post/{id}\n\"...\"".
+// Web'in chat.js'i AYNI prefiksi metin ayrıştırmasıyla kart görünümüne çeviriyor
+// (bkz. app/static/js/chat.js satır ~205) — burada TAM görsel kart YAPILMADI
+// (kapsam dışı bırakıldı, görev tanımı), SADECE tıklanabilirlik eklendi.
+private const val SHARED_POST_PREFIX = "📎 Paylaşılan post:"
+private val SHARED_POST_ID_REGEX = Regex("/post/([\\w-]+)")
+
+private fun extractSharedPostId(content: String?): String? {
+    if (content.isNullOrBlank() || !content.contains(SHARED_POST_PREFIX)) return null
+    return SHARED_POST_ID_REGEX.find(content)?.groupValues?.getOrNull(1)
+}
+
 /**
  * Tek bir konuşma ekranı — mesaj geçmişi (eskiden yeniye, yukarı kaydırınca
  * daha eski sayfa) + metin gönderme (+ yanıtlama) + Faz 5 Dalga 1B mesaj
@@ -104,6 +118,12 @@ fun ConversationScreen(
     onNavigateBack: () -> Unit,
     onManageGroupClick: () -> Unit,
     onNavigateToMessageSearch: () -> Unit,
+    // Madde 9 (kullanıcı raporu: paylaşılan post'a tıklanmıyor) — VARSAYILAN
+    // DEĞERLİ ({}), diğer opsiyonel callback'lerle AYNI gerekçe (PostCard.kt
+    // deseni): henüz bağlanmamış çağrı yerleri (varsa) değişmeden derlenmeye
+    // devam eder. AppNavHost.kt'de PostDetailScreen'in ZATEN var olan
+    // "postDetail/{postId}" route'una bağlanır.
+    onNavigateToPostDetail: (String) -> Unit = {},
     onSessionExpired: () -> Unit,
     viewModel: ConversationViewModel = viewModel(
         factory = ConversationViewModelFactory(conversationId),
@@ -383,6 +403,7 @@ fun ConversationScreen(
                             message = message,
                             isMine = myUserId != null && message.senderId == myUserId,
                             onLongPress = { viewModel.selectMessage(message) },
+                            onPostClick = onNavigateToPostDetail,
                         )
                     }
                 }
@@ -534,7 +555,15 @@ private fun ConversationSearchResults(
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun MessageBubble(message: MessageDto, isMine: Boolean, onLongPress: () -> Unit) {
+private fun MessageBubble(
+    message: MessageDto,
+    isMine: Boolean,
+    onLongPress: () -> Unit,
+    // Madde 9: VARSAYILAN DEĞERLİ ({}) - diğer opsiyonel callback'lerle AYNI
+    // gerekçe (bkz. ConversationScreen fonksiyon imzası yorumu).
+    onPostClick: (String) -> Unit = {},
+) {
+    val sharedPostId = extractSharedPostId(message.content)
     val bubbleColor = if (isMine) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
     val contentColor = if (isMine) {
         MaterialTheme.colorScheme.onPrimaryContainer
@@ -566,8 +595,14 @@ private fun MessageBubble(message: MessageDto, isMine: Boolean, onLongPress: () 
                     .alpha(bubbleAlpha)
                     // Uzun basınca aksiyon menüsü (Faz 5 Dalga 1B) — eskiden
                     // TEK aksiyon (yanıtla) vardı, şimdi MessageActionsSheet
-                    // açılıyor (yanıtla dahil TÜM aksiyonlar orada).
-                    .combinedClickable(onClick = {}, onLongClick = onLongPress),
+                    // açılıyor (yanıtla dahil TÜM aksiyonlar orada). Madde 9:
+                    // kısa tıklama artık paylaşılan-post mesajlarında post
+                    // detayına gider (sharedPostId null ise ÖNCEKİ davranış -
+                    // hiçbir şey olmaz - AYNEN korunur).
+                    .combinedClickable(
+                        onClick = { sharedPostId?.let(onPostClick) },
+                        onLongClick = onLongPress,
+                    ),
                 shape = bubbleShape,
                 colors = CardDefaults.cardColors(containerColor = bubbleColor),
             ) {
