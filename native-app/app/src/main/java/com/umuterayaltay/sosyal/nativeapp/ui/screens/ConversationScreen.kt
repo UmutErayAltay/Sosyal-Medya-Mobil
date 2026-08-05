@@ -41,6 +41,7 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.VideoCall
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -154,6 +155,11 @@ fun ConversationScreen(
     // devam eder. AppNavHost.kt'de PostDetailScreen'in ZATEN var olan
     // "postDetail/{postId}" route'una bağlanır.
     onNavigateToPostDetail: (String) -> Unit = {},
+    // Grup sesli/görüntülü arama (native görev — LiveKit) — VARSAYILAN
+    // DEĞERLİ ({}), onNavigateToPostDetail ile AYNI gerekçe (henüz
+    // bağlanmamış çağrı yerleri değişmeden derlenmeye devam eder).
+    // AppNavHost.kt'de yeni "call/{conversationId}" route'una bağlanır.
+    onCallClick: () -> Unit = {},
     onSessionExpired: () -> Unit,
     viewModel: ConversationViewModel = viewModel(
         factory = ConversationViewModelFactory(conversationId),
@@ -298,6 +304,13 @@ fun ConversationScreen(
                                 Icon(Icons.Filled.Search, contentDescription = "Sohbette ara")
                             }
                             if (conversationInfo?.isGroup == true) {
+                                // Grup sesli/görüntülü arama (native görev — LiveKit) —
+                                // SADECE grup konuşmalarında görünür (1:1'de bu
+                                // endpoint/ekran hiç kullanılmaz, bkz. CallScreen
+                                // dosya yorumu).
+                                IconButton(onClick = onCallClick) {
+                                    Icon(Icons.Filled.VideoCall, contentDescription = "Sesli/görüntülü arama")
+                                }
                                 IconButton(onClick = onManageGroupClick) {
                                     Icon(Icons.Filled.Groups, contentDescription = "Grubu Yönet")
                                 }

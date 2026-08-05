@@ -165,6 +165,26 @@ dependencies {
     implementation(platform("com.google.firebase:firebase-bom:33.7.0"))
     implementation("com.google.firebase:firebase-messaging-ktx")
 
+    // Grup sesli/görüntülü arama (native görev — LiveKit) — backend zaten hazır
+    // (app/api_v1/messaging.py api_call_token(), commit 5a03122): POST
+    // messages/conversations/{id}/call-token bir LiveKit JWT + url + room adı
+    // döner (bkz. MessagingApi.getCallToken()). Coordinate'ler context7 MCP ile
+    // (/livekit/client-sdk-android, /livekit/components-android) DOĞRULANDI —
+    // tahmin edilmedi. Core SDK "io.livekit:livekit-android" (Room.connect(),
+    // LocalParticipant.setCameraEnabled/setMicrophoneEnabled) + Compose
+    // yardımcıları "io.livekit:livekit-android-compose-components"
+    // (rememberParticipants/rememberParticipantTrackReferences/VideoTrackView —
+    // bkz. CallScreen.kt). CameraX uzantısı (pinch-to-zoom/torch) ve
+    // track-processors (virtual background) BİLİNÇLİ olarak eklenmedi — bu
+    // turun kapsamı SADECE temel grup görüşmesi (aç/kapa mikrofon-kamera +
+    // video grid), gereksiz bağımlılık şişmesin diye. JitPack maven deposu
+    // resmi kurulum talimatına göre settings.gradle.kts'e ZORUNLU olarak
+    // eklendi (io.livekit paketi bu depodan çözülüyor) — CLAUDE.md'nin
+    // "kararlılık > özellik hızı" ilkesi gereği bu adım atlanmadı, aksi halde
+    // gerçek `gradlew assembleDebug` bağımlılık çözümlemesinde BAŞARISIZ olurdu.
+    implementation("io.livekit:livekit-android:2.27.0")
+    implementation("io.livekit:livekit-android-compose-components:2.4.0")
+
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")

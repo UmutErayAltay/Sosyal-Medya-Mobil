@@ -950,6 +950,19 @@ data class MessageSearchResponse(
     val error: String? = null,
 )
 
+/** POST messages/conversations/{id}/call-token yanıtı — app/api_v1/messaging.py
+ * api_call_token() (commit 5a03122) `jsonify(token=jwt_token, url=livekit_url,
+ * room=room_name)` ile birebir eşleşir. Hata durumunda (503 group_calls_not_configured
+ * / 404 not_found / 500 token_generation_failed) backend {"error": "..."} döner,
+ * bu üç alan boş kalır — bu yüzden nullable, MessagingRepository.getCallToken()
+ * doluluk kontrolünü YAPAR (SendMessageResponse.message ile AYNI desen). */
+data class CallTokenResponse(
+    val token: String? = null,
+    val url: String? = null,
+    val room: String? = null,
+    val error: String? = null,
+)
+
 // ---- FAZ5: Şifre sıfırlama + Sticker backend/API (Dalga 1C) ----
 
 /** POST /auth/forgot-password gövdesi — yanıt HER ZAMAN {"ok":true}

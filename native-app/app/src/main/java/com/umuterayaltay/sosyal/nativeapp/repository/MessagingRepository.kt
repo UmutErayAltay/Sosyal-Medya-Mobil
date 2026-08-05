@@ -146,6 +146,17 @@ sealed class MessageSearchResult {
     data class Error(val code: String?) : MessageSearchResult()
 }
 
+/** Grup sesli/görüntülü arama (native görev — LiveKit) — app/api_v1/messaging.py
+ * api_call_token() ile birebir eşleşir. [Error.code] backend'in ürettiği
+ * ham hata koduyla AYNI ("group_calls_not_configured"/"not_found"/
+ * "unauthorized"/"token_generation_failed") — CallViewModel bu kodlara göre
+ * dallanır (bkz. o dosyanın handleError() yorumu), burada AYRICA bir eşleme
+ * YAPILMAZ (diğer *Result.Error desenleriyle AYNI, tek doğruluk kaynağı backend). */
+sealed class CallTokenResult {
+    data class Success(val token: String, val url: String, val room: String) : CallTokenResult()
+    data class Error(val code: String?) : CallTokenResult()
+}
+
 /**
  * Gelen kutusu + konuşma geçmişi (sayfalı) + metin mesajı gönder(+reply_to) +
  * yeni konuşma başlat (get-or-create) + okundu işaretle için repository.
@@ -550,6 +561,24 @@ class MessagingRepository(
             MessageSearchResult.Error("network_error")
         } catch (e: Exception) {
             MessageSearchResult.Error("unknown_error")
+        }
+    }
+
+    // ---- Grup sesli/görüntülü arama (native görev — LiveKit) ----
+
+    suspend fun getCallToken(conversationId: String): CallTokenResult = withContext(Dispatchers.IO) {
+        try {
+            val response = messagingApi.getCallToken(conversationId)
+            val body = response.body()
+            if (response.isSuccessful && body?.token != null && body.url != null && body.room != null) {
+                CallTokenResult.Success(body.token, body.url, body.room)
+            } else {
+                CallTokenResult.Error(body?.error ?: RetrofitClient.parseErrorCode(response))
+            }
+        } catch (e: IOException) {
+            CallTokenResult.Error("network_error")
+        } catch (e: Exception) {
+            CallTokenResult.Error("unknown_error")
         }
     }
 }

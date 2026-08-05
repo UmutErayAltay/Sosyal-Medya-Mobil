@@ -136,4 +136,12 @@ interface MessagingApi {
         @Query("q") query: String,
         @Query("offset") offset: Int,
     ): Response<MessageSearchResponse>
+
+    // ---- Grup sesli/görüntülü arama (native görev — LiveKit) — app/api_v1/
+    // messaging.py api_call_token() (commit 5a03122) ile birebir eşleşir.
+    // 503 {"error":"group_calls_not_configured"} LiveKit env var'ları henüz
+    // ayarlanmamışsa, 404 {"error":"not_found"} katılımcı değilse VEYA
+    // konuşma grup değilse (bkz. CallViewModel/CallScreen).
+    @POST("messages/conversations/{id}/call-token")
+    suspend fun getCallToken(@Path("id") conversationId: String): Response<CallTokenResponse>
 }

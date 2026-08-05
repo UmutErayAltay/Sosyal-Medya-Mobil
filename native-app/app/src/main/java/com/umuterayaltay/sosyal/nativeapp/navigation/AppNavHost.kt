@@ -9,6 +9,7 @@ import androidx.navigation.navArgument
 import com.umuterayaltay.sosyal.nativeapp.ServiceLocator
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.ActiveSessionsScreen
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.BlockedUsersScreen
+import com.umuterayaltay.sosyal.nativeapp.ui.screens.CallScreen
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.CloseFriendsScreen
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.ConversationScreen
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.CreatePostScreen
@@ -286,6 +287,29 @@ fun AppNavHost() {
                 // yerleriyle AYNI desen, bkz. yukarıdaki "profile/{username}"
                 // composable'ındaki onNavigateToPostDetail).
                 onNavigateToPostDetail = { postId -> navController.navigate("postDetail/$postId") },
+                // Grup sesli/görüntülü arama (native görev — LiveKit) —
+                // "conversation/{conversationId}" route'unun HEMEN yanında,
+                // AYNI conversationId argüman deseniyle tanımlı "call/
+                // {conversationId}" route'una gider (bkz. aşağıdaki
+                // composable("call/{conversationId}")). SADECE ConversationScreen'in
+                // TopAppBar'ındaki (isGroup==true iken görünen) arama ikonundan
+                // erişilir.
+                onCallClick = { navController.navigate("call/$conversationId") },
+                onSessionExpired = {
+                    navController.navigate(ROUTE_LOGIN) {
+                        popUpTo(ROUTE_MAIN) { inclusive = true }
+                    }
+                },
+            )
+        }
+        composable(
+            route = "call/{conversationId}",
+            arguments = listOf(navArgument("conversationId") { type = NavType.StringType }),
+        ) { backStackEntry ->
+            val conversationId = backStackEntry.arguments?.getString("conversationId") ?: return@composable
+            CallScreen(
+                conversationId = conversationId,
+                onNavigateBack = { navController.navigateUp() },
                 onSessionExpired = {
                     navController.navigate(ROUTE_LOGIN) {
                         popUpTo(ROUTE_MAIN) { inclusive = true }
