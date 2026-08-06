@@ -185,6 +185,23 @@ dependencies {
     implementation("io.livekit:livekit-android:2.27.0")
     implementation("io.livekit:livekit-android-compose-components:2.4.0")
 
+    // 1:1 sesli/görüntülü arama (native görev — WebRTC + Supabase Realtime
+    // broadcast) — TAMAMEN AYRI bir sistem LiveKit'ten (grup araması yukarıda,
+    // dokunulmadı): web tarafı (app/static/js/call.js) saf WebRTC + Supabase
+    // Realtime broadcast sinyalleşmesi kullanıyor, backend'de bu iş için hiç
+    // endpoint YOK. Coordinate'ler context7 MCP ile (/getstream/webrtc-android)
+    // DOĞRULANDI: "io.getstream:stream-webrtc-android" (org.webrtc.* — standart
+    // Google WebRTC Java API'sinin derlenmiş hâli, PeerConnectionFactory/
+    // Camera2Capturer/SurfaceViewRenderer/EglBase) + AYRI bir "-compose" modülü
+    // (VideoRenderer composable — videoTrack/eglBaseContext/rendererEvents
+    // alır, LiveKit'in VideoTrackView'ine denk). KTX modülü (coroutine
+    // sarmalayıcıları) BİLİNÇLİ olarak eklenmedi — SdpObserver/PeerConnection.
+    // Observer callback'leri projenin zaten kullandığı AuthRepository.
+    // currentFcmToken() deseniyle (suspendCancellableCoroutine) elle sarmalandı,
+    // gereksiz bağımlılık şişmesin diye.
+    implementation("io.getstream:stream-webrtc-android:1.3.9")
+    implementation("io.getstream:stream-webrtc-android-compose:1.3.9")
+
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")

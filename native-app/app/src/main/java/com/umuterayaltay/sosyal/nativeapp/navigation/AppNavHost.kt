@@ -1,12 +1,46 @@
 package com.umuterayaltay.sosyal.nativeapp.navigation
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Call
+import androidx.compose.material.icons.filled.CallEnd
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import coil.compose.AsyncImage
 import com.umuterayaltay.sosyal.nativeapp.ServiceLocator
+import com.umuterayaltay.sosyal.nativeapp.repository.CallPhase
+import com.umuterayaltay.sosyal.nativeapp.ui.screens.OneOnOneCallScreen
+import java.net.URLDecoder
+import java.net.URLEncoder
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.ActiveSessionsScreen
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.BlockedUsersScreen
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.CallScreen
@@ -141,6 +175,22 @@ fun AppNavHost() {
     val navController = rememberNavController()
     val startDestination = if (ServiceLocator.authRepository.isLoggedIn()) ROUTE_MAIN else ROUTE_LOGIN
 
+    // 1:1 sesli/görüntülü arama (native görev — WebRTC + Supabase Realtime
+    // broadcast, LiveKit grup aramasından TAMAMEN AYRI): `calls:<meId>`
+    // dinleyicisi burada, NavHost'un KÖK seviyesinde, oturum açıkken SÜREKLİ
+    // başlatılır (görev notu — "gelen arama uygulamanın HANGİ ekranında
+    // olursa olsun yakalanabilmeli", web'in call.js'inin sayfa-geneli
+    // davranışıyla AYNI). CallSessionManager.startGlobalListening() idempotent
+    // olduğu için AppNavHost'un recomposition'larında tekrar tekrar
+    // çağrılması ZARARSIZ.
+    LaunchedEffect(Unit) {
+        if (ServiceLocator.authRepository.isLoggedIn()) {
+            val me = ServiceLocator.authRepository.getCurrentUser()
+            me?.id?.let { ServiceLocator.callSessionManager.startGlobalListening(it) }
+        }
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
     NavHost(navController = navController, startDestination = startDestination) {
         composable(ROUTE_LOGIN) {
             LoginScreen(
@@ -295,6 +345,21 @@ fun AppNavHost() {
                 // TopAppBar'ındaki (isGroup==true iken görünen) arama ikonundan
                 // erişilir.
                 onCallClick = { navController.navigate("call/$conversationId") },
+                // 1:1 sesli/görüntülü arama (native görev — WebRTC + Supabase
+                // Realtime broadcast) — "call/{conversationId}"nin (grup, LiveKit)
+                // HEMEN yanında, AYRI "oneOnOneCall/..." rotasına gider. Tıklanan
+                // ikon her zaman GÖRÜNTÜLÜ arama başlatır (isVideo=true path
+                // segmenti sabit "true") — arama SIRASINDA sesliye geçiş
+                // (kamerayı kapatma) OneOnOneCallScreen'in kontrol çubuğundaki
+                // kamera aç/kapat butonuyla yapılır, ama SESLİ başlayıp SONRADAN
+                // görüntülüye geçiş (web'in upgrade-offer'ı) bu turun kapsamı
+                // DIŞI (görev notu) — bu yüzden tek ikon EN ESNEK varsayılan
+                // olarak video ile başlıyor (MVP kararı, rapor edildi).
+                onOneOnOneCallClick = { otherUserId, otherName, otherAvatarUrl ->
+                    val encodedName = URLEncoder.encode(otherName, "UTF-8")
+                    val encodedAvatar = URLEncoder.encode(otherAvatarUrl ?: "_", "UTF-8")
+                    navController.navigate("oneOnOneCall/$conversationId/$otherUserId/true/$encodedName/$encodedAvatar")
+                },
                 onSessionExpired = {
                     navController.navigate(ROUTE_LOGIN) {
                         popUpTo(ROUTE_MAIN) { inclusive = true }
@@ -605,8 +670,157 @@ fun AppNavHost() {
             )
         }
 
+        // 1:1 sesli/görüntülü arama (native görev) — arayan tarafın rotası,
+        // ConversationScreen'in YENİ (isGroup==false iken görünen) arama
+        // ikonundan gelir. otherName/otherAvatar path segment olarak
+        // URL-encode edilip taşınır (rest of the codebase gibi SADECE path
+        // segment kullanılıyor, query-string YOK — tutarlılık için).
+        composable(
+            route = "oneOnOneCall/{conversationId}/{otherUserId}/{isVideo}/{otherName}/{otherAvatar}",
+            arguments = listOf(
+                navArgument("conversationId") { type = NavType.StringType },
+                navArgument("otherUserId") { type = NavType.StringType },
+                navArgument("isVideo") { type = NavType.BoolType },
+                navArgument("otherName") { type = NavType.StringType },
+                navArgument("otherAvatar") { type = NavType.StringType },
+            ),
+        ) { backStackEntry ->
+            val args = backStackEntry.arguments
+            val conversationId = args?.getString("conversationId") ?: return@composable
+            val otherUserId = args.getString("otherUserId") ?: return@composable
+            val isVideo = args.getBoolean("isVideo")
+            val otherName = args.getString("otherName")?.let { URLDecoder.decode(it, "UTF-8") }
+            val otherAvatarRaw = args.getString("otherAvatar")?.let { URLDecoder.decode(it, "UTF-8") }
+            OneOnOneCallScreen(
+                conversationId = conversationId,
+                otherUserId = otherUserId,
+                isVideo = isVideo,
+                otherName = otherName,
+                otherAvatar = otherAvatarRaw?.takeIf { it != "_" },
+                onNavigateBack = { navController.navigateUp() },
+            )
+        }
+        // Aranan tarafın rotası — SADECE gelen-arama overlay'inin "Kabul et"
+        // butonundan gelir, argüman TAŞIMAZ (offer/otherId/conversationId
+        // zaten CallSessionManager'da bekliyor, bkz. o sınıfın
+        // pendingOfferSdp'si + IncomingRinging fazı).
+        composable("oneOnOneCallIncoming") {
+            OneOnOneCallScreen(onNavigateBack = { navController.navigateUp() })
+        }
+
         // FAZ5_COMPOSABLE_MARKER — her ajan kendi composable("route") { ... }
         // bloğunu bu satırın HEMEN ÜSTÜNE ekler (dalga başına ayrı ajan
         // çakışmasın diye).
+    }
+
+        // Gelen-arama global overlay — NavHost'un ÜSTÜNDE (hangi route
+        // gösteriliyorsa gösterilsin üstte belirir), CallSessionManager.phase
+        // IncomingRinging olduğu sürece görünür.
+        IncomingCallOverlay(
+            onAccept = { navController.navigate("oneOnOneCallIncoming") },
+        )
+    }
+}
+
+/** Kabul/reddet — Reddet DOĞRUDAN CallSessionManager.rejectIncoming()'i
+ * çağırır (navigasyon YOK, kullanıcı bulunduğu ekranda kalır); Kabul et
+ * "oneOnOneCallIncoming" rotasına navigate eder, gerçek WebRTC accept
+ * akışı OneOnOneCallScreen'de (izin verildikten SONRA) tetiklenir. */
+@Composable
+private fun IncomingCallOverlay(onAccept: () -> Unit) {
+    val phase by ServiceLocator.callSessionManager.phase.collectAsState()
+    val incoming = phase as? CallPhase.IncomingRinging ?: return
+    // "Kabul et" navigasyonu ATINCA phase hâlâ bir süre IncomingRinging kalır
+    // (WebRTC kurulumu asenkron, bkz. CallSessionManager.acceptIncoming) — bu
+    // overlay o kısa pencerede YENİ navigate edilen OneOnOneCallScreen'in
+    // ÜSTÜNDE görünmeye devam ederdi, ikinci bir dokunuş (Kabul et'e tekrar
+    // basıp navigasyonu TEKRAR tetiklemek ya da o sırada Reddet'e basmak) hâlâ
+    // MÜMKÜN olurdu. `remember(incoming)` her YENİ gelen arama için sıfırlanan
+    // yerel bir "zaten ele alındı" bayrağıyla, ilk dokunuştan sonra overlay
+    // KENDİSİNİ gizler (phase'in gerçekten değişmesini BEKLEMEDEN).
+    var handled by remember(incoming) { mutableStateOf(false) }
+    if (handled) return
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.92f)),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(32.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            if (!incoming.callerAvatar.isNullOrBlank()) {
+                AsyncImage(
+                    model = incoming.callerAvatar,
+                    contentDescription = null,
+                    modifier = Modifier
+                        .size(96.dp)
+                        .clip(CircleShape),
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .size(96.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFF1C1C1E)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Person,
+                        contentDescription = null,
+                        tint = Color.White.copy(alpha = 0.7f),
+                        modifier = Modifier.size(48.dp),
+                    )
+                }
+            }
+            Text(
+                text = incoming.callerName,
+                color = Color.White,
+                style = MaterialTheme.typography.headlineSmall,
+                modifier = Modifier.padding(top = 16.dp),
+            )
+            Text(
+                text = if (incoming.isVideo) "Görüntülü arama..." else "Sesli arama...",
+                color = Color.White.copy(alpha = 0.7f),
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(top = 4.dp, bottom = 40.dp),
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(48.dp)) {
+                IconButton(
+                    onClick = {
+                        handled = true
+                        ServiceLocator.callSessionManager.rejectIncoming()
+                    },
+                    colors = IconButtonDefaults.iconButtonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = Color.White,
+                    ),
+                    modifier = Modifier
+                        .size(64.dp)
+                        .clip(CircleShape),
+                ) {
+                    Icon(Icons.Filled.CallEnd, contentDescription = "Reddet")
+                }
+                IconButton(
+                    onClick = {
+                        handled = true
+                        onAccept()
+                    },
+                    colors = IconButtonDefaults.iconButtonColors(
+                        containerColor = Color(0xFF2E7D32),
+                        contentColor = Color.White,
+                    ),
+                    modifier = Modifier
+                        .size(64.dp)
+                        .clip(CircleShape),
+                ) {
+                    Icon(Icons.Filled.Call, contentDescription = "Kabul et")
+                }
+            }
+        }
     }
 }

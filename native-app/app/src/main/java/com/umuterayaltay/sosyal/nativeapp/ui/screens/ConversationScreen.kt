@@ -160,6 +160,18 @@ fun ConversationScreen(
     // bağlanmamış çağrı yerleri değişmeden derlenmeye devam eder).
     // AppNavHost.kt'de yeni "call/{conversationId}" route'una bağlanır.
     onCallClick: () -> Unit = {},
+    // 1:1 sesli/görüntülü arama (native görev — WebRTC + Supabase Realtime
+    // broadcast, LiveKit grup aramasından TAMAMEN AYRI) — SADECE isGroup==false
+    // iken görünen AYRI bir ikon (bkz. aşağıdaki TopAppBar actions). otherUserId
+    // backend'in ConversationInfoDto'sunda YOK (bkz. app/api_v1/messaging.py
+    // api_message_conversation_detail() — "conversation" JSON'ı SADECE
+    // name/avatar_url döner, other_user id'sini DÖNMÜYOR ve backend'e
+    // DOKUNULMAYACAK, görev kısıtı) — bu yüzden mesaj listesindeki İLK
+    // "benden olmayan" mesajın sender_id'si kullanılır (bkz. aşağıdaki
+    // otherUserId remember bloğu). Karşı taraf HİÇ mesaj göndermemişse
+    // (tamamen tek taraflı yeni bir sohbet) otherUserId çözülemez ve ikon
+    // gizlenir — bilinçli MVP sınırı, raporda belirtildi.
+    onOneOnOneCallClick: (otherUserId: String, otherName: String, otherAvatarUrl: String?) -> Unit = { _, _, _ -> },
     onSessionExpired: () -> Unit,
     viewModel: ConversationViewModel = viewModel(
         factory = ConversationViewModelFactory(conversationId),
@@ -197,6 +209,13 @@ fun ConversationScreen(
     var showForwardSheet by remember { mutableStateOf(false) }
     var editingMessage by remember { mutableStateOf<MessageDto?>(null) }
     var editText by remember { mutableStateOf("") }
+
+    // 1:1 arama ikonu için — bkz. yukarıdaki onOneOnOneCallClick parametresi
+    // yorumu (backend other_user id döndürmediği için mesaj listesinden
+    // türetiliyor).
+    val otherUserIdForCall = remember(messages, myUserId) {
+        messages.firstOrNull { it.senderId.isNotBlank() && it.senderId != myUserId }?.senderId
+    }
 
     val actionsSheetState = rememberModalBottomSheetState()
     val forwardSheetState = rememberModalBottomSheetState()
@@ -313,6 +332,27 @@ fun ConversationScreen(
                                 }
                                 IconButton(onClick = onManageGroupClick) {
                                     Icon(Icons.Filled.Groups, contentDescription = "Grubu Yönet")
+                                }
+                            } else if (conversationInfo?.isGroup == false && otherUserIdForCall != null) {
+                                // 1:1 sesli/görüntülü arama (native görev — WebRTC +
+                                // Supabase Realtime broadcast) — grup ikonuyla AYNI
+                                // satırda, birbirini DIŞLAYAN koşulla (bkz. yukarıdaki
+                                // if dalı). Bu callback'in kendisi isVideo TAŞIMAZ —
+                                // gerçek karar AppNavHost.kt'nin onOneOnOneCallClick
+                                // implementasyonunda: ikon HER ZAMAN GÖRÜNTÜLÜ arama
+                                // başlatır (route'un isVideo path segmenti sabit
+                                // "true"), sesliye geçiş arama ekranındaki kamera
+                                // aç/kapat butonuyla yapılır — web'in ayrı sesli/
+                                // görüntülü butonu yerine TEK ikon MVP kararı (rapor
+                                // edildi, bkz. AppNavHost.kt'deki AYNI karar yorumu).
+                                IconButton(onClick = {
+                                    onOneOnOneCallClick(
+                                        otherUserIdForCall,
+                                        conversationInfo?.name ?: "Kullanıcı",
+                                        conversationInfo?.avatarUrl,
+                                    )
+                                }) {
+                                    Icon(Icons.Filled.VideoCall, contentDescription = "Sesli/görüntülü arama")
                                 }
                             }
                             IconButton(onClick = { showOverflowMenu = true }) {

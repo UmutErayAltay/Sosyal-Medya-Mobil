@@ -1,0 +1,363 @@
+package com.umuterayaltay.sosyal.nativeapp.repository
+
+import android.content.Context
+import com.umuterayaltay.sosyal.nativeapp.webrtc.WebRtcCallManager
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.launch
+import org.webrtc.VideoTrack
+
+enum class CallEndReason { LOCAL_HANGUP, REMOTE_HANGUP, REJECTED, NO_ANSWER, FAILED, ERROR }
+
+/** Web'in call.js `state.callState` (idle/ringing/active/ended) ile AYNI
+ * durum makinesi — burada arayan/aranan ayrımı da tip seviyesinde (Outgoing
+ * vs Incoming) net. */
+sealed class CallPhase {
+    data object Idle : CallPhase()
+    data class OutgoingRinging(
+        val conversationId: String,
+        val otherUserId: String,
+        val otherName: String,
+        val otherAvatar: String?,
+        val isVideo: Boolean,
+    ) : CallPhase()
+    data class IncomingRinging(
+        val conversationId: String?,
+        val otherUserId: String,
+        val callerName: String,
+        val callerAvatar: String?,
+        val isVideo: Boolean,
+    ) : CallPhase()
+    data class Active(
+        val conversationId: String?,
+        val otherUserId: String,
+        val otherName: String,
+        val otherAvatar: String?,
+        val isVideo: Boolean,
+        val isCaller: Boolean,
+        val startedAtMs: Long,
+    ) : CallPhase()
+    data class Ended(val reason: CallEndReason) : CallPhase()
+}
+
+/**
+ * 1:1 WebRTC aramasının UÇTAN UCA orkestrasyonu — [CallSignalingManager]
+ * (Supabase Realtime sinyalleşmesi) + [WebRtcCallManager] (PeerConnection)
+ * arasında köprü, web'in call.js dosyasındaki TEK global `state` objesiyle
+ * AYNI rolü oynuyor. BİLEREK bir ViewModel DEĞİL, ServiceLocator'da UYGULAMA
+ * ÖMRÜ boyunca yaşayan bir singleton (bkz. ServiceLocator.callSessionManager)
+ * — arama, kullanıcı hangi ekrana geçerse geçsin (Feed/Discover/başka bir
+ * konuşma) devam etmeli ve gelen arama HERHANGİ bir ekranda yakalanabilmeli
+ * (görev notu, web'in de AYNI sayfa-geneli davranışı) — bir ViewModel
+ * navigasyonla birlikte dispose olurdu, bu yüzden state Compose lifecycle'ının
+ * DIŞINA taşındı. [OneOnOneCallViewModel] bu sınıfın StateFlow'larını
+ * SADECE Compose'a yansıtan ince bir katman.
+ */
+class CallSessionManager(
+    private val signaling: CallSignalingManager,
+    private val authRepository: AuthRepository,
+) {
+    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
+    private var myUserId: String? = null
+    private var listening = false
+    private var webRtc: WebRtcCallManager? = null
+    private var pendingOfferSdp: String? = null
+    private var noAnswerJob: Job? = null
+
+    // startCall()/acceptIncoming() PeerConnectionFactory kurulumu/SDP üretimi
+    // için asenkron çalışır (yüzlerce ms sürebilir) — bu sırada kullanıcı
+    // hangup()/rejectIncoming() ile aramayı senkron olarak Ended/Idle'a
+    // düşürebilir. generation her teardown'da (cleanupAndEnd/rejectIncoming)
+    // artırılır; async iş bitince kendi ürettiği değerle KARŞILAŞTIRIR —
+    // uyuşmuyorsa (araya bir teardown girmiş) webRtc'yi ata/phase'i Active'e
+    // GEÇİRMEDEN dispose eder. Bu koruma OLMADAN: kamera/mikrofon açık kalan,
+    // hiçbir yerden dispose edilmeyen bir WebRtcCallManager sızdırılabilir ve
+    // zaten Idle/Ended olan phase yanlışlıkla Active'e geri döndürülebilirdi.
+    private var generation = 0
+
+    private val _phase = MutableStateFlow<CallPhase>(CallPhase.Idle)
+    val phase: StateFlow<CallPhase> = _phase.asStateFlow()
+
+    private val _localVideoTrack = MutableStateFlow<VideoTrack?>(null)
+    val localVideoTrack: StateFlow<VideoTrack?> = _localVideoTrack.asStateFlow()
+
+    private val _remoteVideoTrack = MutableStateFlow<VideoTrack?>(null)
+    val remoteVideoTrack: StateFlow<VideoTrack?> = _remoteVideoTrack.asStateFlow()
+
+    private val _isMicEnabled = MutableStateFlow(true)
+    val isMicEnabled: StateFlow<Boolean> = _isMicEnabled.asStateFlow()
+
+    private val _isCameraEnabled = MutableStateFlow(false)
+    val isCameraEnabled: StateFlow<Boolean> = _isCameraEnabled.asStateFlow()
+
+    fun eglBaseContext() = WebRtcCallManager.eglBaseContextOrNull()
+
+    /** AppNavHost kök seviyesinde LaunchedEffect(Unit) ile çağrılır (görev
+     * notu — "calls:<meId> kanalına ABONELİĞİ tek bir yerden, oturum
+     * açıkken SÜREKLİ açık tut"). idempotent: aynı kullanıcı için tekrarlı
+     * çağrı no-op (config-change/recomposition güvenli). */
+    fun startGlobalListening(userId: String) {
+        if (listening && myUserId == userId) return
+        listening = true
+        myUserId = userId
+        scope.launch { signaling.connect(userId) }
+        signaling.incoming.onEach { handleSignal(it) }.launchIn(scope)
+    }
+
+    private fun handleSignal(signal: CallSignal) {
+        val me = myUserId ?: return
+        if (signal.from == me) return
+        when (signal) {
+            is CallSignal.Offer -> handleOffer(signal)
+            is CallSignal.Answer -> handleAnswer(signal)
+            is CallSignal.Ice -> webRtc?.addRemoteIceCandidate(signal.candidate, signal.sdpMLineIndex, signal.sdpMid)
+            is CallSignal.Hangup -> {
+                if (_phase.value !is CallPhase.Idle && _phase.value !is CallPhase.Ended) {
+                    cleanupAndEnd(CallEndReason.REMOTE_HANGUP)
+                }
+            }
+            is CallSignal.Reject -> {
+                // SADECE biz ararken (OutgoingRinging) anlamlı — web'in AYNI
+                // koruması (bkz. call.js handleSignal 'reject' dalı yorumu):
+                // kurulu bir aramayı bayat bir reject sinyali ÖLDÜRMESİN.
+                if (_phase.value is CallPhase.OutgoingRinging) {
+                    cleanupAndEnd(CallEndReason.REJECTED)
+                }
+            }
+        }
+    }
+
+    private fun handleOffer(signal: CallSignal.Offer) {
+        if (_phase.value !is CallPhase.Idle) {
+            // Meşgulüm — web'in AYNI davranışı (call.js: reject SADECE ARAYANA gider).
+            val me = myUserId ?: return
+            scope.launch { signaling.sendSignal(signal.from, CallSignal.Reject(me, signal.conversationId)) }
+            return
+        }
+        pendingOfferSdp = signal.sdp
+        _phase.value = CallPhase.IncomingRinging(
+            conversationId = signal.conversationId,
+            otherUserId = signal.from,
+            callerName = signal.callerName,
+            callerAvatar = signal.callerAvatar,
+            isVideo = signal.video,
+        )
+    }
+
+    private fun handleAnswer(signal: CallSignal.Answer) {
+        val outgoing = _phase.value as? CallPhase.OutgoingRinging ?: return
+        noAnswerJob?.cancel()
+        scope.launch {
+            try {
+                webRtc?.setRemoteAnswer(signal.sdp)
+                _phase.value = CallPhase.Active(
+                    conversationId = outgoing.conversationId,
+                    otherUserId = outgoing.otherUserId,
+                    otherName = outgoing.otherName,
+                    otherAvatar = outgoing.otherAvatar,
+                    isVideo = outgoing.isVideo,
+                    isCaller = true,
+                    startedAtMs = System.currentTimeMillis(),
+                )
+            } catch (e: Exception) {
+                cleanupAndEnd(CallEndReason.ERROR)
+            }
+        }
+    }
+
+    /** Arayan taraf — ConversationScreen'in yeni 1:1 arama ikonundan çağrılır. */
+    fun startCall(
+        context: Context,
+        conversationId: String,
+        otherUserId: String,
+        isVideo: Boolean,
+        otherName: String,
+        otherAvatar: String?,
+    ) {
+        val me = myUserId ?: return
+        if (_phase.value !is CallPhase.Idle) return
+        _phase.value = CallPhase.OutgoingRinging(conversationId, otherUserId, otherName, otherAvatar, isVideo)
+        val myGeneration = ++generation
+        scope.launch {
+            try {
+                val rtc = WebRtcCallManager(
+                    context = context,
+                    enableVideo = isVideo,
+                    onIceCandidate = { candidate ->
+                        scope.launch {
+                            signaling.sendSignal(
+                                otherUserId,
+                                CallSignal.Ice(me, conversationId, candidate.sdp, candidate.sdpMLineIndex, candidate.sdpMid),
+                            )
+                        }
+                    },
+                    onRemoteVideoTrack = { track -> _remoteVideoTrack.value = track },
+                    onConnectionFailed = { cleanupAndEnd(CallEndReason.FAILED) },
+                )
+                val offerSdp = rtc.createOffer()
+                if (myGeneration != generation) {
+                    // Araya hangup()/cleanupAndEnd() girdi (kullanıcı çağrıyı
+                    // SDP üretimi bitmeden iptal etti) — bu rtc'yi hiçbir yere
+                    // atamadan doğrudan dispose et, phase'e DOKUNMA.
+                    rtc.dispose()
+                    return@launch
+                }
+                webRtc = rtc
+                _localVideoTrack.value = rtc.localVideoTrack
+                _isCameraEnabled.value = isVideo
+                _isMicEnabled.value = true
+
+                val myProfile = authRepository.getCurrentUser()
+                signaling.sendSignal(
+                    otherUserId,
+                    CallSignal.Offer(
+                        from = me,
+                        conversationId = conversationId,
+                        sdp = offerSdp,
+                        video = isVideo,
+                        callerName = myProfile?.username ?: "Birisi",
+                        callerAvatar = myProfile?.avatarUrl,
+                    ),
+                )
+
+                noAnswerJob?.cancel()
+                noAnswerJob = scope.launch {
+                    delay(30_000)
+                    if (_phase.value is CallPhase.OutgoingRinging) {
+                        cleanupAndEnd(CallEndReason.NO_ANSWER)
+                    }
+                }
+            } catch (e: Exception) {
+                cleanupAndEnd(CallEndReason.ERROR)
+            }
+        }
+    }
+
+    /** Aranan taraf — gelen-arama overlay'inin "Kabul et" butonundan (izin
+     * verildikten SONRA, bkz. OneOnOneCallScreen) çağrılır. */
+    fun acceptIncoming(context: Context) {
+        val incoming = _phase.value as? CallPhase.IncomingRinging ?: return
+        val sdp = pendingOfferSdp ?: return
+        val me = myUserId ?: return
+        val myGeneration = ++generation
+        scope.launch {
+            try {
+                val rtc = WebRtcCallManager(
+                    context = context,
+                    enableVideo = incoming.isVideo,
+                    onIceCandidate = { candidate ->
+                        scope.launch {
+                            signaling.sendSignal(
+                                incoming.otherUserId,
+                                CallSignal.Ice(me, incoming.conversationId, candidate.sdp, candidate.sdpMLineIndex, candidate.sdpMid),
+                            )
+                        }
+                    },
+                    onRemoteVideoTrack = { track -> _remoteVideoTrack.value = track },
+                    onConnectionFailed = { cleanupAndEnd(CallEndReason.FAILED) },
+                )
+                val answerSdp = rtc.createAnswerForOffer(sdp)
+                if (myGeneration != generation) {
+                    // Araya rejectIncoming()/cleanupAndEnd() girdi (kullanıcı
+                    // kabul ile ret arasında hızlıca reddetti) — rtc'yi hiçbir
+                    // yere atamadan dispose et, zaten gönderilmiş Reject'in
+                    // üzerine yanlışlıkla bir Answer/Active YAZMA.
+                    rtc.dispose()
+                    return@launch
+                }
+                webRtc = rtc
+                _localVideoTrack.value = rtc.localVideoTrack
+                _isCameraEnabled.value = incoming.isVideo
+                _isMicEnabled.value = true
+                pendingOfferSdp = null
+
+                signaling.sendSignal(incoming.otherUserId, CallSignal.Answer(me, incoming.conversationId, answerSdp))
+
+                _phase.value = CallPhase.Active(
+                    conversationId = incoming.conversationId,
+                    otherUserId = incoming.otherUserId,
+                    otherName = incoming.callerName,
+                    otherAvatar = incoming.callerAvatar,
+                    isVideo = incoming.isVideo,
+                    isCaller = false,
+                    startedAtMs = System.currentTimeMillis(),
+                )
+            } catch (e: Exception) {
+                cleanupAndEnd(CallEndReason.ERROR)
+            }
+        }
+    }
+
+    /** Gelen-arama overlay'inin "Reddet" butonu — web'in rejectCall()'ı gibi
+     * DOĞRUDAN Idle'a döner (Ended ekranı YOK, hiç kabul edilmemiş bir arama
+     * için "arama bitti" göstermeye gerek yok). */
+    fun rejectIncoming() {
+        val incoming = _phase.value as? CallPhase.IncomingRinging ?: return
+        val me = myUserId ?: return
+        generation++
+        pendingOfferSdp = null
+        scope.launch { signaling.sendSignal(incoming.otherUserId, CallSignal.Reject(me, incoming.conversationId)) }
+        _phase.value = CallPhase.Idle
+    }
+
+    /** Kullanıcı "kapat" butonuna basınca (OutgoingRinging VEYA Active
+     * durumunda) — karşı tarafa hangup sinyali + yerel WebRTC temizliği. */
+    fun hangup() {
+        val current = _phase.value
+        val me = myUserId
+        val targetId = when (current) {
+            is CallPhase.OutgoingRinging -> current.otherUserId
+            is CallPhase.Active -> current.otherUserId
+            else -> null
+        }
+        val conversationId = when (current) {
+            is CallPhase.OutgoingRinging -> current.conversationId
+            is CallPhase.Active -> current.conversationId
+            else -> null
+        }
+        if (me != null && targetId != null) {
+            scope.launch { signaling.sendSignal(targetId, CallSignal.Hangup(me, conversationId)) }
+        }
+        cleanupAndEnd(CallEndReason.LOCAL_HANGUP)
+    }
+
+    fun toggleMic() {
+        val newValue = !_isMicEnabled.value
+        webRtc?.setMicEnabled(newValue)
+        _isMicEnabled.value = newValue
+    }
+
+    fun toggleCamera() {
+        val newValue = !_isCameraEnabled.value
+        webRtc?.setCameraEnabled(newValue)
+        _isCameraEnabled.value = newValue
+    }
+
+    private fun cleanupAndEnd(reason: CallEndReason) {
+        generation++
+        noAnswerJob?.cancel()
+        noAnswerJob = null
+        webRtc?.dispose()
+        webRtc = null
+        pendingOfferSdp = null
+        _localVideoTrack.value = null
+        _remoteVideoTrack.value = null
+        _phase.value = CallPhase.Ended(reason)
+    }
+
+    /** [CallPhase.Ended] kısa ömürlü bir ara durum — OneOnOneCallScreen bitiş
+     * sebebini kısaca gösterip geri navigasyon yaptıktan SONRA bunu çağırıp
+     * Idle'a döner (bir sonraki arama temiz başlasın diye). */
+    fun resetToIdle() {
+        if (_phase.value is CallPhase.Ended) _phase.value = CallPhase.Idle
+    }
+}

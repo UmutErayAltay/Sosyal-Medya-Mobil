@@ -46,6 +46,8 @@ import com.umuterayaltay.sosyal.nativeapp.network.SharesApi
 import com.umuterayaltay.sosyal.nativeapp.repository.SharesRepository
 import com.umuterayaltay.sosyal.nativeapp.network.ReportsApi
 import com.umuterayaltay.sosyal.nativeapp.repository.ReportsRepository
+import com.umuterayaltay.sosyal.nativeapp.repository.CallSignalingManager
+import com.umuterayaltay.sosyal.nativeapp.repository.CallSessionManager
 // FAZ5_IMPORTS_MARKER — her ajan kendi Api/Repository import'unu bu satırın
 // HEMEN ÜSTÜNE ekler (dalga başına ayrı ajan çakışmasın diye).
 
@@ -101,6 +103,13 @@ object ServiceLocator {
     lateinit var sharesRepository: SharesRepository
         private set
     lateinit var reportsRepository: ReportsRepository
+        private set
+    // 1:1 sesli/görüntülü arama (native görev — WebRTC + Supabase Realtime
+    // broadcast, LiveKit grup aramasından TAMAMEN AYRI) — bkz. CallSignalingManager/
+    // CallSessionManager sınıf yorumları.
+    lateinit var callSignalingManager: CallSignalingManager
+        private set
+    lateinit var callSessionManager: CallSessionManager
         private set
     // FAZ5_LATEINIT_MARKER — her ajan kendi `lateinit var xxxRepository`'sini
     // bu satırın HEMEN ÜSTÜNE ekler.
@@ -169,6 +178,11 @@ object ServiceLocator {
 
         val reportsApi = retrofit.create(ReportsApi::class.java)
         reportsRepository = ReportsRepository(reportsApi)
+
+        // authRepository'ye bağımlı — realtimeConnectionManager ile AYNI
+        // gerekçe (/realtime-token onun üzerinden çağrılıyor).
+        callSignalingManager = CallSignalingManager(authRepository)
+        callSessionManager = CallSessionManager(callSignalingManager, authRepository)
 
         // FAZ5_INIT_MARKER — her ajan kendi `val xxxApi = retrofit.create(...)`
         // + `xxxRepository = XxxRepository(xxxApi)` satırlarını bu satırın
