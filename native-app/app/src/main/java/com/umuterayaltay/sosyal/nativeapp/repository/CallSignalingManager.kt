@@ -202,6 +202,16 @@ class CallSignalingManager(private val authRepository: AuthRepository) {
     private val outboundMutex = Mutex()
     private val outboundChannels = mutableMapOf<String, RealtimeChannel>()
 
+    // Art arda başarısız connectOnce() denemesi sayacı — bir JWT imza anahtarı
+    // rotasyonu SONRASI backend'in normal (saat bazlı) yenileme kısayolu
+    // bozuk-ama-henüz-süresi-dolmamış token'ı sonsuza kadar sunabilir (bkz.
+    // getRealtimeToken(force) yorumu); İLK başarısız denemeden SONRA bir
+    // sonraki tur force=true göndererek backend'i GERÇEK bir Supabase
+    // yenilemesine zorluyoruz, kullanıcı sekmeyi/uygulamayı kapatıp açmak
+    // ZORUNDA kalmadan kendi kendine iyileşsin diye (canlı bulgu — bkz. görev
+    // notu, aksi halde "Unauthorized" süresiz döngüye giriyordu).
+    private var consecutiveFailures = 0
+
     private val _incoming = MutableSharedFlow<CallSignal>(extraBufferCapacity = 16)
     val incoming: SharedFlow<CallSignal> = _incoming.asSharedFlow()
 
@@ -232,12 +242,14 @@ class CallSignalingManager(private val authRepository: AuthRepository) {
      * artık SESSİZCE yutmuyor (çağıran [startListening] retry kararını verir). */
     private suspend fun connectOnce(userId: String): Boolean {
         try {
-            Log.d(TAG, "connectOnce: başlıyor, userId=$userId")
-            val tokenResult = authRepository.getRealtimeToken()
+            val forceTokenRefresh = consecutiveFailures > 0
+            Log.d(TAG, "connectOnce: başlıyor, userId=$userId, force=$forceTokenRefresh")
+            val tokenResult = authRepository.getRealtimeToken(force = forceTokenRefresh)
             val token = when (tokenResult) {
                 is RealtimeTokenResult.Success -> tokenResult
                 is RealtimeTokenResult.Error -> {
                     Log.w(TAG, "connectOnce: getRealtimeToken başarısız (kod=${tokenResult.code})")
+                    consecutiveFailures++
                     return false
                 }
             }
@@ -282,13 +294,16 @@ class CallSignalingManager(private val authRepository: AuthRepository) {
             }
             if (subscribed != true || ch.status.value != RealtimeChannel.Status.SUBSCRIBED) {
                 Log.w(TAG, "connectOnce: subscribe başarısız, status=${ch.status.value}, timedOut=${subscribed != true}")
+                consecutiveFailures++
                 return false
             }
             Log.d(TAG, "connectOnce: SUBSCRIBED, calls:$userId dinleniyor")
+            consecutiveFailures = 0
 
             cs.launch { periodicTokenRefresh(client) }
             return true
         } catch (e: Exception) {
+            consecutiveFailures++
             Log.e(TAG, "connectOnce: beklenmeyen hata", e)
             return false
         }

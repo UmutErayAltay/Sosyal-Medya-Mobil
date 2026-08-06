@@ -149,10 +149,17 @@ class AuthRepository(
      * docstring'i — "Realtime hiçbir zaman ÇEKİRDEK bir özellik değildir").
      * Buradaki HER hata çağıran tarafın SESSİZCE polling'e düşmesi gereken bir
      * sinyaldir — ana bearer token'a (bu repository'nin diğer metotlarının
-     * kullandığı, TokenStore'daki) HİÇ dokunulmaz. */
-    suspend fun getRealtimeToken(): RealtimeTokenResult = withContext(Dispatchers.IO) {
+     * kullandığı, TokenStore'daki) HİÇ dokunulmaz.
+     *
+     * [force]: çağıran taraf (bkz. CallSignalingManager.connectOnce) art arda
+     * subscribe/CHANNEL_ERROR başarısızlığı gördüğünde true geçer — backend'in
+     * normal SAAT bazlı yenileme kısayolunu atlatıp Supabase'den GERÇEKTEN
+     * taze bir token ister (bir JWT imza anahtarı rotasyonu token'ı saat
+     * açısından hâlâ geçerliyken anlık geçersiz kılabilir, aksi halde sistem
+     * bozuk token'ı süresi dolana kadar sonsuza kadar sunardı). */
+    suspend fun getRealtimeToken(force: Boolean = false): RealtimeTokenResult = withContext(Dispatchers.IO) {
         try {
-            val response = authApi.getRealtimeToken()
+            val response = authApi.getRealtimeToken(force = if (force) 1 else null)
             val body = response.body()
             val accessToken = body?.accessToken
             val supabaseUrl = body?.supabaseUrl

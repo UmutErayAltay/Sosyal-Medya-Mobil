@@ -26,8 +26,12 @@ interface AuthApi {
     // Mesajlaşmaya ÖZEL değil (ana bearer token'a bağlı genel bir auth
     // endpoint'i — app/api_v1.py api_realtime_token()) — bu yüzden
     // MessagingApi'ye DEĞİL, buraya eklendi (bkz. RealtimeConnectionManager).
+    // force=1: çağıran taraf art arda kanal seviyesinde Unauthorized/subscribe
+    // başarısızlığı GÖRDÜĞÜNDE gönderir — normal yol SAAT bazlı yeniler,
+    // bir JWT imza anahtarı rotasyonu token'ı saat açısından hâlâ geçerliyken
+    // anlık geçersiz kılabilir (bkz. api_v1/auth.py api_realtime_token()).
     @GET("realtime-token")
-    suspend fun getRealtimeToken(): Response<RealtimeTokenResponse>
+    suspend fun getRealtimeToken(@Query("force") force: Int? = null): Response<RealtimeTokenResponse>
 
     // FAZ5: Şifre sıfırlama (Dalga 1C) — auth YOK (login/register gibi açık
     // endpoint), HER DURUMDA {"ok":true} döner (enumeration koruması backend'de
