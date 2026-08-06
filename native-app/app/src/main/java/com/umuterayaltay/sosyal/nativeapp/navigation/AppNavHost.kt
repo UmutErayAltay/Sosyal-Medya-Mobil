@@ -347,18 +347,17 @@ fun AppNavHost() {
                 onCallClick = { navController.navigate("call/$conversationId") },
                 // 1:1 sesli/görüntülü arama (native görev — WebRTC + Supabase
                 // Realtime broadcast) — "call/{conversationId}"nin (grup, LiveKit)
-                // HEMEN yanında, AYRI "oneOnOneCall/..." rotasına gider. Tıklanan
-                // ikon her zaman GÖRÜNTÜLÜ arama başlatır (isVideo=true path
-                // segmenti sabit "true") — arama SIRASINDA sesliye geçiş
-                // (kamerayı kapatma) OneOnOneCallScreen'in kontrol çubuğundaki
-                // kamera aç/kapat butonuyla yapılır, ama SESLİ başlayıp SONRADAN
-                // görüntülüye geçiş (web'in upgrade-offer'ı) bu turun kapsamı
-                // DIŞI (görev notu) — bu yüzden tek ikon EN ESNEK varsayılan
-                // olarak video ile başlıyor (MVP kararı, rapor edildi).
-                onOneOnOneCallClick = { otherUserId, otherName, otherAvatarUrl ->
+                // HEMEN yanında, AYRI "oneOnOneCall/..." rotasına gider.
+                // Kullanıcı raporu üzerine ("sadece görüntülü arama var normal
+                // arama yok") ConversationScreen artık AYRI sesli/görüntülü
+                // ikon çifti sunuyor, isVideo BURADA parametre olarak geliyor
+                // (önceki turda path segmenti sabit "true"ydu — düzeltildi).
+                // Sesli başlayıp SONRADAN görüntülüye geçiş (web'in
+                // upgrade-offer'ı) hâlâ bu turun kapsamı DIŞI.
+                onOneOnOneCallClick = { otherUserId, otherName, otherAvatarUrl, isVideo ->
                     val encodedName = URLEncoder.encode(otherName, "UTF-8")
                     val encodedAvatar = URLEncoder.encode(otherAvatarUrl ?: "_", "UTF-8")
-                    navController.navigate("oneOnOneCall/$conversationId/$otherUserId/true/$encodedName/$encodedAvatar")
+                    navController.navigate("oneOnOneCall/$conversationId/$otherUserId/$isVideo/$encodedName/$encodedAvatar")
                 },
                 onSessionExpired = {
                     navController.navigate(ROUTE_LOGIN) {

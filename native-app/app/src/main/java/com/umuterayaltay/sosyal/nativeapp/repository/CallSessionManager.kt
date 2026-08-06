@@ -104,12 +104,19 @@ class CallSessionManager(
     /** AppNavHost kök seviyesinde LaunchedEffect(Unit) ile çağrılır (görev
      * notu — "calls:<meId> kanalına ABONELİĞİ tek bir yerden, oturum
      * açıkken SÜREKLİ açık tut"). idempotent: aynı kullanıcı için tekrarlı
-     * çağrı no-op (config-change/recomposition güvenli). */
+     * çağrı no-op (config-change/recomposition güvenli).
+     *
+     * KULLANICI RAPORU (gerçek cihaz: "web'den arayınca mobile gelen arama
+     * hiç gelmiyor") — [CallSignalingManager.startListening] artık TEK
+     * seferlik bir connect() DEĞİL, sürekli retry/health-watch eden bir
+     * döngü (bkz. o sınıfın sınıf yorumu) — soğuk başlangıçta yaşanabilecek
+     * geçici bir token/ağ hıçkırığı artık oturumun GERİ KALANI boyunca
+     * "gelen arama hiç gelmiyor" anlamına gelmiyor. */
     fun startGlobalListening(userId: String) {
         if (listening && myUserId == userId) return
         listening = true
         myUserId = userId
-        scope.launch { signaling.connect(userId) }
+        signaling.startListening(userId, scope)
         signaling.incoming.onEach { handleSignal(it) }.launchIn(scope)
     }
 
@@ -280,7 +287,19 @@ class CallSessionManager(
                 _isMicEnabled.value = true
                 pendingOfferSdp = null
 
-                signaling.sendSignal(incoming.otherUserId, CallSignal.Answer(me, incoming.conversationId, answerSdp))
+                // KULLANICI RAPORU (gerçek cihaz: "karşı taraf kabul ediyor
+                // ama aramaya geçmiyor, sadece aranıyor kalıyor") — ÖNCEDEN
+                // bu satırın sonucu HİÇ kontrol edilmeden doğrudan Active'e
+                // geçiliyordu: Answer sinyali arayana gerçekten ULAŞMASA bile
+                // aranan taraf "bağlandı" görüyordu, arayan sonsuza kadar
+                // "Aranıyor..." ekranında kalıyordu. Artık gönderim
+                // başarısızsa (bkz. CallSignalingManager.sendSignal'ın YENİ
+                // Boolean dönüşü) Active'e GEÇİLMEZ, ERROR ile temizlenir.
+                val delivered = signaling.sendSignal(incoming.otherUserId, CallSignal.Answer(me, incoming.conversationId, answerSdp))
+                if (!delivered) {
+                    cleanupAndEnd(CallEndReason.ERROR)
+                    return@launch
+                }
 
                 _phase.value = CallPhase.Active(
                     conversationId = incoming.conversationId,
@@ -344,6 +363,7 @@ class CallSessionManager(
 
     private fun cleanupAndEnd(reason: CallEndReason) {
         generation++
+        val myGeneration = generation
         noAnswerJob?.cancel()
         noAnswerJob = null
         webRtc?.dispose()
@@ -351,12 +371,48 @@ class CallSessionManager(
         pendingOfferSdp = null
         _localVideoTrack.value = null
         _remoteVideoTrack.value = null
+
+        // KULLANICI RAPORU (gerçek cihaz: aramayı bitirip TEKRAR arayınca
+        // "arama bitirildi" yazıyor, hiçbir şey olmuyor) — kök neden: BackHandler/
+        // "aranıyor" panelindeki iptal/aktif aramadaki kapat butonunun ÜÇÜ DE
+        // hangup()'ı çağırdıktan HEMEN SONRA (senkron) onNavigateBack() de
+        // çağırıyor — OneOnOneCallScreen bu yüzden ANINDA dispose oluyor ve
+        // Ended fazını 1400ms gösterip resetToIdle() çağıran LaunchedEffect(phase)
+        // HİÇ tamamlanamıyordu (composable dispose olunca coroutine iptal
+        // edilir). Sonuç: phase SONSUZA KADAR Ended'de takılı kalıyordu —
+        // startCall()/handleOffer() "phase Idle değilse no-op" korumasına
+        // takılıp bir SONRAKİ arama denemesini (gelen VEYA giden) SESSİZCE
+        // hiçbir şey yapmadan reddediyordu.
+        //
+        // Fix — iki katmanlı: (1) LOCAL_HANGUP'ta web'in AYNI davranışına
+        // dönülüp (call.js endCall() sonrası ANINDA idle) Ended ekranı
+        // HİÇ gösterilmiyor — kullanıcı zaten NEDEN bittiğini biliyor, ekranın
+        // açık kalıp kalmamasına bağlı bir ETA riski de ortadan kalkıyor.
+        // (2) DİĞER sebepler (REMOTE_HANGUP/REJECTED/NO_ANSWER/FAILED/ERROR)
+        // için Ended YİNE gösterilir (kullanıcı gerçek bir açıklama görmeli)
+        // ama artık resetToIdle()'ı SADECE ekranın LaunchedEffect'ine
+        // GÜVENMİYOR — CallSessionManager'ın KENDİ (Compose lifecycle'ından
+        // bağımsız, ServiceLocator singleton) scope'unda da bir güvenlik ağı
+        // olarak zamanlanıyor; ekran zaten resetToIdle() çağırmışsa generation
+        // kontrolü bunu ZARARSIZ bir no-op yapar.
+        if (reason == CallEndReason.LOCAL_HANGUP) {
+            _phase.value = CallPhase.Idle
+            return
+        }
         _phase.value = CallPhase.Ended(reason)
+        scope.launch {
+            delay(1600)
+            if (generation == myGeneration && _phase.value is CallPhase.Ended) {
+                _phase.value = CallPhase.Idle
+            }
+        }
     }
 
-    /** [CallPhase.Ended] kısa ömürlü bir ara durum — OneOnOneCallScreen bitiş
-     * sebebini kısaca gösterip geri navigasyon yaptıktan SONRA bunu çağırıp
-     * Idle'a döner (bir sonraki arama temiz başlasın diye). */
+    /** [CallPhase.Ended] kısa ömürlü bir ara durum — OneOnOneCallScreen (açık
+     * kaldıysa) bitiş sebebini kısaca gösterip geri navigasyon yaptıktan SONRA
+     * bunu çağırır. [cleanupAndEnd]'İN KENDİ zamanlanmış sıfırlaması da AYNI
+     * işi yapar (ekran o sırada açık olmayabilir diye) — ikisi de idempotent,
+     * hangisi önce çalışırsa çalışsın güvenli. */
     fun resetToIdle() {
         if (_phase.value is CallPhase.Ended) _phase.value = CallPhase.Idle
     }

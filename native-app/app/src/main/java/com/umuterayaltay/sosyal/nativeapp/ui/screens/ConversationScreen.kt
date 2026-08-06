@@ -41,6 +41,7 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.VideoCall
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -162,16 +163,19 @@ fun ConversationScreen(
     onCallClick: () -> Unit = {},
     // 1:1 sesli/görüntülü arama (native görev — WebRTC + Supabase Realtime
     // broadcast, LiveKit grup aramasından TAMAMEN AYRI) — SADECE isGroup==false
-    // iken görünen AYRI bir ikon (bkz. aşağıdaki TopAppBar actions). otherUserId
-    // backend'in ConversationInfoDto'sunda YOK (bkz. app/api_v1/messaging.py
+    // iken görünen İKİ AYRI ikon (sesli+görüntülü, bkz. aşağıdaki TopAppBar
+    // actions — kullanıcı raporu: "sadece görüntülü arama var normal arama
+    // yok", TEK ikonun her zaman video başlattığı önceki MVP kararı yerine
+    // web'deki gibi ayrı butonlara geçildi). otherUserId backend'in
+    // ConversationInfoDto'sunda YOK (bkz. app/api_v1/messaging.py
     // api_message_conversation_detail() — "conversation" JSON'ı SADECE
     // name/avatar_url döner, other_user id'sini DÖNMÜYOR ve backend'e
     // DOKUNULMAYACAK, görev kısıtı) — bu yüzden mesaj listesindeki İLK
     // "benden olmayan" mesajın sender_id'si kullanılır (bkz. aşağıdaki
     // otherUserId remember bloğu). Karşı taraf HİÇ mesaj göndermemişse
-    // (tamamen tek taraflı yeni bir sohbet) otherUserId çözülemez ve ikon
+    // (tamamen tek taraflı yeni bir sohbet) otherUserId çözülemez ve ikonlar
     // gizlenir — bilinçli MVP sınırı, raporda belirtildi.
-    onOneOnOneCallClick: (otherUserId: String, otherName: String, otherAvatarUrl: String?) -> Unit = { _, _, _ -> },
+    onOneOnOneCallClick: (otherUserId: String, otherName: String, otherAvatarUrl: String?, isVideo: Boolean) -> Unit = { _, _, _, _ -> },
     onSessionExpired: () -> Unit,
     viewModel: ConversationViewModel = viewModel(
         factory = ConversationViewModelFactory(conversationId),
@@ -337,22 +341,30 @@ fun ConversationScreen(
                                 // 1:1 sesli/görüntülü arama (native görev — WebRTC +
                                 // Supabase Realtime broadcast) — grup ikonuyla AYNI
                                 // satırda, birbirini DIŞLAYAN koşulla (bkz. yukarıdaki
-                                // if dalı). Bu callback'in kendisi isVideo TAŞIMAZ —
-                                // gerçek karar AppNavHost.kt'nin onOneOnOneCallClick
-                                // implementasyonunda: ikon HER ZAMAN GÖRÜNTÜLÜ arama
-                                // başlatır (route'un isVideo path segmenti sabit
-                                // "true"), sesliye geçiş arama ekranındaki kamera
-                                // aç/kapat butonuyla yapılır — web'in ayrı sesli/
-                                // görüntülü butonu yerine TEK ikon MVP kararı (rapor
-                                // edildi, bkz. AppNavHost.kt'deki AYNI karar yorumu).
+                                // if dalı). Kullanıcı raporu ("sadece görüntülü arama
+                                // var normal arama yok") üzerine TEK video-only ikon
+                                // yerine web'deki gibi AYRI sesli/görüntülü butonlara
+                                // geçildi — ikisi de AYNI otherUserId/name/avatar'ı
+                                // taşır, sadece isVideo farklı.
                                 IconButton(onClick = {
                                     onOneOnOneCallClick(
                                         otherUserIdForCall,
                                         conversationInfo?.name ?: "Kullanıcı",
                                         conversationInfo?.avatarUrl,
+                                        false,
                                     )
                                 }) {
-                                    Icon(Icons.Filled.VideoCall, contentDescription = "Sesli/görüntülü arama")
+                                    Icon(Icons.Filled.Call, contentDescription = "Sesli arama")
+                                }
+                                IconButton(onClick = {
+                                    onOneOnOneCallClick(
+                                        otherUserIdForCall,
+                                        conversationInfo?.name ?: "Kullanıcı",
+                                        conversationInfo?.avatarUrl,
+                                        true,
+                                    )
+                                }) {
+                                    Icon(Icons.Filled.VideoCall, contentDescription = "Görüntülü arama")
                                 }
                             }
                             IconButton(onClick = { showOverflowMenu = true }) {
