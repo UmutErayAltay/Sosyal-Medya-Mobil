@@ -1,5 +1,6 @@
 package com.umuterayaltay.sosyal.nativeapp.repository
 
+import android.util.Log
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.createSupabaseClient
 import io.github.jan.supabase.realtime.Realtime
@@ -30,6 +31,15 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
+
+// GEÇİCİ TANI LOGLAMASI (kullanıcı raporu: gerçek cihazda gelen arama HÂLÂ
+// gelmiyor / kabul sonrası arayan takılı kalıyor, 2. tur teorik fix'ten SONRA
+// bile devam ediyor) — projede önceden HİÇ logging altyapısı yoktu (grep ile
+// doğrulandı). Bu TAG'lerle `adb logcat -s CallSignaling:* CallSession:*`
+// çalıştırılıp gerçek cihazda hangi adımda kopuk olduğu (connect mi, subscribe
+// mi, broadcast hiç gelmiyor mu, sendSignal mı başarısız) NET görülebilir —
+// tahmine devam etmek yerine ampirik veri toplama kararı.
+private const val TAG = "CallSignaling"
 
 private const val SUBSCRIBE_TIMEOUT_MS = 10_000L
 
@@ -222,11 +232,16 @@ class CallSignalingManager(private val authRepository: AuthRepository) {
      * artık SESSİZCE yutmuyor (çağıran [startListening] retry kararını verir). */
     private suspend fun connectOnce(userId: String): Boolean {
         try {
+            Log.d(TAG, "connectOnce: başlıyor, userId=$userId")
             val tokenResult = authRepository.getRealtimeToken()
             val token = when (tokenResult) {
                 is RealtimeTokenResult.Success -> tokenResult
-                is RealtimeTokenResult.Error -> return false
+                is RealtimeTokenResult.Error -> {
+                    Log.w(TAG, "connectOnce: getRealtimeToken başarısız (kod=${tokenResult.code})")
+                    return false
+                }
             }
+            Log.d(TAG, "connectOnce: realtime token alındı, url=${token.supabaseUrl}")
 
             val client = createSupabaseClient(
                 supabaseUrl = token.supabaseUrl,
@@ -251,7 +266,14 @@ class CallSignalingManager(private val authRepository: AuthRepository) {
             connectionScope = cs
 
             ch.broadcastFlow<JsonObject>("call-signal").onEach { payload ->
-                parseSignal(payload)?.let { _incoming.emit(it) }
+                Log.d(TAG, "connectOnce: HAM broadcast alındı topic=calls:$userId payload=$payload")
+                val parsed = parseSignal(payload)
+                if (parsed == null) {
+                    Log.w(TAG, "connectOnce: payload parseSignal ile çözülemedi: $payload")
+                } else {
+                    Log.d(TAG, "connectOnce: sinyal çözüldü, incoming'e emit ediliyor: $parsed")
+                    _incoming.emit(parsed)
+                }
             }.launchIn(cs)
 
             val subscribed = withTimeoutOrNull(SUBSCRIBE_TIMEOUT_MS) {
@@ -259,12 +281,15 @@ class CallSignalingManager(private val authRepository: AuthRepository) {
                 true
             }
             if (subscribed != true || ch.status.value != RealtimeChannel.Status.SUBSCRIBED) {
+                Log.w(TAG, "connectOnce: subscribe başarısız, status=${ch.status.value}, timedOut=${subscribed != true}")
                 return false
             }
+            Log.d(TAG, "connectOnce: SUBSCRIBED, calls:$userId dinleniyor")
 
             cs.launch { periodicTokenRefresh(client) }
             return true
         } catch (e: Exception) {
+            Log.e(TAG, "connectOnce: beklenmeyen hata", e)
             return false
         }
     }
@@ -279,12 +304,18 @@ class CallSignalingManager(private val authRepository: AuthRepository) {
         var unhealthyMs = 0L
         while (true) {
             delay(HEALTH_CHECK_INTERVAL_MS)
-            if (ch.status.value == RealtimeChannel.Status.UNSUBSCRIBED) return
+            if (ch.status.value == RealtimeChannel.Status.UNSUBSCRIBED) {
+                Log.w(TAG, "watchHealth: kanal UNSUBSCRIBED'a düştü, reconnect döngüsüne dönülüyor")
+                return
+            }
             if (client.realtime.status.value == Realtime.Status.CONNECTED) {
                 unhealthyMs = 0L
             } else {
                 unhealthyMs += HEALTH_CHECK_INTERVAL_MS
-                if (unhealthyMs >= CONNECTION_UNHEALTHY_THRESHOLD_MS) return
+                if (unhealthyMs >= CONNECTION_UNHEALTHY_THRESHOLD_MS) {
+                    Log.w(TAG, "watchHealth: socket ${unhealthyMs}ms boyunca CONNECTED değildi (son durum=${client.realtime.status.value}), reconnect döngüsüne dönülüyor")
+                    return
+                }
             }
         }
     }
@@ -312,12 +343,21 @@ class CallSignalingManager(private val authRepository: AuthRepository) {
      * gönderilemezse çağıran taraf artık BUNU BİLİP arayan hiç haberdar
      * olmadan "bağlandı" göstermek yerine hatayı yansıtabilir. */
     suspend fun sendSignal(targetUserId: String, signal: CallSignal): Boolean {
-        val client = supabase ?: return false
+        val client = supabase ?: run {
+            Log.w(TAG, "sendSignal: supabase client YOK (henüz bağlanılmadı), gönderilemedi: $signal -> $targetUserId")
+            return false
+        }
         return try {
-            val ch = getOrCreateOutboundChannel(client, targetUserId) ?: return false
+            val ch = getOrCreateOutboundChannel(client, targetUserId)
+            if (ch == null) {
+                Log.w(TAG, "sendSignal: calls:$targetUserId kanalına subscribe edilemedi, gönderilemedi: $signal")
+                return false
+            }
             ch.broadcast("call-signal", signal.toPayload())
+            Log.d(TAG, "sendSignal: gönderildi -> calls:$targetUserId: $signal")
             true
         } catch (e: Exception) {
+            Log.e(TAG, "sendSignal: broadcast() istisna fırlattı -> calls:$targetUserId: $signal", e)
             false
         }
     }
@@ -349,7 +389,9 @@ class CallSignalingManager(private val authRepository: AuthRepository) {
                 }
                 if (subscribed == true && ch.status.value == RealtimeChannel.Status.SUBSCRIBED) {
                     result = ch
+                    Log.d(TAG, "getOrCreateOutboundChannel: calls:$targetUserId SUBSCRIBED")
                 } else {
+                    Log.w(TAG, "getOrCreateOutboundChannel: calls:$targetUserId subscribe başarısız (status=${ch.status.value}, timedOut=${subscribed != true}), tekrar denenecek")
                     try { ch.unsubscribe() } catch (e: Exception) { /* en iyi-çaba temizlik */ }
                 }
             }

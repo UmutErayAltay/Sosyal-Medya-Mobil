@@ -1,6 +1,7 @@
 package com.umuterayaltay.sosyal.nativeapp.repository
 
 import android.content.Context
+import android.util.Log
 import com.umuterayaltay.sosyal.nativeapp.webrtc.WebRtcCallManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -14,6 +15,8 @@ import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import org.webrtc.VideoTrack
+
+private const val TAG = "CallSession"
 
 enum class CallEndReason { LOCAL_HANGUP, REMOTE_HANGUP, REJECTED, NO_ANSWER, FAILED, ERROR }
 
@@ -114,6 +117,7 @@ class CallSessionManager(
      * "gelen arama hiç gelmiyor" anlamına gelmiyor. */
     fun startGlobalListening(userId: String) {
         if (listening && myUserId == userId) return
+        Log.d(TAG, "startGlobalListening: userId=$userId")
         listening = true
         myUserId = userId
         signaling.startListening(userId, scope)
@@ -121,6 +125,7 @@ class CallSessionManager(
     }
 
     private fun handleSignal(signal: CallSignal) {
+        Log.d(TAG, "handleSignal: alındı: $signal, mevcut phase=${_phase.value}")
         val me = myUserId ?: return
         if (signal.from == me) return
         when (signal) {
@@ -146,10 +151,12 @@ class CallSessionManager(
     private fun handleOffer(signal: CallSignal.Offer) {
         if (_phase.value !is CallPhase.Idle) {
             // Meşgulüm — web'in AYNI davranışı (call.js: reject SADECE ARAYANA gider).
+            Log.d(TAG, "handleOffer: meşgulüm (phase=${_phase.value}), ${signal.from}'a Reject gönderiliyor")
             val me = myUserId ?: return
             scope.launch { signaling.sendSignal(signal.from, CallSignal.Reject(me, signal.conversationId)) }
             return
         }
+        Log.d(TAG, "handleOffer: IncomingRinging'e geçiliyor, from=${signal.from}")
         pendingOfferSdp = signal.sdp
         _phase.value = CallPhase.IncomingRinging(
             conversationId = signal.conversationId,
@@ -161,11 +168,16 @@ class CallSessionManager(
     }
 
     private fun handleAnswer(signal: CallSignal.Answer) {
-        val outgoing = _phase.value as? CallPhase.OutgoingRinging ?: return
+        val outgoing = _phase.value as? CallPhase.OutgoingRinging ?: run {
+            Log.w(TAG, "handleAnswer: Answer geldi ama phase OutgoingRinging DEĞİL (${_phase.value}), YOK SAYILIYOR")
+            null
+        } ?: return
+        Log.d(TAG, "handleAnswer: Answer alındı from=${signal.from}, setRemoteAnswer çağrılıyor")
         noAnswerJob?.cancel()
         scope.launch {
             try {
                 webRtc?.setRemoteAnswer(signal.sdp)
+                Log.d(TAG, "handleAnswer: setRemoteAnswer başarılı, Active'e geçiliyor")
                 _phase.value = CallPhase.Active(
                     conversationId = outgoing.conversationId,
                     otherUserId = outgoing.otherUserId,
@@ -176,6 +188,7 @@ class CallSessionManager(
                     startedAtMs = System.currentTimeMillis(),
                 )
             } catch (e: Exception) {
+                Log.e(TAG, "handleAnswer: setRemoteAnswer istisna fırlattı", e)
                 cleanupAndEnd(CallEndReason.ERROR)
             }
         }
@@ -224,7 +237,7 @@ class CallSessionManager(
                 _isMicEnabled.value = true
 
                 val myProfile = authRepository.getCurrentUser()
-                signaling.sendSignal(
+                val offerDelivered = signaling.sendSignal(
                     otherUserId,
                     CallSignal.Offer(
                         from = me,
@@ -235,15 +248,18 @@ class CallSessionManager(
                         callerAvatar = myProfile?.avatarUrl,
                     ),
                 )
+                Log.d(TAG, "startCall: Offer gönderim sonucu=$offerDelivered, hedef=$otherUserId")
 
                 noAnswerJob?.cancel()
                 noAnswerJob = scope.launch {
                     delay(30_000)
                     if (_phase.value is CallPhase.OutgoingRinging) {
+                        Log.w(TAG, "startCall: 30sn'de cevap gelmedi (NO_ANSWER), otherUserId=$otherUserId")
                         cleanupAndEnd(CallEndReason.NO_ANSWER)
                     }
                 }
             } catch (e: Exception) {
+                Log.e(TAG, "startCall: istisna", e)
                 cleanupAndEnd(CallEndReason.ERROR)
             }
         }
@@ -296,6 +312,7 @@ class CallSessionManager(
                 // başarısızsa (bkz. CallSignalingManager.sendSignal'ın YENİ
                 // Boolean dönüşü) Active'e GEÇİLMEZ, ERROR ile temizlenir.
                 val delivered = signaling.sendSignal(incoming.otherUserId, CallSignal.Answer(me, incoming.conversationId, answerSdp))
+                Log.d(TAG, "acceptIncoming: Answer gönderim sonucu=$delivered, hedef=${incoming.otherUserId}")
                 if (!delivered) {
                     cleanupAndEnd(CallEndReason.ERROR)
                     return@launch
@@ -311,6 +328,7 @@ class CallSessionManager(
                     startedAtMs = System.currentTimeMillis(),
                 )
             } catch (e: Exception) {
+                Log.e(TAG, "acceptIncoming: istisna", e)
                 cleanupAndEnd(CallEndReason.ERROR)
             }
         }
@@ -362,6 +380,7 @@ class CallSessionManager(
     }
 
     private fun cleanupAndEnd(reason: CallEndReason) {
+        Log.d(TAG, "cleanupAndEnd: reason=$reason, önceki phase=${_phase.value}")
         generation++
         val myGeneration = generation
         noAnswerJob?.cancel()
