@@ -28,6 +28,10 @@ sealed class CallPhase {
     data class OutgoingRinging(
         val conversationId: String,
         val otherUserId: String,
+        // Hedefin arama kanalı adı — YÖNLENDİRME bunun üzerinden yapılır
+        // (bkz. CallSignalingManager.sendSignal). otherUserId sadece
+        // görüntüleme/kimlik amaçlı KALDI, kanal ADI DEĞİL.
+        val otherCallTopic: String,
         val otherName: String,
         val otherAvatar: String?,
         val isVideo: Boolean,
@@ -35,6 +39,9 @@ sealed class CallPhase {
     data class IncomingRinging(
         val conversationId: String?,
         val otherUserId: String,
+        // Arayanın kanal adı — SADECE gelen Offer'ın fromTopic'inden
+        // öğrenilebilir (bkz. handleOffer), başka hiçbir yerden bilinemez.
+        val otherCallTopic: String,
         val callerName: String,
         val callerAvatar: String?,
         val isVideo: Boolean,
@@ -42,6 +49,7 @@ sealed class CallPhase {
     data class Active(
         val conversationId: String?,
         val otherUserId: String,
+        val otherCallTopic: String,
         val otherName: String,
         val otherAvatar: String?,
         val isVideo: Boolean,
@@ -153,7 +161,8 @@ class CallSessionManager(
             // Meşgulüm — web'in AYNI davranışı (call.js: reject SADECE ARAYANA gider).
             Log.d(TAG, "handleOffer: meşgulüm (phase=${_phase.value}), ${signal.from}'a Reject gönderiliyor")
             val me = myUserId ?: return
-            scope.launch { signaling.sendSignal(signal.from, CallSignal.Reject(me, signal.conversationId)) }
+            val myTopic = signaling.myTopic ?: ""
+            scope.launch { signaling.sendSignal(signal.fromTopic, CallSignal.Reject(me, myTopic, signal.conversationId)) }
             return
         }
         Log.d(TAG, "handleOffer: IncomingRinging'e geçiliyor, from=${signal.from}")
@@ -161,6 +170,7 @@ class CallSessionManager(
         _phase.value = CallPhase.IncomingRinging(
             conversationId = signal.conversationId,
             otherUserId = signal.from,
+            otherCallTopic = signal.fromTopic,
             callerName = signal.callerName,
             callerAvatar = signal.callerAvatar,
             isVideo = signal.video,
@@ -181,6 +191,7 @@ class CallSessionManager(
                 _phase.value = CallPhase.Active(
                     conversationId = outgoing.conversationId,
                     otherUserId = outgoing.otherUserId,
+                    otherCallTopic = outgoing.otherCallTopic,
                     otherName = outgoing.otherName,
                     otherAvatar = outgoing.otherAvatar,
                     isVideo = outgoing.isVideo,
@@ -194,29 +205,38 @@ class CallSessionManager(
         }
     }
 
-    /** Arayan taraf — ConversationScreen'in yeni 1:1 arama ikonundan çağrılır. */
+    /** Arayan taraf — ConversationScreen'in yeni 1:1 arama ikonundan çağrılır.
+     * [otherCallTopic]: backend'in bu konuşma için ürettiği tahmin edilemez
+     * HMAC kanal adı (bkz. ConversationInfoDto.otherCallTopic) — YÖNLENDİRME
+     * artık BUNUNLA yapılıyor, otherUserId sadece kimlik/görüntüleme için. */
     fun startCall(
         context: Context,
         conversationId: String,
         otherUserId: String,
+        otherCallTopic: String,
         isVideo: Boolean,
         otherName: String,
         otherAvatar: String?,
     ) {
         val me = myUserId ?: return
         if (_phase.value !is CallPhase.Idle) return
-        _phase.value = CallPhase.OutgoingRinging(conversationId, otherUserId, otherName, otherAvatar, isVideo)
+        if (otherCallTopic.isBlank()) {
+            Log.w(TAG, "startCall: otherCallTopic boş, arama başlatılamıyor")
+            return
+        }
+        _phase.value = CallPhase.OutgoingRinging(conversationId, otherUserId, otherCallTopic, otherName, otherAvatar, isVideo)
         val myGeneration = ++generation
         scope.launch {
             try {
+                val myTopic = signaling.myTopic ?: ""
                 val rtc = WebRtcCallManager(
                     context = context,
                     enableVideo = isVideo,
                     onIceCandidate = { candidate ->
                         scope.launch {
                             signaling.sendSignal(
-                                otherUserId,
-                                CallSignal.Ice(me, conversationId, candidate.sdp, candidate.sdpMLineIndex, candidate.sdpMid),
+                                otherCallTopic,
+                                CallSignal.Ice(me, myTopic, conversationId, candidate.sdp, candidate.sdpMLineIndex, candidate.sdpMid),
                             )
                         }
                     },
@@ -238,9 +258,10 @@ class CallSessionManager(
 
                 val myProfile = authRepository.getCurrentUser()
                 val offerDelivered = signaling.sendSignal(
-                    otherUserId,
+                    otherCallTopic,
                     CallSignal.Offer(
                         from = me,
+                        fromTopic = myTopic,
                         conversationId = conversationId,
                         sdp = offerSdp,
                         video = isVideo,
@@ -248,7 +269,7 @@ class CallSessionManager(
                         callerAvatar = myProfile?.avatarUrl,
                     ),
                 )
-                Log.d(TAG, "startCall: Offer gönderim sonucu=$offerDelivered, hedef=$otherUserId")
+                Log.d(TAG, "startCall: Offer gönderim sonucu=$offerDelivered, hedef=$otherCallTopic")
 
                 noAnswerJob?.cancel()
                 noAnswerJob = scope.launch {
@@ -274,14 +295,15 @@ class CallSessionManager(
         val myGeneration = ++generation
         scope.launch {
             try {
+                val myTopic = signaling.myTopic ?: ""
                 val rtc = WebRtcCallManager(
                     context = context,
                     enableVideo = incoming.isVideo,
                     onIceCandidate = { candidate ->
                         scope.launch {
                             signaling.sendSignal(
-                                incoming.otherUserId,
-                                CallSignal.Ice(me, incoming.conversationId, candidate.sdp, candidate.sdpMLineIndex, candidate.sdpMid),
+                                incoming.otherCallTopic,
+                                CallSignal.Ice(me, myTopic, incoming.conversationId, candidate.sdp, candidate.sdpMLineIndex, candidate.sdpMid),
                             )
                         }
                     },
@@ -311,8 +333,8 @@ class CallSessionManager(
                 // "Aranıyor..." ekranında kalıyordu. Artık gönderim
                 // başarısızsa (bkz. CallSignalingManager.sendSignal'ın YENİ
                 // Boolean dönüşü) Active'e GEÇİLMEZ, ERROR ile temizlenir.
-                val delivered = signaling.sendSignal(incoming.otherUserId, CallSignal.Answer(me, incoming.conversationId, answerSdp))
-                Log.d(TAG, "acceptIncoming: Answer gönderim sonucu=$delivered, hedef=${incoming.otherUserId}")
+                val delivered = signaling.sendSignal(incoming.otherCallTopic, CallSignal.Answer(me, myTopic, incoming.conversationId, answerSdp))
+                Log.d(TAG, "acceptIncoming: Answer gönderim sonucu=$delivered, hedef=${incoming.otherCallTopic}")
                 if (!delivered) {
                     cleanupAndEnd(CallEndReason.ERROR)
                     return@launch
@@ -321,6 +343,7 @@ class CallSessionManager(
                 _phase.value = CallPhase.Active(
                     conversationId = incoming.conversationId,
                     otherUserId = incoming.otherUserId,
+                    otherCallTopic = incoming.otherCallTopic,
                     otherName = incoming.callerName,
                     otherAvatar = incoming.callerAvatar,
                     isVideo = incoming.isVideo,
@@ -340,9 +363,10 @@ class CallSessionManager(
     fun rejectIncoming() {
         val incoming = _phase.value as? CallPhase.IncomingRinging ?: return
         val me = myUserId ?: return
+        val myTopic = signaling.myTopic ?: ""
         generation++
         pendingOfferSdp = null
-        scope.launch { signaling.sendSignal(incoming.otherUserId, CallSignal.Reject(me, incoming.conversationId)) }
+        scope.launch { signaling.sendSignal(incoming.otherCallTopic, CallSignal.Reject(me, myTopic, incoming.conversationId)) }
         _phase.value = CallPhase.Idle
     }
 
@@ -351,9 +375,9 @@ class CallSessionManager(
     fun hangup() {
         val current = _phase.value
         val me = myUserId
-        val targetId = when (current) {
-            is CallPhase.OutgoingRinging -> current.otherUserId
-            is CallPhase.Active -> current.otherUserId
+        val targetTopic = when (current) {
+            is CallPhase.OutgoingRinging -> current.otherCallTopic
+            is CallPhase.Active -> current.otherCallTopic
             else -> null
         }
         val conversationId = when (current) {
@@ -361,8 +385,9 @@ class CallSessionManager(
             is CallPhase.Active -> current.conversationId
             else -> null
         }
-        if (me != null && targetId != null) {
-            scope.launch { signaling.sendSignal(targetId, CallSignal.Hangup(me, conversationId)) }
+        if (me != null && targetTopic != null) {
+            val myTopic = signaling.myTopic ?: ""
+            scope.launch { signaling.sendSignal(targetTopic, CallSignal.Hangup(me, myTopic, conversationId)) }
         }
         cleanupAndEnd(CallEndReason.LOCAL_HANGUP)
     }

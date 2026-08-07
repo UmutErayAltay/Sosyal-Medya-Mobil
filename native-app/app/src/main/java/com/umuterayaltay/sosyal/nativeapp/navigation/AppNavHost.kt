@@ -354,10 +354,11 @@ fun AppNavHost() {
                 // (önceki turda path segmenti sabit "true"ydu — düzeltildi).
                 // Sesli başlayıp SONRADAN görüntülüye geçiş (web'in
                 // upgrade-offer'ı) hâlâ bu turun kapsamı DIŞI.
-                onOneOnOneCallClick = { otherUserId, otherName, otherAvatarUrl, isVideo ->
+                onOneOnOneCallClick = { otherUserId, otherCallTopic, otherName, otherAvatarUrl, isVideo ->
                     val encodedName = URLEncoder.encode(otherName, "UTF-8")
                     val encodedAvatar = URLEncoder.encode(otherAvatarUrl ?: "_", "UTF-8")
-                    navController.navigate("oneOnOneCall/$conversationId/$otherUserId/$isVideo/$encodedName/$encodedAvatar")
+                    val encodedTopic = URLEncoder.encode(otherCallTopic, "UTF-8")
+                    navController.navigate("oneOnOneCall/$conversationId/$otherUserId/$encodedTopic/$isVideo/$encodedName/$encodedAvatar")
                 },
                 onSessionExpired = {
                     navController.navigate(ROUTE_LOGIN) {
@@ -675,10 +676,11 @@ fun AppNavHost() {
         // URL-encode edilip taşınır (rest of the codebase gibi SADECE path
         // segment kullanılıyor, query-string YOK — tutarlılık için).
         composable(
-            route = "oneOnOneCall/{conversationId}/{otherUserId}/{isVideo}/{otherName}/{otherAvatar}",
+            route = "oneOnOneCall/{conversationId}/{otherUserId}/{otherCallTopic}/{isVideo}/{otherName}/{otherAvatar}",
             arguments = listOf(
                 navArgument("conversationId") { type = NavType.StringType },
                 navArgument("otherUserId") { type = NavType.StringType },
+                navArgument("otherCallTopic") { type = NavType.StringType },
                 navArgument("isVideo") { type = NavType.BoolType },
                 navArgument("otherName") { type = NavType.StringType },
                 navArgument("otherAvatar") { type = NavType.StringType },
@@ -687,12 +689,14 @@ fun AppNavHost() {
             val args = backStackEntry.arguments
             val conversationId = args?.getString("conversationId") ?: return@composable
             val otherUserId = args.getString("otherUserId") ?: return@composable
+            val otherCallTopic = args.getString("otherCallTopic")?.let { URLDecoder.decode(it, "UTF-8") } ?: return@composable
             val isVideo = args.getBoolean("isVideo")
             val otherName = args.getString("otherName")?.let { URLDecoder.decode(it, "UTF-8") }
             val otherAvatarRaw = args.getString("otherAvatar")?.let { URLDecoder.decode(it, "UTF-8") }
             OneOnOneCallScreen(
                 conversationId = conversationId,
                 otherUserId = otherUserId,
+                otherCallTopic = otherCallTopic,
                 isVideo = isVideo,
                 otherName = otherName,
                 otherAvatar = otherAvatarRaw?.takeIf { it != "_" },

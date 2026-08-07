@@ -71,6 +71,11 @@ data class RealtimeTokenResponse(
     @SerializedName("access_token") val accessToken: String? = null,
     @SerializedName("supabase_url") val supabaseUrl: String? = null,
     @SerializedName("supabase_publishable_key") val supabasePublishableKey: String? = null,
+    // Kendi arama kanalı adı (tahmin edilemez HMAC) — Supabase private kanal
+    // yetkilendirmesi platform tarafında bozuk olduğu için broadcast public'e
+    // alındı, güvenlik kanal adının gizliliğine taşındı (bkz. app/
+    // realtime_topics.py, web'in window.MY_CALLS_TOPIC'iyle AYNI).
+    @SerializedName("my_calls_topic") val myCallsTopic: String? = null,
     val error: String? = null,
 )
 
@@ -453,6 +458,10 @@ data class ConversationInfoDto(
     @SerializedName("is_group") val isGroup: Boolean = false,
     val name: String?,
     @SerializedName("avatar_url") val avatarUrl: String?,
+    // Karşı tarafın arama kanalı adı (tahmin edilemez HMAC, SADECE 1:1'de
+    // dolu) — bkz. app/realtime_topics.py, web'in data-other-call-topic'iyle
+    // AYNI. sendSignal() artık kullanıcı id'si değil BUNU hedef alıyor.
+    @SerializedName("other_call_topic") val otherCallTopic: String? = null,
 )
 
 data class ConversationDetailResponse(

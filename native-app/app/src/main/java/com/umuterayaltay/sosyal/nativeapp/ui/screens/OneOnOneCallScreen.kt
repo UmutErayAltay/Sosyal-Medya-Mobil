@@ -71,9 +71,9 @@ import org.webrtc.VideoTrack
  * mikrofon/kamera/kapat BURADA) iletir.
  *
  * İki çağrı yeri (AppNavHost.kt):
- *  - Arayan: "oneOnOneCall/{conversationId}/{otherUserId}/{isVideo}?otherName=..&otherAvatar=.."
- *    — conversationId/otherUserId NON-NULL, ekran açılır açılmaz
- *    startOutgoingCall() tetiklenir.
+ *  - Arayan: "oneOnOneCall/{conversationId}/{otherUserId}/{otherCallTopic}/{isVideo}/..."
+ *    — conversationId/otherUserId/otherCallTopic NON-NULL, ekran açılır
+ *    açılmaz startOutgoingCall() tetiklenir.
  *  - Aranan (kabul sonrası): "oneOnOneCallIncoming" — conversationId/otherUserId
  *    NULL, ekran izin verildikten SONRA acceptIncoming() tetikler (offer/otherId
  *    zaten CallSessionManager'da bekliyor — bkz. o sınıfın pendingOfferSdp'si).
@@ -82,6 +82,10 @@ import org.webrtc.VideoTrack
 fun OneOnOneCallScreen(
     conversationId: String? = null,
     otherUserId: String? = null,
+    // Hedefin arama kanalı adı — SADECE arayan tarafta (nav route'tan) gelir,
+    // aranan tarafta IncomingRinging fazından zaten biliniyor (bkz. AppNavHost
+    // "oneOnOneCallIncoming" rotası, argümansız).
+    otherCallTopic: String? = null,
     isVideo: Boolean = false,
     otherName: String? = null,
     otherAvatar: String? = null,
@@ -95,7 +99,7 @@ fun OneOnOneCallScreen(
     val isMicEnabled by viewModel.isMicEnabled.collectAsState()
     val isCameraEnabled by viewModel.isCameraEnabled.collectAsState()
 
-    val isCallerMode = conversationId != null && otherUserId != null
+    val isCallerMode = conversationId != null && otherUserId != null && otherCallTopic != null
 
     // Kamera + ses izin durumu — CallScreen.kt'deki (LiveKit) AYNI desen.
     var hasCameraPermission by remember {
@@ -130,6 +134,7 @@ fun OneOnOneCallScreen(
                 context = context,
                 conversationId = conversationId!!,
                 otherUserId = otherUserId!!,
+                otherCallTopic = otherCallTopic!!,
                 isVideo = isVideo,
                 otherName = otherName ?: "Kullanıcı",
                 otherAvatar = otherAvatar,

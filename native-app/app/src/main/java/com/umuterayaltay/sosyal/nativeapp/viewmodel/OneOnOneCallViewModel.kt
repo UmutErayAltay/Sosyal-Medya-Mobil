@@ -38,13 +38,14 @@ class OneOnOneCallViewModel : ViewModel() {
         context: Context,
         conversationId: String,
         otherUserId: String,
+        otherCallTopic: String,
         isVideo: Boolean,
         otherName: String,
         otherAvatar: String?,
     ) {
         if (outgoingStarted) return
         outgoingStarted = true
-        sessionManager.startCall(context, conversationId, otherUserId, isVideo, otherName, otherAvatar)
+        sessionManager.startCall(context, conversationId, otherUserId, otherCallTopic, isVideo, otherName, otherAvatar)
     }
 
     /** Gelen-arama overlay'inden "Kabul et" ile buraya navigate edilince,

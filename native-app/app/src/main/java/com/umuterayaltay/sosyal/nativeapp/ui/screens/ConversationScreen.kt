@@ -166,16 +166,21 @@ fun ConversationScreen(
     // iken görünen İKİ AYRI ikon (sesli+görüntülü, bkz. aşağıdaki TopAppBar
     // actions — kullanıcı raporu: "sadece görüntülü arama var normal arama
     // yok", TEK ikonun her zaman video başlattığı önceki MVP kararı yerine
-    // web'deki gibi ayrı butonlara geçildi). otherUserId backend'in
-    // ConversationInfoDto'sunda YOK (bkz. app/api_v1/messaging.py
-    // api_message_conversation_detail() — "conversation" JSON'ı SADECE
-    // name/avatar_url döner, other_user id'sini DÖNMÜYOR ve backend'e
-    // DOKUNULMAYACAK, görev kısıtı) — bu yüzden mesaj listesindeki İLK
-    // "benden olmayan" mesajın sender_id'si kullanılır (bkz. aşağıdaki
-    // otherUserId remember bloğu). Karşı taraf HİÇ mesaj göndermemişse
-    // (tamamen tek taraflı yeni bir sohbet) otherUserId çözülemez ve ikonlar
-    // gizlenir — bilinçli MVP sınırı, raporda belirtildi.
-    onOneOnOneCallClick: (otherUserId: String, otherName: String, otherAvatarUrl: String?, isVideo: Boolean) -> Unit = { _, _, _, _ -> },
+    // web'deki gibi ayrı butonlara geçildi). otherUserId GÖRÜNTÜLEME/kimlik
+    // amaçlı KALDI (mesaj listesinden türetiliyor, bkz. aşağıdaki
+    // otherUserIdForCall), ama sinyal YÖNLENDİRMESİ artık otherCallTopic ile
+    // yapılıyor — backend'in ürettiği tahmin edilemez HMAC kanal adı (bkz.
+    // ConversationInfoDto.otherCallTopic, app/realtime_topics.py). Supabase
+    // private kanal yetkilendirmesi platform tarafında bozuk olduğu için
+    // (2026-08-07) bu backend değişikliği artık ZORUNLU — önceki "backend'e
+    // dokunulmayacak" MVP kısıtı bu güvenlik gerekliliğiyle geçersiz oldu.
+    onOneOnOneCallClick: (
+        otherUserId: String,
+        otherCallTopic: String,
+        otherName: String,
+        otherAvatarUrl: String?,
+        isVideo: Boolean,
+    ) -> Unit = { _, _, _, _, _ -> },
     onSessionExpired: () -> Unit,
     viewModel: ConversationViewModel = viewModel(
         factory = ConversationViewModelFactory(conversationId),
@@ -214,9 +219,12 @@ fun ConversationScreen(
     var editingMessage by remember { mutableStateOf<MessageDto?>(null) }
     var editText by remember { mutableStateOf("") }
 
-    // 1:1 arama ikonu için — bkz. yukarıdaki onOneOnOneCallClick parametresi
-    // yorumu (backend other_user id döndürmediği için mesaj listesinden
-    // türetiliyor).
+    // 1:1 arama ikonu için GÖRÜNTÜLEME/kimlik amaçlı — sinyal YÖNLENDİRMESİ
+    // artık conversationInfo.otherCallTopic ile yapılıyor (backend'den gelir,
+    // bkz. onOneOnOneCallClick parametresi yorumu). Bu değer hâlâ mesaj
+    // listesinden türetiliyor (backend other_user id döndürmüyor) — ama arama
+    // ikonlarının gösterilip gösterilmeyeceğine artık otherCallTopic karar
+    // veriyor (bkz. aşağıdaki if koşulu), bu sadece UI'da isim/görüntüleme.
     val otherUserIdForCall = remember(messages, myUserId) {
         messages.firstOrNull { it.senderId.isNotBlank() && it.senderId != myUserId }?.senderId
     }
@@ -337,18 +345,25 @@ fun ConversationScreen(
                                 IconButton(onClick = onManageGroupClick) {
                                     Icon(Icons.Filled.Groups, contentDescription = "Grubu Yönet")
                                 }
-                            } else if (conversationInfo?.isGroup == false && otherUserIdForCall != null) {
+                            } else if (
+                                conversationInfo?.isGroup == false &&
+                                otherUserIdForCall != null &&
+                                !conversationInfo?.otherCallTopic.isNullOrBlank()
+                            ) {
                                 // 1:1 sesli/görüntülü arama (native görev — WebRTC +
                                 // Supabase Realtime broadcast) — grup ikonuyla AYNI
                                 // satırda, birbirini DIŞLAYAN koşulla (bkz. yukarıdaki
                                 // if dalı). Kullanıcı raporu ("sadece görüntülü arama
                                 // var normal arama yok") üzerine TEK video-only ikon
                                 // yerine web'deki gibi AYRI sesli/görüntülü butonlara
-                                // geçildi — ikisi de AYNI otherUserId/name/avatar'ı
-                                // taşır, sadece isVideo farklı.
+                                // geçildi — ikisi de AYNI otherUserId/topic/name/avatar'ı
+                                // taşır, sadece isVideo farklı. otherCallTopic null/boş
+                                // olamaz burada (koşulda elendi) — !! güvenli.
+                                val callTopic = conversationInfo!!.otherCallTopic!!
                                 IconButton(onClick = {
                                     onOneOnOneCallClick(
                                         otherUserIdForCall,
+                                        callTopic,
                                         conversationInfo?.name ?: "Kullanıcı",
                                         conversationInfo?.avatarUrl,
                                         false,
@@ -359,6 +374,7 @@ fun ConversationScreen(
                                 IconButton(onClick = {
                                     onOneOnOneCallClick(
                                         otherUserIdForCall,
+                                        callTopic,
                                         conversationInfo?.name ?: "Kullanıcı",
                                         conversationInfo?.avatarUrl,
                                         true,

@@ -65,9 +65,14 @@ private const val RECONNECT_DELAY_MS = 4_000L
  * 1:1 sesli/görüntülü arama sinyalleşme protokolü — web'in app/static/js/call.js
  * dosyasının BİREBİR native karşılığı (bkz. görev notu). Web SADECE Supabase
  * Realtime broadcast kullanıyor (backend'de bu iş için hiç REST endpoint YOK):
- * her kullanıcı KENDİ `calls:<userId>` kanalına abone olur ve `call-signal`
- * broadcast event'ini dinler; birine sinyal göndermek için HEDEFİN kanalı
- * açılıp AYNI event'e broadcast yapılır. Sinyal payload'ı web'de düz JS
+ * her kullanıcı KENDİ arama kanalına abone olur ve `call-signal` broadcast
+ * event'ini dinler; birine sinyal göndermek için HEDEFİN kanalı açılıp AYNI
+ * event'e broadcast yapılır. Kanal adı KULLANICI ID'Sİ DEĞİL — Supabase'in
+ * private kanal yetkilendirmesi platform tarafında bozuk olduğu için
+ * (bkz. sosyal-medya deposu .context/active_context.md "2026-08-07 devam
+ * 6/7") kanallar public'e alındı, adlar sunucunun ürettiği tahmin edilemez
+ * HMAC (bkz. AuthRepository.getRealtimeToken() -> myCallsTopic, api_v1/
+ * messaging.py -> other_call_topic). Sinyal payload'ı web'de düz JS
  * objesi olduğu için burada da kotlinx.serialization.json.JsonObject
  * kullanılıyor (ARZ EDİLEN "Retrofit+Gson, kotlinx.serialization DEĞİL"
  * kararına AYKIRI değil — bkz. RealtimeConnectionManager sınıf yorumu:
@@ -79,10 +84,17 @@ private const val RECONNECT_DELAY_MS = 4_000L
  */
 sealed class CallSignal {
     abstract val from: String
+    // Gönderenin KENDİ arama kanalı adı — web'in fromTopic'iyle AYNI gerekçe
+    // (2026-08-07): kanallar artık public, adları tahmin edilemez HMAC (bkz.
+    // app/realtime_topics.py). Cevap veren taraf arayanın kanal adını BAŞKA
+    // TÜRLÜ öğrenemez (gelen arama herhangi bir ekranda olabilir, otherUserId
+    // sadece görüntüleme için kalır, YÖNLENDİRME artık BUNUNLA yapılıyor).
+    abstract val fromTopic: String
     abstract val conversationId: String?
 
     data class Offer(
         override val from: String,
+        override val fromTopic: String,
         override val conversationId: String?,
         val sdp: String,
         val video: Boolean,
@@ -92,24 +104,27 @@ sealed class CallSignal {
 
     data class Answer(
         override val from: String,
+        override val fromTopic: String,
         override val conversationId: String?,
         val sdp: String,
     ) : CallSignal()
 
     data class Ice(
         override val from: String,
+        override val fromTopic: String,
         override val conversationId: String?,
         val candidate: String,
         val sdpMLineIndex: Int,
         val sdpMid: String?,
     ) : CallSignal()
 
-    data class Hangup(override val from: String, override val conversationId: String?) : CallSignal()
-    data class Reject(override val from: String, override val conversationId: String?) : CallSignal()
+    data class Hangup(override val from: String, override val fromTopic: String, override val conversationId: String?) : CallSignal()
+    data class Reject(override val from: String, override val fromTopic: String, override val conversationId: String?) : CallSignal()
 }
 
 private fun CallSignal.toPayload(): JsonObject = buildJsonObject {
     put("from", from)
+    put("fromTopic", fromTopic)
     conversationId?.let { put("conversation_id", it) }
     when (val signal = this@toPayload) {
         is CallSignal.Offer -> {
@@ -137,12 +152,17 @@ private fun CallSignal.toPayload(): JsonObject = buildJsonObject {
 private fun parseSignal(json: JsonObject): CallSignal? {
     val type = json["type"]?.jsonPrimitive?.contentOrNull ?: return null
     val from = json["from"]?.jsonPrimitive?.contentOrNull ?: return null
+    // Boşa düşerse (eski/beklenmeyen payload) SESSİZCE "" — cevap gönderimi
+    // o zaman sendSignal'in "hedef kanal adı boş" korumasına takılıp no-op
+    // olur, tüm sinyali reddetmek yerine (bkz. sendSignal).
+    val fromTopic = json["fromTopic"]?.jsonPrimitive?.contentOrNull ?: ""
     val conversationId = json["conversation_id"]?.jsonPrimitive?.contentOrNull
     return when (type) {
         "offer" -> {
             val sdp = json["sdp"]?.jsonPrimitive?.contentOrNull ?: return null
             CallSignal.Offer(
                 from = from,
+                fromTopic = fromTopic,
                 conversationId = conversationId,
                 sdp = sdp,
                 video = json["video"]?.jsonPrimitive?.booleanOrNull ?: false,
@@ -152,26 +172,27 @@ private fun parseSignal(json: JsonObject): CallSignal? {
         }
         "answer" -> {
             val sdp = json["sdp"]?.jsonPrimitive?.contentOrNull ?: return null
-            CallSignal.Answer(from, conversationId, sdp)
+            CallSignal.Answer(from, fromTopic, conversationId, sdp)
         }
         "ice" -> {
             val candidate = json["candidate"]?.jsonPrimitive?.contentOrNull ?: return null
             CallSignal.Ice(
                 from = from,
+                fromTopic = fromTopic,
                 conversationId = conversationId,
                 candidate = candidate,
                 sdpMLineIndex = json["sdpMLineIndex"]?.jsonPrimitive?.intOrNull ?: 0,
                 sdpMid = json["sdpMid"]?.jsonPrimitive?.contentOrNull,
             )
         }
-        "hangup" -> CallSignal.Hangup(from, conversationId)
-        "reject" -> CallSignal.Reject(from, conversationId)
+        "hangup" -> CallSignal.Hangup(from, fromTopic, conversationId)
+        "reject" -> CallSignal.Reject(from, fromTopic, conversationId)
         else -> null
     }
 }
 
 /**
- * Uygulama ömrü boyunca AÇIK kalan tek bir `calls:<meId>` dinleyicisi +
+ * Uygulama ömrü boyunca AÇIK kalan tek bir KENDİ arama kanalı dinleyicisi +
  * hedef başına (kısa ömürlü, önbelleklenen) giden sinyal kanalları. Web'in
  * `initGlobalCallListener`/`sendSignal`/`getOutboundChannel` üçlüsünün AYNISI
  * — bkz. call.js.
@@ -217,6 +238,13 @@ class CallSignalingManager(private val authRepository: AuthRepository) {
 
     val isConnected: Boolean get() = supabase != null
 
+    // Kendi arama kanalı adı — /realtime-token'dan gelir (bkz. connectOnce),
+    // giden HER sinyalin fromTopic'i olarak taşınır ki karşı taraf bize
+    // cevap verebilsin (topic'i başka türlü öğrenemezdi).
+    @Volatile
+    var myTopic: String? = null
+        private set
+
     /**
      * [scope]'ta SÜREKLİ çalışan bir döngü başlatır: bağlan → (başarılıysa)
      * sağlığı izle → kopunca/başarısızsa [RECONNECT_DELAY_MS] bekleyip TEKRAR
@@ -253,7 +281,13 @@ class CallSignalingManager(private val authRepository: AuthRepository) {
                     return false
                 }
             }
-            Log.d(TAG, "connectOnce: realtime token alındı, url=${token.supabaseUrl}")
+            val myTopicValue = token.myCallsTopic
+            if (myTopicValue.isNullOrBlank()) {
+                Log.w(TAG, "connectOnce: backend my_calls_topic döndürmedi, dinleyici kurulamıyor")
+                consecutiveFailures++
+                return false
+            }
+            Log.d(TAG, "connectOnce: realtime token alındı, url=${token.supabaseUrl}, myTopic=$myTopicValue")
 
             val client = createSupabaseClient(
                 supabaseUrl = token.supabaseUrl,
@@ -265,20 +299,23 @@ class CallSignalingManager(private val authRepository: AuthRepository) {
             supabase = client
             client.realtime.setAuth(token.accessToken)
 
-            // private:true + receiveOwnBroadcasts=false — web'in calls:<meId>
-            // kanalıyla AYNI RLS sözleşmesi (bkz. sql/migration_realtime_calls_
-            // select_fix.sql yorumu, call.js initGlobalCallListener).
-            val ch = client.channel("calls:$userId") {
+            // private:true KALDIRILDI (2026-08-07): Supabase'in private kanal
+            // yetkilendirmesi platform tarafında bozuk — JOIN'de veritabanına
+            // hiç sorulmadan "Unauthorized" dönüyordu (kanıt: sosyal-medya
+            // deposu .context/active_context.md "2026-08-07 devam 6"). Kanal
+            // artık public, güvenlik adın tahmin edilemezliğinde (bkz.
+            // app/realtime_topics.py — myTopicValue backend'in ürettiği HMAC).
+            val ch = client.channel(myTopicValue) {
                 broadcast { receiveOwnBroadcasts = false }
-                isPrivate = true
             }
             inboundChannel = ch
+            myTopic = myTopicValue
 
             val cs = CoroutineScope(Dispatchers.IO + SupervisorJob())
             connectionScope = cs
 
             ch.broadcastFlow<JsonObject>("call-signal").onEach { payload ->
-                Log.d(TAG, "connectOnce: HAM broadcast alındı topic=calls:$userId payload=$payload")
+                Log.d(TAG, "connectOnce: HAM broadcast alındı topic=$myTopicValue payload=$payload")
                 val parsed = parseSignal(payload)
                 if (parsed == null) {
                     Log.w(TAG, "connectOnce: payload parseSignal ile çözülemedi: $payload")
@@ -297,7 +334,7 @@ class CallSignalingManager(private val authRepository: AuthRepository) {
                 consecutiveFailures++
                 return false
             }
-            Log.d(TAG, "connectOnce: SUBSCRIBED, calls:$userId dinleniyor")
+            Log.d(TAG, "connectOnce: SUBSCRIBED, $myTopicValue dinleniyor")
             consecutiveFailures = 0
 
             cs.launch { periodicTokenRefresh(client) }
@@ -351,28 +388,33 @@ class CallSignalingManager(private val authRepository: AuthRepository) {
         }
     }
 
-    /** Hedef kullanıcının kanalına sinyal gönderir — web'in sendSignal()'ı ile
-     * AYNI: kanal yoksa/subscribe değilse önce kurulur (kısa ömürlü, hedef
-     * başına önbelleklenir). Artık Boolean DÖNÜYOR (önceden sessizce
-     * yutuyordu) — kritik sinyaller (ör. acceptIncoming()'in Answer'ı)
-     * gönderilemezse çağıran taraf artık BUNU BİLİP arayan hiç haberdar
-     * olmadan "bağlandı" göstermek yerine hatayı yansıtabilir. */
-    suspend fun sendSignal(targetUserId: String, signal: CallSignal): Boolean {
+    /** Hedef kanala (artık kullanıcı id'si DEĞİL, sunucudan gelen tahmin
+     * edilemez HMAC ADI) sinyal gönderir — web'in sendSignal()'ı ile AYNI:
+     * kanal yoksa/subscribe değilse önce kurulur (kısa ömürlü, hedef başına
+     * önbelleklenir). Artık Boolean DÖNÜYOR (önceden sessizce yutuyordu) —
+     * kritik sinyaller (ör. acceptIncoming()'in Answer'ı) gönderilemezse
+     * çağıran taraf artık BUNU BİLİP arayan hiç haberdar olmadan "bağlandı"
+     * göstermek yerine hatayı yansıtabilir. */
+    suspend fun sendSignal(targetTopic: String, signal: CallSignal): Boolean {
+        if (targetTopic.isBlank()) {
+            Log.w(TAG, "sendSignal: hedef kanal adı boş, gönderilemedi: $signal")
+            return false
+        }
         val client = supabase ?: run {
-            Log.w(TAG, "sendSignal: supabase client YOK (henüz bağlanılmadı), gönderilemedi: $signal -> $targetUserId")
+            Log.w(TAG, "sendSignal: supabase client YOK (henüz bağlanılmadı), gönderilemedi: $signal -> $targetTopic")
             return false
         }
         return try {
-            val ch = getOrCreateOutboundChannel(client, targetUserId)
+            val ch = getOrCreateOutboundChannel(client, targetTopic)
             if (ch == null) {
-                Log.w(TAG, "sendSignal: calls:$targetUserId kanalına subscribe edilemedi, gönderilemedi: $signal")
+                Log.w(TAG, "sendSignal: $targetTopic kanalına subscribe edilemedi, gönderilemedi: $signal")
                 return false
             }
             ch.broadcast("call-signal", signal.toPayload())
-            Log.d(TAG, "sendSignal: gönderildi -> calls:$targetUserId: $signal")
+            Log.d(TAG, "sendSignal: gönderildi -> $targetTopic: $signal")
             true
         } catch (e: Exception) {
-            Log.e(TAG, "sendSignal: broadcast() istisna fırlattı -> calls:$targetUserId: $signal", e)
+            Log.e(TAG, "sendSignal: broadcast() istisna fırlattı -> $targetTopic: $signal", e)
             false
         }
     }
@@ -385,18 +427,18 @@ class CallSignalingManager(private val authRepository: AuthRepository) {
      * Şimdi: gerçekten SUBSCRIBED olduğu doğrulanmadan bir kanal ASLA
      * döndürülmüyor, bir kez başarısız olursa (kısa bir ağ hıçkırığı
      * ihtimaline karşı) YENİDEN denenir. */
-    private suspend fun getOrCreateOutboundChannel(client: SupabaseClient, targetUserId: String): RealtimeChannel? =
+    private suspend fun getOrCreateOutboundChannel(client: SupabaseClient, targetTopic: String): RealtimeChannel? =
         outboundMutex.withLock {
-            outboundChannels[targetUserId]?.let { existing ->
+            outboundChannels[targetTopic]?.let { existing ->
                 if (existing.status.value == RealtimeChannel.Status.SUBSCRIBED) return@withLock existing
-                outboundChannels.remove(targetUserId)
+                outboundChannels.remove(targetTopic)
             }
             var result: RealtimeChannel? = null
             repeat(2) {
                 if (result != null) return@repeat
-                val ch = client.channel("calls:$targetUserId") {
+                // private:true KALDIRILDI — bkz. connectOnce() yorumu.
+                val ch = client.channel(targetTopic) {
                     broadcast { receiveOwnBroadcasts = false }
-                    isPrivate = true
                 }
                 val subscribed = withTimeoutOrNull(SUBSCRIBE_TIMEOUT_MS) {
                     ch.subscribe(blockUntilSubscribed = true)
@@ -404,13 +446,13 @@ class CallSignalingManager(private val authRepository: AuthRepository) {
                 }
                 if (subscribed == true && ch.status.value == RealtimeChannel.Status.SUBSCRIBED) {
                     result = ch
-                    Log.d(TAG, "getOrCreateOutboundChannel: calls:$targetUserId SUBSCRIBED")
+                    Log.d(TAG, "getOrCreateOutboundChannel: $targetTopic SUBSCRIBED")
                 } else {
-                    Log.w(TAG, "getOrCreateOutboundChannel: calls:$targetUserId subscribe başarısız (status=${ch.status.value}, timedOut=${subscribed != true}), tekrar denenecek")
+                    Log.w(TAG, "getOrCreateOutboundChannel: $targetTopic subscribe başarısız (status=${ch.status.value}, timedOut=${subscribed != true}), tekrar denenecek")
                     try { ch.unsubscribe() } catch (e: Exception) { /* en iyi-çaba temizlik */ }
                 }
             }
-            result?.let { outboundChannels[targetUserId] = it }
+            result?.let { outboundChannels[targetTopic] = it }
             result
         }
 
@@ -421,6 +463,7 @@ class CallSignalingManager(private val authRepository: AuthRepository) {
         connectionScope?.cancel()
         connectionScope = null
         inboundChannel = null
+        myTopic = null
         outboundMutex.withLock { outboundChannels.clear() }
         val savedClient = supabase
         supabase = null

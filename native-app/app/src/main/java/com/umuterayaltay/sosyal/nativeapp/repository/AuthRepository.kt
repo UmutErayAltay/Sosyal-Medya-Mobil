@@ -34,6 +34,10 @@ sealed class RealtimeTokenResult {
         val accessToken: String,
         val supabaseUrl: String,
         val supabasePublishableKey: String,
+        // Null olabilir (eski/beklenmeyen backend yanıtı) — CallSignalingManager
+        // bunu null görürse dinleyiciyi kurmadan başarısız sayar (bkz. o
+        // sınıfın connectOnce() yorumu).
+        val myCallsTopic: String?,
     ) : RealtimeTokenResult()
     data class Error(val code: String?) : RealtimeTokenResult()
 }
@@ -183,7 +187,7 @@ class AuthRepository(
             val supabaseUrl = body?.supabaseUrl
             val supabaseKey = body?.supabasePublishableKey
             if (response.isSuccessful && accessToken != null && supabaseUrl != null && supabaseKey != null) {
-                RealtimeTokenResult.Success(accessToken, supabaseUrl, supabaseKey)
+                RealtimeTokenResult.Success(accessToken, supabaseUrl, supabaseKey, body?.myCallsTopic)
             } else {
                 RealtimeTokenResult.Error(body?.error ?: RetrofitClient.parseErrorCode(response))
             }
