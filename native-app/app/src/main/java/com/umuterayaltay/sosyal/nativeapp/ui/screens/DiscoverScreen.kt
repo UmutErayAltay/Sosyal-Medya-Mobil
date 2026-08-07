@@ -102,6 +102,7 @@ fun DiscoverScreen(
     val discoverLoading by viewModel.discoverLoading.collectAsState()
     val discoverHasMore by viewModel.discoverHasMore.collectAsState()
     val discoverError by viewModel.discoverError.collectAsState()
+    val currentUserId by viewModel.currentUserId.collectAsState()
     val context = LocalContext.current
 
     LaunchedEffect(Unit) {
@@ -225,6 +226,11 @@ fun DiscoverScreen(
                                         onRepost = { postId -> viewModel.repost(postId) },
                                         onReport = { postId -> viewModel.report(postId) },
                                         onSessionExpired = onSessionExpired,
+                                        isOwnPost = post.userId == currentUserId,
+                                        onEditPost = { postId, content -> viewModel.editPost(postId, content) },
+                                        onDeletePost = { postId -> viewModel.deletePost(postId) },
+                                        onArchivePost = { postId -> viewModel.toggleArchive(postId) },
+                                        onPinPost = { postId -> viewModel.togglePin(postId) },
                                     )
                                 }
                             }
@@ -293,6 +299,11 @@ fun DiscoverScreen(
                                 onRepost = { postId -> viewModel.repost(postId) },
                                 onReport = { postId -> viewModel.report(postId) },
                                 onSessionExpired = onSessionExpired,
+                                isOwnPost = post.userId == currentUserId,
+                                onEditPost = { postId, content -> viewModel.editPost(postId, content) },
+                                onDeletePost = { postId -> viewModel.deletePost(postId) },
+                                onArchivePost = { postId -> viewModel.toggleArchive(postId) },
+                                onPinPost = { postId -> viewModel.togglePin(postId) },
                             )
                         }
                         item {

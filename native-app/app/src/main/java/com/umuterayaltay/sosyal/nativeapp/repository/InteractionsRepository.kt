@@ -2,6 +2,7 @@ package com.umuterayaltay.sosyal.nativeapp.repository
 
 import com.umuterayaltay.sosyal.nativeapp.network.AddCommentRequest
 import com.umuterayaltay.sosyal.nativeapp.network.CommentDto
+import com.umuterayaltay.sosyal.nativeapp.network.EditPostRequest
 import com.umuterayaltay.sosyal.nativeapp.network.InteractionsApi
 import com.umuterayaltay.sosyal.nativeapp.network.LikeRequest
 import com.umuterayaltay.sosyal.nativeapp.network.RetrofitClient
@@ -33,6 +34,29 @@ sealed class AddCommentResult {
 sealed class CreatePostResult {
     data class Success(val post: Post) : CreatePostResult()
     data class Error(val code: String?) : CreatePostResult()
+}
+
+// Post yönetimi (düzenle/sil/arşivle/sabitle) — app/api_v1/posts.py'nin
+// birebir mirror'ı, ownership ihlalinde backend HER ZAMAN "not_found" (404)
+// döner (enumeration koruması), ayrı bir "forbidden" varyantı YOK.
+sealed class EditPostResult {
+    data class Success(val content: String, val visibility: String?, val editedAt: String?) : EditPostResult()
+    data class Error(val code: String?) : EditPostResult()
+}
+
+sealed class DeletePostResult {
+    object Success : DeletePostResult()
+    data class Error(val code: String?) : DeletePostResult()
+}
+
+sealed class ToggleArchiveResult {
+    data class Success(val isArchived: Boolean) : ToggleArchiveResult()
+    data class Error(val code: String?) : ToggleArchiveResult()
+}
+
+sealed class TogglePinResult {
+    data class Success(val pinned: Boolean) : TogglePinResult()
+    data class Error(val code: String?) : TogglePinResult()
 }
 
 /**
@@ -186,6 +210,71 @@ class InteractionsRepository(
             CreatePostResult.Error("network_error")
         } catch (e: Exception) {
             CreatePostResult.Error("unknown_error")
+        }
+    }
+
+    suspend fun editPost(postId: String, content: String, visibility: String? = null): EditPostResult =
+        withContext(Dispatchers.IO) {
+            try {
+                val response = interactionsApi.editPost(postId, EditPostRequest(content, visibility))
+                val body = response.body()
+                if (response.isSuccessful && body != null && body.ok) {
+                    EditPostResult.Success(body.content ?: content, body.visibility, body.editedAt)
+                } else {
+                    EditPostResult.Error(body?.error ?: RetrofitClient.parseErrorCode(response))
+                }
+            } catch (e: IOException) {
+                EditPostResult.Error("network_error")
+            } catch (e: Exception) {
+                EditPostResult.Error("unknown_error")
+            }
+        }
+
+    suspend fun deletePost(postId: String): DeletePostResult = withContext(Dispatchers.IO) {
+        try {
+            val response = interactionsApi.deletePost(postId)
+            val body = response.body()
+            if (response.isSuccessful && body != null && body.ok) {
+                DeletePostResult.Success
+            } else {
+                DeletePostResult.Error(body?.error ?: RetrofitClient.parseErrorCode(response))
+            }
+        } catch (e: IOException) {
+            DeletePostResult.Error("network_error")
+        } catch (e: Exception) {
+            DeletePostResult.Error("unknown_error")
+        }
+    }
+
+    suspend fun toggleArchive(postId: String): ToggleArchiveResult = withContext(Dispatchers.IO) {
+        try {
+            val response = interactionsApi.toggleArchive(postId)
+            val body = response.body()
+            if (response.isSuccessful && body != null && body.ok) {
+                ToggleArchiveResult.Success(body.isArchived)
+            } else {
+                ToggleArchiveResult.Error(body?.error ?: RetrofitClient.parseErrorCode(response))
+            }
+        } catch (e: IOException) {
+            ToggleArchiveResult.Error("network_error")
+        } catch (e: Exception) {
+            ToggleArchiveResult.Error("unknown_error")
+        }
+    }
+
+    suspend fun togglePin(postId: String): TogglePinResult = withContext(Dispatchers.IO) {
+        try {
+            val response = interactionsApi.togglePin(postId)
+            val body = response.body()
+            if (response.isSuccessful && body != null && body.ok) {
+                TogglePinResult.Success(body.pinned)
+            } else {
+                TogglePinResult.Error(body?.error ?: RetrofitClient.parseErrorCode(response))
+            }
+        } catch (e: IOException) {
+            TogglePinResult.Error("network_error")
+        } catch (e: Exception) {
+            TogglePinResult.Error("unknown_error")
         }
     }
 }

@@ -556,6 +556,44 @@ data class ToggleLikeResponse(
     val error: String? = null,
 )
 
+// Post yönetimi (düzenle/sil/arşivle/sabitle) — app/api_v1/posts.py ile birebir
+// JSON sözleşmesi (bkz. o dosyanın docstring'i). Sahiplik ihlalinde backend
+// HER ZAMAN 404 döner (403 değil, enumeration koruması) — Retrofit tarafında
+// bu farklı davranmıyor, RetrofitClient.parseErrorCode zaten kod-agnostik.
+data class EditPostRequest(
+    val content: String,
+    val visibility: String? = null,
+)
+
+data class EditPostResponse(
+    val ok: Boolean = false,
+    @SerializedName("post_id") val postId: String? = null,
+    val content: String? = null,
+    val visibility: String? = null,
+    @SerializedName("edited_at") val editedAt: String? = null,
+    val error: String? = null,
+)
+
+data class DeletePostResponse(
+    val ok: Boolean = false,
+    @SerializedName("post_id") val postId: String? = null,
+    val error: String? = null,
+)
+
+data class ArchivePostResponse(
+    val ok: Boolean = false,
+    @SerializedName("post_id") val postId: String? = null,
+    @SerializedName("is_archived") val isArchived: Boolean = false,
+    val error: String? = null,
+)
+
+data class PinPostResponse(
+    val ok: Boolean = false,
+    @SerializedName("post_id") val postId: String? = null,
+    val pinned: Boolean = false,
+    val error: String? = null,
+)
+
 /** stickers tablosundan {id, image_url} özeti — hem yorumlarda (CommentDto.sticker)
  * hem mesajlarda (MessageDto.sticker, AYNI JSON şekli) render edilir. */
 data class CommentStickerDto(

@@ -4,14 +4,18 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.umuterayaltay.sosyal.nativeapp.ServiceLocator
+import com.umuterayaltay.sosyal.nativeapp.repository.DeletePostResult
+import com.umuterayaltay.sosyal.nativeapp.repository.EditPostResult
 import com.umuterayaltay.sosyal.nativeapp.repository.HashtagPostsResult
 import com.umuterayaltay.sosyal.nativeapp.repository.Post
 import com.umuterayaltay.sosyal.nativeapp.repository.ReportResult
 import com.umuterayaltay.sosyal.nativeapp.repository.RepostResult
+import com.umuterayaltay.sosyal.nativeapp.repository.ToggleArchiveResult
 import com.umuterayaltay.sosyal.nativeapp.repository.ToggleBookmarkResult
 import com.umuterayaltay.sosyal.nativeapp.repository.ToggleHashtagFollowResult
 import com.umuterayaltay.sosyal.nativeapp.repository.ToggleLikeResult
 import com.umuterayaltay.sosyal.nativeapp.repository.ToggleMutePostResult
+import com.umuterayaltay.sosyal.nativeapp.repository.TogglePinResult
 import com.umuterayaltay.sosyal.nativeapp.repository.VotePollResult
 import com.umuterayaltay.sosyal.nativeapp.repository.applyVote
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -44,9 +48,19 @@ class HashtagViewModel(private val tag: String) : ViewModel() {
     private val repostsRepository = ServiceLocator.repostsRepository
     private val reportsRepository = ServiceLocator.reportsRepository
     private val tokenStore = ServiceLocator.tokenStore
+    private val authRepository = ServiceLocator.authRepository
 
     private val _posts = MutableStateFlow<List<Post>>(emptyList())
     val posts: StateFlow<List<Post>> = _posts.asStateFlow()
+
+    // Post yönetimi (düzenle/sil/arşivle/sabitle) — FeedViewModel.currentUserId
+    // ile AYNI gerekçe/desen.
+    private val _currentUserId = MutableStateFlow<String?>(null)
+    val currentUserId: StateFlow<String?> = _currentUserId.asStateFlow()
+
+    init {
+        viewModelScope.launch { _currentUserId.value = authRepository.getCurrentUserId() }
+    }
 
     private val _isFollowing = MutableStateFlow(false)
     val isFollowing: StateFlow<Boolean> = _isFollowing.asStateFlow()
@@ -180,6 +194,73 @@ class HashtagViewModel(private val tag: String) : ViewModel() {
                 }
             }
         }
+    }
+
+    fun editPost(postId: String, content: String) {
+        viewModelScope.launch {
+            when (val result = interactionsRepository.editPost(postId, content)) {
+                is EditPostResult.Success -> {
+                    _posts.value = _posts.value.map { post ->
+                        if (post.id == postId) post.copy(content = result.content) else post
+                    }
+                    _events.emit(HashtagEvent.ShowToast("Post güncellendi"))
+                }
+                is EditPostResult.Error -> handlePostManagementError(result.code, "Post güncellenemedi")
+            }
+        }
+    }
+
+    fun deletePost(postId: String) {
+        viewModelScope.launch {
+            when (val result = interactionsRepository.deletePost(postId)) {
+                is DeletePostResult.Success -> {
+                    _posts.value = _posts.value.filterNot { it.id == postId }
+                    _events.emit(HashtagEvent.ShowToast("Post silindi"))
+                }
+                is DeletePostResult.Error -> handlePostManagementError(result.code, "Post silinemedi")
+            }
+        }
+    }
+
+    fun toggleArchive(postId: String) {
+        viewModelScope.launch {
+            when (val result = interactionsRepository.toggleArchive(postId)) {
+                is ToggleArchiveResult.Success -> {
+                    _posts.value = _posts.value.filterNot { it.id == postId }
+                    _events.emit(
+                        HashtagEvent.ShowToast(if (result.isArchived) "Post arşivlendi" else "Post arşivden çıkarıldı"),
+                    )
+                }
+                is ToggleArchiveResult.Error -> handlePostManagementError(result.code, "İşlem başarısız")
+            }
+        }
+    }
+
+    fun togglePin(postId: String) {
+        viewModelScope.launch {
+            when (val result = interactionsRepository.togglePin(postId)) {
+                is TogglePinResult.Success -> _events.emit(
+                    HashtagEvent.ShowToast(if (result.pinned) "Profilinin en üstüne sabitlendi" else "Sabitleme kaldırıldı"),
+                )
+                is TogglePinResult.Error -> handlePostManagementError(result.code, "İşlem başarısız")
+            }
+        }
+    }
+
+    private suspend fun handlePostManagementError(code: String?, fallback: String) {
+        if (code == "unauthorized") {
+            tokenStore.clearToken()
+            _events.emit(HashtagEvent.SessionExpired)
+            return
+        }
+        val message = when (code) {
+            "not_found" -> "Bu post artık mevcut değil"
+            "empty_post" -> "Post boş olamaz"
+            "unavailable" -> "Şu anda kullanılamıyor, daha sonra tekrar dene"
+            "network_error" -> "Bağlantı hatası — internet bağlantınızı kontrol edin"
+            else -> fallback
+        }
+        _events.emit(HashtagEvent.ShowToast(message))
     }
 
     private fun mapRepostError(code: String?): String = when (code) {

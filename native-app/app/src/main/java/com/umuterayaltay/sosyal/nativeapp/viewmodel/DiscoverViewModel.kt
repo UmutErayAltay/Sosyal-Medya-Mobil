@@ -7,15 +7,19 @@ import com.umuterayaltay.sosyal.nativeapp.network.HashtagSearchDto
 import com.umuterayaltay.sosyal.nativeapp.network.SavedSearchItemDto
 import com.umuterayaltay.sosyal.nativeapp.network.SearchHistoryItemDto
 import com.umuterayaltay.sosyal.nativeapp.network.UserSearchDto
+import com.umuterayaltay.sosyal.nativeapp.repository.DeletePostResult
 import com.umuterayaltay.sosyal.nativeapp.repository.DiscoverPageResult
+import com.umuterayaltay.sosyal.nativeapp.repository.EditPostResult
 import com.umuterayaltay.sosyal.nativeapp.repository.Post
 import com.umuterayaltay.sosyal.nativeapp.repository.ReportResult
 import com.umuterayaltay.sosyal.nativeapp.repository.RepostResult
 import com.umuterayaltay.sosyal.nativeapp.repository.SearchActionResult
 import com.umuterayaltay.sosyal.nativeapp.repository.SearchResult
+import com.umuterayaltay.sosyal.nativeapp.repository.ToggleArchiveResult
 import com.umuterayaltay.sosyal.nativeapp.repository.ToggleBookmarkResult
 import com.umuterayaltay.sosyal.nativeapp.repository.ToggleLikeResult
 import com.umuterayaltay.sosyal.nativeapp.repository.ToggleMutePostResult
+import com.umuterayaltay.sosyal.nativeapp.repository.TogglePinResult
 import com.umuterayaltay.sosyal.nativeapp.repository.VotePollResult
 import com.umuterayaltay.sosyal.nativeapp.repository.applyVote
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -63,6 +67,16 @@ class DiscoverViewModel : ViewModel() {
     private val repostsRepository = ServiceLocator.repostsRepository
     private val reportsRepository = ServiceLocator.reportsRepository
     private val tokenStore = ServiceLocator.tokenStore
+    private val authRepository = ServiceLocator.authRepository
+
+    // Post yönetimi (düzenle/sil/arşivle/sabitle) — FeedViewModel.currentUserId
+    // ile AYNI gerekçe/desen.
+    private val _currentUserId = MutableStateFlow<String?>(null)
+    val currentUserId: StateFlow<String?> = _currentUserId.asStateFlow()
+
+    init {
+        viewModelScope.launch { _currentUserId.value = authRepository.getCurrentUserId() }
+    }
 
     // ---- Keşfet akışı ----
 
@@ -394,6 +408,89 @@ class DiscoverViewModel : ViewModel() {
                 }
             }
         }
+    }
+
+    /** editPost/deletePost/toggleArchive/togglePin — FeedViewModel'in AYNI 4
+     * fonksiyonuyla BİREBİR mantık, tek fark: Discover'ın posts listesi
+     * Room-derived DEĞİL düz bir MutableStateFlow olduğu için (bkz. toggleLike
+     * satır ~280'deki YEREL map deseni) network refresh() yerine liste
+     * doğrudan güncellenir/filtrelenir. Bu ekranda PostCard İKİ ayrı listeden
+     * beslenir (discoverPosts akış + searchPosts arama sonucu) — AYNI post
+     * ikisinde de görünebileceği için HER İKİSİ birden güncellenir.
+     */
+    fun editPost(postId: String, content: String) {
+        viewModelScope.launch {
+            when (val result = interactionsRepository.editPost(postId, content)) {
+                is EditPostResult.Success -> {
+                    val update: (Post) -> Post = { post ->
+                        if (post.id == postId) post.copy(content = result.content) else post
+                    }
+                    _discoverPosts.value = _discoverPosts.value.map(update)
+                    _searchPosts.value = _searchPosts.value.map(update)
+                    _events.emit(DiscoverEvent.ShowToast("Post güncellendi"))
+                }
+                is EditPostResult.Error -> handlePostManagementError(result.code, "Post güncellenemedi")
+            }
+        }
+    }
+
+    fun deletePost(postId: String) {
+        viewModelScope.launch {
+            when (val result = interactionsRepository.deletePost(postId)) {
+                is DeletePostResult.Success -> {
+                    _discoverPosts.value = _discoverPosts.value.filterNot { it.id == postId }
+                    _searchPosts.value = _searchPosts.value.filterNot { it.id == postId }
+                    _events.emit(DiscoverEvent.ShowToast("Post silindi"))
+                }
+                is DeletePostResult.Error -> handlePostManagementError(result.code, "Post silinemedi")
+            }
+        }
+    }
+
+    fun toggleArchive(postId: String) {
+        viewModelScope.launch {
+            when (val result = interactionsRepository.toggleArchive(postId)) {
+                is ToggleArchiveResult.Success -> {
+                    // Arşivlenen post artık backend'in feed/discover sorgusunda hiç
+                    // dönmeyecek (is_archived filtresi) — arşivden ÇIKARILAN post da
+                    // AYNI şekilde bu listede zaten olamaz, iki durumda da listeden
+                    // çıkarmak doğru.
+                    _discoverPosts.value = _discoverPosts.value.filterNot { it.id == postId }
+                    _searchPosts.value = _searchPosts.value.filterNot { it.id == postId }
+                    _events.emit(
+                        DiscoverEvent.ShowToast(if (result.isArchived) "Post arşivlendi" else "Post arşivden çıkarıldı"),
+                    )
+                }
+                is ToggleArchiveResult.Error -> handlePostManagementError(result.code, "İşlem başarısız")
+            }
+        }
+    }
+
+    fun togglePin(postId: String) {
+        viewModelScope.launch {
+            when (val result = interactionsRepository.togglePin(postId)) {
+                is TogglePinResult.Success -> _events.emit(
+                    DiscoverEvent.ShowToast(if (result.pinned) "Profilinin en üstüne sabitlendi" else "Sabitleme kaldırıldı"),
+                )
+                is TogglePinResult.Error -> handlePostManagementError(result.code, "İşlem başarısız")
+            }
+        }
+    }
+
+    private suspend fun handlePostManagementError(code: String?, fallback: String) {
+        if (code == "unauthorized") {
+            tokenStore.clearToken()
+            _events.emit(DiscoverEvent.SessionExpired)
+            return
+        }
+        val message = when (code) {
+            "not_found" -> "Bu post artık mevcut değil"
+            "empty_post" -> "Post boş olamaz"
+            "unavailable" -> "Şu anda kullanılamıyor, daha sonra tekrar dene"
+            "network_error" -> "Bağlantı hatası — internet bağlantınızı kontrol edin"
+            else -> fallback
+        }
+        _events.emit(DiscoverEvent.ShowToast(message))
     }
 
     private fun mapRepostError(code: String?): String = when (code) {

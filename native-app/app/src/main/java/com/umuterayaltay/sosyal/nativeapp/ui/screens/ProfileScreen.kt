@@ -129,6 +129,7 @@ fun ProfileScreen(
     val bookmarkedPosts by viewModel.bookmarkedPosts.collectAsState()
     val highlights by viewModel.highlights.collectAsState()
     val archivedPosts by viewModel.archivedPosts.collectAsState()
+    val currentUserId by viewModel.currentUserId.collectAsState()
     val isSelf by viewModel.isSelf.collectAsState()
     val isFollowing by viewModel.isFollowing.collectAsState()
     val isPendingRequest by viewModel.isPendingRequest.collectAsState()
@@ -225,6 +226,11 @@ fun ProfileScreen(
                 onRepost = { postId -> viewModel.repost(postId) },
                 onReport = { postId -> viewModel.report(postId) },
                 onSessionExpired = onSessionExpired,
+                currentUserId = currentUserId,
+                onEditPost = { postId, content -> viewModel.editPost(postId, content) },
+                onDeletePost = { postId -> viewModel.deletePost(postId) },
+                onArchivePost = { postId -> viewModel.toggleArchive(postId) },
+                onPinPost = { postId -> viewModel.togglePin(postId) },
             )
         }
 
@@ -441,6 +447,15 @@ private fun ProfileContent(
     onReport: (String) -> Unit,
     // PostCard'ın kendi PostShareSheet'i için — bkz. PostCard.kt yorumu.
     onSessionExpired: () -> Unit,
+    // Post yönetimi (düzenle/sil/arşivle/sabitle) — isSelf İLE KARIŞTIRILMASIN:
+    // "Beğenilenler"/"Kaydedilenler" sekmeleri BAŞKALARININ postlarını da
+    // gösterir, bu yüzden isOwnPost her post için AYRI currentUserId
+    // karşılaştırmasıyla hesaplanır (bkz. ProfileViewModel.currentUserId yorumu).
+    currentUserId: String?,
+    onEditPost: (String, String) -> Unit,
+    onDeletePost: (String) -> Unit,
+    onArchivePost: (String) -> Unit,
+    onPinPost: (String) -> Unit,
 ) {
     var selectedTab by remember { mutableStateOf(ProfileTab.Posts) }
     val hidden = isPrivate && !isSelf && !isFollowing
@@ -578,6 +593,11 @@ private fun ProfileContent(
                         onRepost = onRepost,
                         onReport = onReport,
                         onSessionExpired = onSessionExpired,
+                        isOwnPost = post.userId == currentUserId,
+                        onEditPost = onEditPost,
+                        onDeletePost = onDeletePost,
+                        onArchivePost = onArchivePost,
+                        onPinPost = onPinPost,
                     )
                 }
             }

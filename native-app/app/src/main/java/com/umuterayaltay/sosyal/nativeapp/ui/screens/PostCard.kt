@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Repeat
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -32,7 +33,9 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -123,8 +126,24 @@ fun PostCard(
     // opsiyonel callback'lerle AYNI gerekçe, henüz bağlanmamış çağrı yerleri
     // (varsa) değişmeden derlenmeye devam eder.
     onSessionExpired: () -> Unit = {},
+    // Post yönetimi (düzenle/sil/arşivle/sabitle) — SADECE kendi postumda
+    // anlamlı, çağıran taraf (Feed/Discover/Hashtag/Profile/PostDetail)
+    // `post.userId == kendi id'im` karşılaştırmasını KENDİSİ yapıp geçer
+    // (PostCard'a ayrıca "benim id'im nedir" bilgisi taşımak yerine, diğer
+    // opsiyonel callback'lerle AYNI "VARSAYILAN DEĞERLİ, henüz bağlanmamış
+    // çağrı yerleri değişmeden derlenir" gerekçesi).
+    isOwnPost: Boolean = false,
+    onEditPost: (postId: String, newContent: String) -> Unit = { _, _ -> },
+    onDeletePost: (postId: String) -> Unit = {},
+    onArchivePost: (postId: String) -> Unit = {},
+    onPinPost: (postId: String) -> Unit = {},
 ) {
     var showActionsSheet by remember { mutableStateOf(false) }
+    // "Düzenle" PostActionsSheet'te tıklanınca açılır — showActionsSheet'in
+    // AYNI yerel-state deseni, TextField içeriği post'un GÜNCEL content'iyle
+    // her açılışta yeniden başlatılır (remember(post.content) ile).
+    var showEditDialog by remember { mutableStateOf(false) }
+    var editContent by remember(post.content) { mutableStateOf(post.content ?: "") }
     // "Gönder" ikonu (aksiyon satırında) tıklanınca açılır — showActionsSheet
     // ile AYNI desen, PostCard'ın KENDİ İÇİNDE tutulan yerel bir state
     // (ViewModel'e taşınmadı, PostShareSheet kendi başına yeterli).
@@ -374,6 +393,40 @@ fun PostCard(
             onMutePost = onMutePost,
             onReport = onReport,
             onDismiss = { showActionsSheet = false },
+            isOwn = isOwnPost,
+            onEdit = { showEditDialog = true },
+            onDelete = onDeletePost,
+            onToggleArchive = onArchivePost,
+            onTogglePin = onPinPost,
+        )
+    }
+
+    if (showEditDialog) {
+        AlertDialog(
+            onDismissRequest = { showEditDialog = false },
+            title = { Text("Postu düzenle") },
+            text = {
+                // SADECE metin — görsel/video değiştirme kapsam dışı (web'in
+                // post_edit.html'iyle AYNI kısıt, bkz. app/routes/posts.py
+                // edit_post() docstring'i).
+                OutlinedTextField(
+                    value = editContent,
+                    onValueChange = { editContent = it },
+                    minLines = 3,
+                    maxLines = 8,
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showEditDialog = false
+                        onEditPost(post.id, editContent)
+                    },
+                ) { Text("Kaydet") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showEditDialog = false }) { Text("Vazgeç") }
+            },
         )
     }
 

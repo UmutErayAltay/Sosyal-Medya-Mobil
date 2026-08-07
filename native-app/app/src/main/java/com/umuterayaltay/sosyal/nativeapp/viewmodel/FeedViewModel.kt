@@ -4,15 +4,19 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.umuterayaltay.sosyal.nativeapp.ServiceLocator
 import com.umuterayaltay.sosyal.nativeapp.network.SuggestedUserDto
+import com.umuterayaltay.sosyal.nativeapp.repository.DeletePostResult
+import com.umuterayaltay.sosyal.nativeapp.repository.EditPostResult
 import com.umuterayaltay.sosyal.nativeapp.repository.FeedRefreshResult
 import com.umuterayaltay.sosyal.nativeapp.repository.Poll
 import com.umuterayaltay.sosyal.nativeapp.repository.Post
 import com.umuterayaltay.sosyal.nativeapp.repository.ReportResult
 import com.umuterayaltay.sosyal.nativeapp.repository.RepostResult
+import com.umuterayaltay.sosyal.nativeapp.repository.ToggleArchiveResult
 import com.umuterayaltay.sosyal.nativeapp.repository.ToggleBookmarkResult
 import com.umuterayaltay.sosyal.nativeapp.repository.ToggleFollowResult
 import com.umuterayaltay.sosyal.nativeapp.repository.ToggleLikeResult
 import com.umuterayaltay.sosyal.nativeapp.repository.ToggleMutePostResult
+import com.umuterayaltay.sosyal.nativeapp.repository.TogglePinResult
 import com.umuterayaltay.sosyal.nativeapp.repository.UnreadCountResult
 import com.umuterayaltay.sosyal.nativeapp.repository.VotePollResult
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -55,6 +59,7 @@ class FeedViewModel : ViewModel() {
     // EDİLMEDİ - ProfileRepository.toggleFollow() reuse edildi (görev tanımı).
     private val profileRepository = ServiceLocator.profileRepository
     private val tokenStore = ServiceLocator.tokenStore
+    private val authRepository = ServiceLocator.authRepository
 
     // Room'da poll kolonu YOK (bkz. PostEntity.toDomain() yorumu) — observePosts()
     // her zaman poll=null döner, bu yüzden votePoll() sonucu doğrudan Room'a
@@ -102,9 +107,15 @@ class FeedViewModel : ViewModel() {
     private val _suggestedUsers = MutableStateFlow<List<SuggestedUserDto>>(emptyList())
     val suggestedUsers: StateFlow<List<SuggestedUserDto>> = _suggestedUsers.asStateFlow()
 
+    // Post yönetimi (düzenle/sil/arşivle/sabitle) — PostCard'ın "bu post BENİM
+    // mi" karşılaştırması için, bkz. AuthRepository.getCurrentUserId() yorumu.
+    private val _currentUserId = MutableStateFlow<String?>(null)
+    val currentUserId: StateFlow<String?> = _currentUserId.asStateFlow()
+
     init {
         refresh()
         loadUnreadNotificationsCount()
+        viewModelScope.launch { _currentUserId.value = authRepository.getCurrentUserId() }
     }
 
     fun loadUnreadNotificationsCount() {
@@ -323,6 +334,82 @@ class FeedViewModel : ViewModel() {
                 }
             }
         }
+    }
+
+    /** PostActionsSheet'teki "Düzenle" diyaloğu KAYDET'e basınca çağrılır —
+     * içerik SADECE metin (görsel/video kapsam dışı, bkz. PostCard.kt yorumu).
+     * Başarı sonrası refresh() ile Room+network YENİDEN eşitlenir (poll
+     * override deseninde olduğu gibi ayrı bir yerel-state overlay İCAT
+     * EDİLMEDİ — düzenleme repost/report kadar sık olmayan bir aksiyon,
+     * basit tutuldu). */
+    fun editPost(postId: String, content: String) {
+        viewModelScope.launch {
+            when (val result = interactionsRepository.editPost(postId, content)) {
+                is EditPostResult.Success -> {
+                    _events.emit(FeedEvent.ShowToast("Post güncellendi"))
+                    refresh()
+                }
+                is EditPostResult.Error -> handlePostManagementError(result.code, "Post güncellenemedi")
+            }
+        }
+    }
+
+    fun deletePost(postId: String) {
+        viewModelScope.launch {
+            when (val result = interactionsRepository.deletePost(postId)) {
+                is DeletePostResult.Success -> {
+                    _events.emit(FeedEvent.ShowToast("Post silindi"))
+                    refresh()
+                }
+                is DeletePostResult.Error -> handlePostManagementError(result.code, "Post silinemedi")
+            }
+        }
+    }
+
+    fun toggleArchive(postId: String) {
+        viewModelScope.launch {
+            when (val result = interactionsRepository.toggleArchive(postId)) {
+                is ToggleArchiveResult.Success -> {
+                    _events.emit(
+                        FeedEvent.ShowToast(if (result.isArchived) "Post arşivlendi" else "Post arşivden çıkarıldı"),
+                    )
+                    refresh()
+                }
+                is ToggleArchiveResult.Error -> handlePostManagementError(result.code, "İşlem başarısız")
+            }
+        }
+    }
+
+    fun togglePin(postId: String) {
+        viewModelScope.launch {
+            when (val result = interactionsRepository.togglePin(postId)) {
+                is TogglePinResult.Success -> _events.emit(
+                    FeedEvent.ShowToast(if (result.pinned) "Profilinin en üstüne sabitlendi" else "Sabitleme kaldırıldı"),
+                )
+                is TogglePinResult.Error -> handlePostManagementError(result.code, "İşlem başarısız")
+            }
+        }
+    }
+
+    /** editPost/deletePost/toggleArchive/togglePin'in ORTAK hata yolu —
+     * report()/repost() ile AYNI unauthorized->SessionExpired dalı, "not_found"
+     * (sahiplik ihlali/silinmiş post) dahil geri kalanı tek bir generic mesajla
+     * Toast'a düşer (backend zaten enumeration koruması için ayrım YAPMIYOR,
+     * bkz. app/api_v1/posts.py). */
+    private suspend fun handlePostManagementError(code: String?, fallback: String) {
+        if (code == "unauthorized") {
+            tokenStore.clearToken()
+            _events.emit(FeedEvent.SessionExpired)
+            return
+        }
+        val message = when (code) {
+            "not_found" -> "Bu post artık mevcut değil"
+            "empty_post" -> "Post boş olamaz"
+            "unavailable" -> "Şu anda kullanılamıyor, daha sonra tekrar dene"
+            "network_error" -> "Bağlantı hatası — internet bağlantınızı kontrol edin"
+            else -> fallback
+        }
+        _events.emit(FeedEvent.ShowToast(message))
     }
 
     private fun mapRepostError(code: String?): String = when (code) {

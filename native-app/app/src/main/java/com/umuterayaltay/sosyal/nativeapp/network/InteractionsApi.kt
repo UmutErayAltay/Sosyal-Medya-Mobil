@@ -61,4 +61,22 @@ interface InteractionsApi {
         @Part("poll_option_3") pollOption3: RequestBody?,
         @Part("poll_option_4") pollOption4: RequestBody?,
     ): Response<CreatePostResponse>
+
+    // Post yönetimi (sahibinin kendi postuna uyguladığı yaşam döngüsü
+    // işlemleri) — app/api_v1/posts.py ile birebir, bkz. ApiModels.kt DTO
+    // yorumları.
+    @POST("posts/{id}/edit")
+    suspend fun editPost(
+        @Path("id") postId: String,
+        @Body request: EditPostRequest,
+    ): Response<EditPostResponse>
+
+    @POST("posts/{id}/delete")
+    suspend fun deletePost(@Path("id") postId: String): Response<DeletePostResponse>
+
+    @POST("posts/{id}/archive")
+    suspend fun toggleArchive(@Path("id") postId: String): Response<ArchivePostResponse>
+
+    @POST("posts/{id}/pin")
+    suspend fun togglePin(@Path("id") postId: String): Response<PinPostResponse>
 }

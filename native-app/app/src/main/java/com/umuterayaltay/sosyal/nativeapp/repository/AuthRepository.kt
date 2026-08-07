@@ -52,7 +52,25 @@ class AuthRepository(
     private val tokenStore: TokenStore,
 ) {
 
+    // Post yönetimi (düzenle/sil/arşivle/sabitle) gibi "bu içerik BENİM mi"
+    // karşılaştırmaları için — TokenStore SADECE bearer token'ı tutuyor,
+    // kullanıcı id'si HİÇBİR yerde cache'lenmiyordu (ProfileScreen'in isSelf'i
+    // backend'den geliyor, o desen burada tekrar KULLANILAMAZ çünkü Feed/
+    // Discover/Hashtag/PostDetail TEK bir profile değil, karışık yazarlı
+    // post listeleri gösteriyor). Bellek-içi basit cache — process ömrü
+    // boyunca yeterli, logout()'ta temizlenir.
+    private var cachedUserId: String? = null
+
     fun isLoggedIn(): Boolean = !tokenStore.getToken().isNullOrBlank()
+
+    /** [getCurrentUser]'ı sarıp SADECE id'yi döner, ilk başarılı çağrıdan
+     * sonra bellekte tutar (her PostCard render'ında ağa gitmesin diye). */
+    suspend fun getCurrentUserId(): String? {
+        cachedUserId?.let { return it }
+        val id = getCurrentUser()?.id
+        if (id != null) cachedUserId = id
+        return id
+    }
 
     /** [code] opsiyonel — 2FA aktif hesapta ilk denemede backend 403 mfa_required
      * döner (bkz. AuthViewModel.NeedsCode); çağıran taraf AYNI email+password'ü
@@ -226,6 +244,7 @@ class AuthRepository(
                 // ama bu MVP'de kabul edilebilir (spesifikasyon: proaktif doğrulama yok).
             } finally {
                 tokenStore.clearToken()
+                cachedUserId = null
             }
         }
     }

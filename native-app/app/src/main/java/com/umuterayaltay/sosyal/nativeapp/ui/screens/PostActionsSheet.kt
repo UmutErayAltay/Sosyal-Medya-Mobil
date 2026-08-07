@@ -5,9 +5,13 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Archive
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -41,6 +45,14 @@ import com.umuterayaltay.sosyal.nativeapp.repository.Post
  * olarak AlertDialog ile onay ister (sebep seçimi YOK, backend'de zaten
  * reason alanı yok) ve KIRMIZI/error tonunda gösterilir — web'de de bu
  * aksiyon dikkat çekici renktedir.
+ *
+ * Post yönetimi (düzenle/sil/arşivle/sabitle) — kendi postun için Mute/Report
+ * anlamsız (kendini susturamaz/bildiremezsin), bu yüzden [isOwn] true iken
+ * MENÜ TAMAMEN DEĞİŞİR: Mute/Report yerine Düzenle/Sabitle-Kaldır/Arşivle/Sil
+ * gösterilir. Silme, Bildir'le AYNI "geri dönüşü olmayan aksiyon" felsefesiyle
+ * AlertDialog ile onaylatılır. Düzenleme burada bir metin alanı GÖSTERMEZ —
+ * [onEdit] sadece dismiss+sinyal verir, gerçek düzenleme diyaloğu PostCard'ın
+ * kendi (post içeriğini zaten elinde tutan) katmanında açılır.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -49,27 +61,89 @@ fun PostActionsSheet(
     onMutePost: (String) -> Unit,
     onDismiss: () -> Unit,
     onReport: (String) -> Unit = {},
+    isOwn: Boolean = false,
+    onEdit: (String) -> Unit = {},
+    onDelete: (String) -> Unit = {},
+    onToggleArchive: (String) -> Unit = {},
+    onTogglePin: (String) -> Unit = {},
 ) {
     val sheetState = rememberModalBottomSheetState()
     var showReportConfirm by remember { mutableStateOf(false) }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
     ) {
-        PostActionItem(
-            icon = if (post.mutedByMe) Icons.Filled.Notifications else Icons.Filled.NotificationsOff,
-            label = if (post.mutedByMe) "Postu Sesini Aç" else "Postu Sessize Al",
-            onClick = {
-                onMutePost(post.id)
-                onDismiss()
+        if (isOwn) {
+            PostActionItem(
+                icon = Icons.Filled.Edit,
+                label = "Düzenle",
+                onClick = {
+                    onEdit(post.id)
+                    onDismiss()
+                },
+            )
+            PostActionItem(
+                icon = Icons.Filled.PushPin,
+                label = "Profilde Sabitle / Kaldır",
+                onClick = {
+                    onTogglePin(post.id)
+                    onDismiss()
+                },
+            )
+            PostActionItem(
+                icon = Icons.Filled.Archive,
+                label = "Arşivle / Arşivden Çıkar",
+                onClick = {
+                    onToggleArchive(post.id)
+                    onDismiss()
+                },
+            )
+            PostActionItem(
+                icon = Icons.Filled.Delete,
+                label = "Sil",
+                tint = MaterialTheme.colorScheme.error,
+                onClick = { showDeleteConfirm = true },
+            )
+        } else {
+            PostActionItem(
+                icon = if (post.mutedByMe) Icons.Filled.Notifications else Icons.Filled.NotificationsOff,
+                label = if (post.mutedByMe) "Postu Sesini Aç" else "Postu Sessize Al",
+                onClick = {
+                    onMutePost(post.id)
+                    onDismiss()
+                },
+            )
+            PostActionItem(
+                icon = Icons.Filled.Flag,
+                label = "Bildir",
+                tint = MaterialTheme.colorScheme.error,
+                onClick = { showReportConfirm = true },
+            )
+        }
+    }
+
+    if (showDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            icon = { Icon(Icons.Filled.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
+            title = { Text("Postu sil") },
+            text = { Text("Bu postu silmek istediğine emin misin? Bu işlem geri alınamaz.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDeleteConfirm = false
+                        onDelete(post.id)
+                        onDismiss()
+                    },
+                ) {
+                    Text("Sil", color = MaterialTheme.colorScheme.error)
+                }
             },
-        )
-        PostActionItem(
-            icon = Icons.Filled.Flag,
-            label = "Bildir",
-            tint = MaterialTheme.colorScheme.error,
-            onClick = { showReportConfirm = true },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirm = false }) { Text("Vazgeç") }
+            },
         )
     }
 

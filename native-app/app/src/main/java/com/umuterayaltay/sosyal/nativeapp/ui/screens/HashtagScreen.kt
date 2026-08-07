@@ -63,6 +63,7 @@ fun HashtagScreen(
     val isFollowing by viewModel.isFollowing.collectAsState()
     val loading by viewModel.loading.collectAsState()
     val error by viewModel.error.collectAsState()
+    val currentUserId by viewModel.currentUserId.collectAsState()
     val context = LocalContext.current
 
     LaunchedEffect(Unit) {
@@ -173,6 +174,11 @@ fun HashtagScreen(
                         onRepost = { postId -> viewModel.repost(postId) },
                         onReport = { postId -> viewModel.report(postId) },
                         onSessionExpired = onSessionExpired,
+                        isOwnPost = post.userId == currentUserId,
+                        onEditPost = { postId, content -> viewModel.editPost(postId, content) },
+                        onDeletePost = { postId -> viewModel.deletePost(postId) },
+                        onArchivePost = { postId -> viewModel.toggleArchive(postId) },
+                        onPinPost = { postId -> viewModel.togglePin(postId) },
                     )
                 }
             }

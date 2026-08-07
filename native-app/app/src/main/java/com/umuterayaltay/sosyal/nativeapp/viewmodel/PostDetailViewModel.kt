@@ -6,13 +6,17 @@ import androidx.lifecycle.viewModelScope
 import com.umuterayaltay.sosyal.nativeapp.ServiceLocator
 import com.umuterayaltay.sosyal.nativeapp.network.CommentDto
 import com.umuterayaltay.sosyal.nativeapp.repository.AddCommentResult
+import com.umuterayaltay.sosyal.nativeapp.repository.DeletePostResult
+import com.umuterayaltay.sosyal.nativeapp.repository.EditPostResult
 import com.umuterayaltay.sosyal.nativeapp.repository.Post
 import com.umuterayaltay.sosyal.nativeapp.repository.PostDetailResult
 import com.umuterayaltay.sosyal.nativeapp.repository.ReportResult
 import com.umuterayaltay.sosyal.nativeapp.repository.RepostResult
+import com.umuterayaltay.sosyal.nativeapp.repository.ToggleArchiveResult
 import com.umuterayaltay.sosyal.nativeapp.repository.ToggleBookmarkResult
 import com.umuterayaltay.sosyal.nativeapp.repository.ToggleLikeResult
 import com.umuterayaltay.sosyal.nativeapp.repository.ToggleMutePostResult
+import com.umuterayaltay.sosyal.nativeapp.repository.TogglePinResult
 import com.umuterayaltay.sosyal.nativeapp.repository.VotePollResult
 import com.umuterayaltay.sosyal.nativeapp.repository.applyVote
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -26,6 +30,10 @@ sealed class PostDetailEvent {
     data object SessionExpired : PostDetailEvent()
     // FeedEvent.ShowToast ile AYNI gerekçe — repost/report sonucu GÖRÜNÜR bildirim ister.
     data class ShowToast(val message: String) : PostDetailEvent()
+    // Silinen/arşivlenen bir postun DETAY ekranında kalmaya devam etmesi
+    // anlamsız — Feed/Discover/Hashtag/Profile'ın AKSİNE (listeden çıkar
+    // yeter) burada geri navigasyon GEREKİR, bkz. deletePost()/toggleArchive().
+    data object NavigateBack : PostDetailEvent()
 }
 
 /**
@@ -47,9 +55,19 @@ class PostDetailViewModel(private val postId: String) : ViewModel() {
     private val repostsRepository = ServiceLocator.repostsRepository
     private val reportsRepository = ServiceLocator.reportsRepository
     private val tokenStore = ServiceLocator.tokenStore
+    private val authRepository = ServiceLocator.authRepository
 
     private val _post = MutableStateFlow<Post?>(null)
     val post: StateFlow<Post?> = _post.asStateFlow()
+
+    // Post yönetimi (düzenle/sil/arşivle/sabitle) — FeedViewModel.currentUserId
+    // ile AYNI gerekçe/desen.
+    private val _currentUserId = MutableStateFlow<String?>(null)
+    val currentUserId: StateFlow<String?> = _currentUserId.asStateFlow()
+
+    init {
+        viewModelScope.launch { _currentUserId.value = authRepository.getCurrentUserId() }
+    }
 
     private val _comments = MutableStateFlow<List<CommentDto>>(emptyList())
     val comments: StateFlow<List<CommentDto>> = _comments.asStateFlow()
@@ -264,6 +282,83 @@ class PostDetailViewModel(private val postId: String) : ViewModel() {
                 }
             }
         }
+    }
+
+    /** Bu ekran TEK bir post gösterir — edit içerik günceller (ekranda kalınır),
+     * delete/archive SONRASI [PostDetailEvent.NavigateBack] emit edilir (geride
+     * artık gösterilecek/anlamlı bir post yok, Feed/Discover/Hashtag/Profile'ın
+     * "listeden çıkar" deseninin buradaki karşılığı). */
+    fun editPost(content: String) {
+        val current = _post.value ?: return
+        viewModelScope.launch {
+            when (val result = interactionsRepository.editPost(current.id, content)) {
+                is EditPostResult.Success -> {
+                    _post.value = current.copy(content = result.content)
+                    _events.emit(PostDetailEvent.ShowToast("Post güncellendi"))
+                }
+                is EditPostResult.Error -> handlePostManagementError(result.code, "Post güncellenemedi")
+            }
+        }
+    }
+
+    fun deletePost() {
+        val current = _post.value ?: return
+        viewModelScope.launch {
+            when (val result = interactionsRepository.deletePost(current.id)) {
+                is DeletePostResult.Success -> {
+                    _events.emit(PostDetailEvent.ShowToast("Post silindi"))
+                    _events.emit(PostDetailEvent.NavigateBack)
+                }
+                is DeletePostResult.Error -> handlePostManagementError(result.code, "Post silinemedi")
+            }
+        }
+    }
+
+    fun toggleArchive() {
+        val current = _post.value ?: return
+        viewModelScope.launch {
+            when (val result = interactionsRepository.toggleArchive(current.id)) {
+                is ToggleArchiveResult.Success -> {
+                    _events.emit(
+                        PostDetailEvent.ShowToast(if (result.isArchived) "Post arşivlendi" else "Post arşivden çıkarıldı"),
+                    )
+                    // Arşivden ÇIKARILAN post da (is_archived=false) bu ekranda
+                    // sorunsuz görüntülenebilir olurdu ama Feed/Discover/Hashtag/
+                    // Profile'daki "listeden çıkar" tutarlılığı için basitlik
+                    // adına HER İKİ yönde de geri dönülür.
+                    _events.emit(PostDetailEvent.NavigateBack)
+                }
+                is ToggleArchiveResult.Error -> handlePostManagementError(result.code, "İşlem başarısız")
+            }
+        }
+    }
+
+    fun togglePin() {
+        val current = _post.value ?: return
+        viewModelScope.launch {
+            when (val result = interactionsRepository.togglePin(current.id)) {
+                is TogglePinResult.Success -> _events.emit(
+                    PostDetailEvent.ShowToast(if (result.pinned) "Profilinin en üstüne sabitlendi" else "Sabitleme kaldırıldı"),
+                )
+                is TogglePinResult.Error -> handlePostManagementError(result.code, "İşlem başarısız")
+            }
+        }
+    }
+
+    private suspend fun handlePostManagementError(code: String?, fallback: String) {
+        if (code == "unauthorized") {
+            tokenStore.clearToken()
+            _events.emit(PostDetailEvent.SessionExpired)
+            return
+        }
+        val message = when (code) {
+            "not_found" -> "Bu post artık mevcut değil"
+            "empty_post" -> "Post boş olamaz"
+            "unavailable" -> "Şu anda kullanılamıyor, daha sonra tekrar dene"
+            "network_error" -> "Bağlantı hatası — internet bağlantınızı kontrol edin"
+            else -> fallback
+        }
+        _events.emit(PostDetailEvent.ShowToast(message))
     }
 
     private fun mapRepostError(code: String?): String = when (code) {

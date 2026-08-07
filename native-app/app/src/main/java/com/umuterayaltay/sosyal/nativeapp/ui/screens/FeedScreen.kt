@@ -94,6 +94,7 @@ fun FeedScreen(
     val hasMore by viewModel.hasMore.collectAsState()
     val loadingMore by viewModel.loadingMore.collectAsState()
     val suggestedUsers by viewModel.suggestedUsers.collectAsState()
+    val currentUserId by viewModel.currentUserId.collectAsState()
     val context = LocalContext.current
 
     LaunchedEffect(Unit) {
@@ -257,6 +258,11 @@ fun FeedScreen(
                                 onRepost = { postId -> viewModel.repost(postId) },
                                 onReport = { postId -> viewModel.report(postId) },
                                 onSessionExpired = onSessionExpired,
+                                isOwnPost = post.userId == currentUserId,
+                                onEditPost = { postId, content -> viewModel.editPost(postId, content) },
+                                onDeletePost = { postId -> viewModel.deletePost(postId) },
+                                onArchivePost = { postId -> viewModel.toggleArchive(postId) },
+                                onPinPost = { postId -> viewModel.togglePin(postId) },
                             )
                             if (index == 4 && suggestedUsers.isNotEmpty()) {
                                 SuggestedUsersRow(

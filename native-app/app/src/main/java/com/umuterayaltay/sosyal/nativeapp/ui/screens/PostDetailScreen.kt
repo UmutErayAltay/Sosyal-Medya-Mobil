@@ -94,6 +94,7 @@ fun PostDetailScreen(
     val replyingTo by viewModel.replyingTo.collectAsState()
     val loading by viewModel.loading.collectAsState()
     val error by viewModel.error.collectAsState()
+    val currentUserId by viewModel.currentUserId.collectAsState()
     val context = LocalContext.current
 
     LaunchedEffect(Unit) {
@@ -101,6 +102,7 @@ fun PostDetailScreen(
             when (event) {
                 is PostDetailEvent.SessionExpired -> onSessionExpired()
                 is PostDetailEvent.ShowToast -> Toast.makeText(context, event.message, Toast.LENGTH_SHORT).show()
+                is PostDetailEvent.NavigateBack -> onNavigateBack()
             }
         }
     }
@@ -181,6 +183,11 @@ fun PostDetailScreen(
                         onRepost = { viewModel.repost() },
                         onReport = { viewModel.report() },
                         onSessionExpired = onSessionExpired,
+                        isOwnPost = post!!.userId == currentUserId,
+                        onEditPost = { _, content -> viewModel.editPost(content) },
+                        onDeletePost = { viewModel.deletePost() },
+                        onArchivePost = { viewModel.toggleArchive() },
+                        onPinPost = { viewModel.togglePin() },
                     )
                 }
 

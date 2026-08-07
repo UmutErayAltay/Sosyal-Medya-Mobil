@@ -8,18 +8,22 @@ import com.umuterayaltay.sosyal.nativeapp.network.CollectionDto
 import com.umuterayaltay.sosyal.nativeapp.network.ProfileDto
 import com.umuterayaltay.sosyal.nativeapp.network.ProfileStatsDto
 import com.umuterayaltay.sosyal.nativeapp.repository.CollectionsResult
+import com.umuterayaltay.sosyal.nativeapp.repository.DeletePostResult
+import com.umuterayaltay.sosyal.nativeapp.repository.EditPostResult
 import com.umuterayaltay.sosyal.nativeapp.repository.Highlight
 import com.umuterayaltay.sosyal.nativeapp.repository.HighlightsResult
 import com.umuterayaltay.sosyal.nativeapp.repository.Post
 import com.umuterayaltay.sosyal.nativeapp.repository.ProfileResult
 import com.umuterayaltay.sosyal.nativeapp.repository.ReportResult
 import com.umuterayaltay.sosyal.nativeapp.repository.RepostResult
+import com.umuterayaltay.sosyal.nativeapp.repository.ToggleArchiveResult
 import com.umuterayaltay.sosyal.nativeapp.repository.ToggleBlockResult
 import com.umuterayaltay.sosyal.nativeapp.repository.ToggleBookmarkResult
 import com.umuterayaltay.sosyal.nativeapp.repository.ToggleFollowResult
 import com.umuterayaltay.sosyal.nativeapp.repository.ToggleLikeResult
 import com.umuterayaltay.sosyal.nativeapp.repository.ToggleMutePostResult
 import com.umuterayaltay.sosyal.nativeapp.repository.ToggleUserMuteResult
+import com.umuterayaltay.sosyal.nativeapp.repository.TogglePinResult
 import com.umuterayaltay.sosyal.nativeapp.repository.VotePollResult
 import com.umuterayaltay.sosyal.nativeapp.repository.applyVote
 import com.umuterayaltay.sosyal.nativeapp.repository.toDomain
@@ -89,6 +93,14 @@ class ProfileViewModel(private val requestedUsername: String?) : ViewModel() {
     private val _isSelf = MutableStateFlow(false)
     val isSelf: StateFlow<Boolean> = _isSelf.asStateFlow()
 
+    // Post yönetimi (düzenle/sil/arşivle/sabitle) — FeedViewModel.currentUserId
+    // ile AYNI gerekçe/desen. isSelf İLE AYNI ŞEY DEĞİL: "Beğenilenler"/
+    // "Kaydedilenler" sekmeleri BAŞKALARININ postlarını da gösterebilir (isSelf
+    // sadece "bu PROFİL benim mi" demek), o yüzden her post için AYRI ayrI
+    // post.userId == currentUserId karşılaştırması gerekir.
+    private val _currentUserId = MutableStateFlow<String?>(null)
+    val currentUserId: StateFlow<String?> = _currentUserId.asStateFlow()
+
     private val _isFollowing = MutableStateFlow(false)
     val isFollowing: StateFlow<Boolean> = _isFollowing.asStateFlow()
 
@@ -124,6 +136,7 @@ class ProfileViewModel(private val requestedUsername: String?) : ViewModel() {
 
     init {
         loadProfile()
+        viewModelScope.launch { _currentUserId.value = authRepository.getCurrentUserId() }
     }
 
     fun loadProfile() {
@@ -429,6 +442,91 @@ class ProfileViewModel(private val requestedUsername: String?) : ViewModel() {
                 }
             }
         }
+    }
+
+    /** editPost/deletePost/toggleArchive/togglePin — ProfileScreen'de post
+     * dört AYRI listede ({@code _posts}/{@code _likedPosts}/{@code
+     * _bookmarkedPosts}/{@code _archivedPosts}) görünebildiği için (ör. kendi
+     * postunu hem "Gönderiler" hem "Kaydedilenler"de görebilirsin), edit tüm
+     * dörtte içerik günceller; delete/archive TÜM dörtten çıkarır (arşivlenen/
+     * arşivden çıkan bir postun HANGİ sekmede belireceği ayrı bir fetch işi,
+     * burada proaktif eklenmiyor — bir sonraki sekme yüklemesi doğru listeyi
+     * getirir). */
+    fun editPost(postId: String, content: String) {
+        viewModelScope.launch {
+            when (val result = interactionsRepository.editPost(postId, content)) {
+                is EditPostResult.Success -> {
+                    val update: (Post) -> Post = { post ->
+                        if (post.id == postId) post.copy(content = result.content) else post
+                    }
+                    _posts.value = _posts.value.map(update)
+                    _likedPosts.value = _likedPosts.value.map(update)
+                    _bookmarkedPosts.value = _bookmarkedPosts.value.map(update)
+                    _archivedPosts.value = _archivedPosts.value.map(update)
+                    _events.emit(ProfileEvent.ShowToast("Post güncellendi"))
+                }
+                is EditPostResult.Error -> handlePostManagementError(result.code, "Post güncellenemedi")
+            }
+        }
+    }
+
+    fun deletePost(postId: String) {
+        viewModelScope.launch {
+            when (val result = interactionsRepository.deletePost(postId)) {
+                is DeletePostResult.Success -> {
+                    _posts.value = _posts.value.filterNot { it.id == postId }
+                    _likedPosts.value = _likedPosts.value.filterNot { it.id == postId }
+                    _bookmarkedPosts.value = _bookmarkedPosts.value.filterNot { it.id == postId }
+                    _archivedPosts.value = _archivedPosts.value.filterNot { it.id == postId }
+                    _events.emit(ProfileEvent.ShowToast("Post silindi"))
+                }
+                is DeletePostResult.Error -> handlePostManagementError(result.code, "Post silinemedi")
+            }
+        }
+    }
+
+    fun toggleArchive(postId: String) {
+        viewModelScope.launch {
+            when (val result = interactionsRepository.toggleArchive(postId)) {
+                is ToggleArchiveResult.Success -> {
+                    _posts.value = _posts.value.filterNot { it.id == postId }
+                    _likedPosts.value = _likedPosts.value.filterNot { it.id == postId }
+                    _bookmarkedPosts.value = _bookmarkedPosts.value.filterNot { it.id == postId }
+                    _archivedPosts.value = _archivedPosts.value.filterNot { it.id == postId }
+                    _events.emit(
+                        ProfileEvent.ShowToast(if (result.isArchived) "Post arşivlendi" else "Post arşivden çıkarıldı"),
+                    )
+                }
+                is ToggleArchiveResult.Error -> handlePostManagementError(result.code, "İşlem başarısız")
+            }
+        }
+    }
+
+    fun togglePin(postId: String) {
+        viewModelScope.launch {
+            when (val result = interactionsRepository.togglePin(postId)) {
+                is TogglePinResult.Success -> _events.emit(
+                    ProfileEvent.ShowToast(if (result.pinned) "Profilinin en üstüne sabitlendi" else "Sabitleme kaldırıldı"),
+                )
+                is TogglePinResult.Error -> handlePostManagementError(result.code, "İşlem başarısız")
+            }
+        }
+    }
+
+    private suspend fun handlePostManagementError(code: String?, fallback: String) {
+        if (code == "unauthorized") {
+            tokenStore.clearToken()
+            _events.emit(ProfileEvent.SessionExpired)
+            return
+        }
+        val message = when (code) {
+            "not_found" -> "Bu post artık mevcut değil"
+            "empty_post" -> "Post boş olamaz"
+            "unavailable" -> "Şu anda kullanılamıyor, daha sonra tekrar dene"
+            "network_error" -> "Bağlantı hatası — internet bağlantınızı kontrol edin"
+            else -> fallback
+        }
+        _events.emit(ProfileEvent.ShowToast(message))
     }
 
     private fun mapRepostError(code: String?): String = when (code) {
