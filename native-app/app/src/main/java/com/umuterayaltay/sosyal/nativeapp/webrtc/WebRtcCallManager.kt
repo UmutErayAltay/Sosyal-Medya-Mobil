@@ -1,6 +1,11 @@
 package com.umuterayaltay.sosyal.nativeapp.webrtc
 
 import android.content.Context
+import com.twilio.audioswitch.AudioDevice
+import io.livekit.android.audio.AudioSwitchHandler
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.suspendCancellableCoroutine
 import org.webrtc.AudioTrack
 import org.webrtc.Camera2Enumerator
@@ -114,6 +119,41 @@ class WebRtcCallManager(
     private val pendingRemoteIce = mutableListOf<IceCandidate>()
     private var remoteDescriptionSet = false
 
+    // Ses çıkışı (hoparlör/kulaklık/Bluetooth) seçimi — LiveKit'in grup arama
+    // için ZATEN kullandığı io.livekit.android.audio.AudioSwitchHandler AYNEN
+    // reuse edildi (com.twilio:audioswitch'i sarmalıyor, LiveKit bağımlılığı
+    // üzerinden zaten sınıf yolunda) — Android AudioManager'ı elle yönetmek
+    // yerine (özellikle Bluetooth SCO + minSdk 26 uyumluluğu karmaşık ve
+    // hataya açık) olgun, üretimde kullanılan bir soyutlama kullanıldı.
+    // Bu, hem 1:1 (burada) hem grup (CallViewModel -> room.audioSwitchHandler)
+    // aramada AYNI cihaz listesi/seçim davranışını garanti eder.
+    private val audioSwitchHandler = AudioSwitchHandler(appContext)
+
+    private val _availableAudioDevices = MutableStateFlow<List<AudioDevice>>(emptyList())
+    val availableAudioDevices: StateFlow<List<AudioDevice>> = _availableAudioDevices.asStateFlow()
+
+    private val _selectedAudioDevice = MutableStateFlow<AudioDevice?>(null)
+    val selectedAudioDevice: StateFlow<AudioDevice?> = _selectedAudioDevice.asStateFlow()
+
+    private val audioDeviceChangeListener = { devices: List<AudioDevice>, selected: AudioDevice? ->
+        _availableAudioDevices.value = devices
+        _selectedAudioDevice.value = selected
+    }
+
+    /** [createOffer]/[createAnswerForOffer] çağrısından SONRA (yerel ses
+     * track'i eklendikten sonra) çağrılır — cihaz listesi/seçimi audioDeviceChangeListener
+     * ile REAKTİF güncellenir (arama sırasında kulaklık takılırsa/çıkarılırsa
+     * liste kendiliğinden yenilenir). */
+    private fun startAudioRouting() {
+        audioSwitchHandler.registerAudioDeviceChangeListener(audioDeviceChangeListener)
+        audioSwitchHandler.start()
+    }
+
+    fun selectAudioDevice(device: AudioDevice) {
+        audioSwitchHandler.selectDevice(device)
+        _selectedAudioDevice.value = device
+    }
+
     private fun buildPeerConnection(): PeerConnection {
         val rtcConfig = PeerConnection.RTCConfiguration(WebRtcIceServers.list()).apply {
             sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
@@ -180,6 +220,7 @@ class WebRtcCallManager(
         val pc = buildPeerConnection()
         peerConnection = pc
         addLocalTracks(pc)
+        startAudioRouting()
         val offer = createSdp { observer -> pc.createOffer(observer, MediaConstraints()) }
         setLocalDescription(pc, offer)
         return offer.description
@@ -191,6 +232,7 @@ class WebRtcCallManager(
         val pc = buildPeerConnection()
         peerConnection = pc
         addLocalTracks(pc)
+        startAudioRouting()
         setRemoteDescription(pc, SessionDescription(SessionDescription.Type.OFFER, remoteSdp))
         flushPendingIce(pc)
         val answer = createSdp { observer -> pc.createAnswer(observer, MediaConstraints()) }
@@ -233,6 +275,13 @@ class WebRtcCallManager(
     }
 
     fun dispose() {
+        try {
+            audioSwitchHandler.unregisterAudioDeviceChangeListener(audioDeviceChangeListener)
+            audioSwitchHandler.stop()
+        } catch (e: Exception) {
+            // En iyi-çaba temizlik — hiç start edilmemiş olabilir (offer/answer
+            // üretimi tamamlanmadan hangup edilen aramalar).
+        }
         try {
             videoCapturer?.stopCapture()
         } catch (e: Exception) {

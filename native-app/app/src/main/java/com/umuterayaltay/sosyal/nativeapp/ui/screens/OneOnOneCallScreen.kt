@@ -48,6 +48,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.twilio.audioswitch.AudioDevice
+import com.umuterayaltay.sosyal.nativeapp.ui.components.AudioOutputButton
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
@@ -98,6 +100,8 @@ fun OneOnOneCallScreen(
     val remoteVideoTrack by viewModel.remoteVideoTrack.collectAsState()
     val isMicEnabled by viewModel.isMicEnabled.collectAsState()
     val isCameraEnabled by viewModel.isCameraEnabled.collectAsState()
+    val availableAudioDevices by viewModel.availableAudioDevices.collectAsState()
+    val selectedAudioDevice by viewModel.selectedAudioDevice.collectAsState()
 
     val isCallerMode = conversationId != null && otherUserId != null && otherCallTopic != null
 
@@ -196,9 +200,12 @@ fun OneOnOneCallScreen(
                     remoteVideoTrack = remoteVideoTrack,
                     isMicEnabled = isMicEnabled,
                     isCameraEnabled = isCameraEnabled,
+                    availableAudioDevices = availableAudioDevices,
+                    selectedAudioDevice = selectedAudioDevice,
                     eglBaseContext = viewModel.eglBaseContext(),
                     onToggleMic = viewModel::toggleMic,
                     onToggleCamera = viewModel::toggleCamera,
+                    onSelectAudioDevice = viewModel::selectAudioDevice,
                     onEndCall = {
                         viewModel.hangup()
                         onNavigateBack()
@@ -348,9 +355,12 @@ private fun ActiveCallContent(
     remoteVideoTrack: VideoTrack?,
     isMicEnabled: Boolean,
     isCameraEnabled: Boolean,
+    availableAudioDevices: List<AudioDevice>,
+    selectedAudioDevice: AudioDevice?,
     eglBaseContext: org.webrtc.EglBase.Context?,
     onToggleMic: () -> Unit,
     onToggleCamera: () -> Unit,
+    onSelectAudioDevice: (AudioDevice) -> Unit,
     onEndCall: () -> Unit,
 ) {
     var elapsedMs by remember { mutableLongStateOf(0L) }
@@ -432,8 +442,11 @@ private fun ActiveCallContent(
             isMicEnabled = isMicEnabled,
             isCameraEnabled = isCameraEnabled,
             isVideoCall = phaseData.isVideo,
+            availableAudioDevices = availableAudioDevices,
+            selectedAudioDevice = selectedAudioDevice,
             onToggleMic = onToggleMic,
             onToggleCamera = onToggleCamera,
+            onSelectAudioDevice = onSelectAudioDevice,
             onEndCall = onEndCall,
         )
     }
@@ -444,8 +457,11 @@ private fun CallControlsBar(
     isMicEnabled: Boolean,
     isCameraEnabled: Boolean,
     isVideoCall: Boolean,
+    availableAudioDevices: List<AudioDevice>,
+    selectedAudioDevice: AudioDevice?,
     onToggleMic: () -> Unit,
     onToggleCamera: () -> Unit,
+    onSelectAudioDevice: (AudioDevice) -> Unit,
     onEndCall: () -> Unit,
 ) {
     Surface(color = Color(0xFF1C1C1E)) {
@@ -472,6 +488,11 @@ private fun CallControlsBar(
                     onClick = onToggleCamera,
                 )
             }
+            AudioOutputButton(
+                availableDevices = availableAudioDevices,
+                selectedDevice = selectedAudioDevice,
+                onSelectDevice = onSelectAudioDevice,
+            )
             IconButton(
                 onClick = onEndCall,
                 colors = IconButtonDefaults.iconButtonColors(

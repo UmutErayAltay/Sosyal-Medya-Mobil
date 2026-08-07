@@ -52,6 +52,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.core.content.ContextCompat
+import com.twilio.audioswitch.AudioDevice
+import com.umuterayaltay.sosyal.nativeapp.ui.components.AudioOutputButton
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.CallEvent
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.CallUiState
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.CallViewModel
@@ -90,6 +92,8 @@ fun CallScreen(
     val uiState by viewModel.uiState.collectAsState()
     val isMicEnabled by viewModel.isMicEnabled.collectAsState()
     val isCameraEnabled by viewModel.isCameraEnabled.collectAsState()
+    val availableAudioDevices by viewModel.availableAudioDevices.collectAsState()
+    val selectedAudioDevice by viewModel.selectedAudioDevice.collectAsState()
 
     LaunchedEffect(Unit) {
         viewModel.events.collect { event ->
@@ -181,8 +185,11 @@ fun CallScreen(
                 room = state.room,
                 isMicEnabled = isMicEnabled,
                 isCameraEnabled = isCameraEnabled,
+                availableAudioDevices = availableAudioDevices,
+                selectedAudioDevice = selectedAudioDevice,
                 onToggleMic = viewModel::toggleMic,
                 onToggleCamera = viewModel::toggleCamera,
+                onSelectAudioDevice = viewModel::selectAudioDevice,
                 onEndCall = {
                     viewModel.endCall()
                     onNavigateBack()
@@ -231,8 +238,11 @@ private fun CallContent(
     room: Room,
     isMicEnabled: Boolean,
     isCameraEnabled: Boolean,
+    availableAudioDevices: List<AudioDevice>,
+    selectedAudioDevice: AudioDevice?,
     onToggleMic: () -> Unit,
     onToggleCamera: () -> Unit,
+    onSelectAudioDevice: (AudioDevice) -> Unit,
     onEndCall: () -> Unit,
 ) {
     val participants by rememberParticipants(passedRoom = room)
@@ -258,8 +268,11 @@ private fun CallContent(
         CallControls(
             isMicEnabled = isMicEnabled,
             isCameraEnabled = isCameraEnabled,
+            availableAudioDevices = availableAudioDevices,
+            selectedAudioDevice = selectedAudioDevice,
             onToggleMic = onToggleMic,
             onToggleCamera = onToggleCamera,
+            onSelectAudioDevice = onSelectAudioDevice,
             onEndCall = onEndCall,
         )
     }
@@ -317,8 +330,11 @@ private fun ParticipantTile(room: Room, participant: Participant, modifier: Modi
 private fun CallControls(
     isMicEnabled: Boolean,
     isCameraEnabled: Boolean,
+    availableAudioDevices: List<AudioDevice>,
+    selectedAudioDevice: AudioDevice?,
     onToggleMic: () -> Unit,
     onToggleCamera: () -> Unit,
+    onSelectAudioDevice: (AudioDevice) -> Unit,
     onEndCall: () -> Unit,
 ) {
     Surface(color = Color(0xFF1C1C1E)) {
@@ -338,6 +354,11 @@ private fun CallControls(
                 icon = if (isCameraEnabled) Icons.Filled.Videocam else Icons.Filled.VideocamOff,
                 contentDescription = if (isCameraEnabled) "Kamerayı kapat" else "Kamerayı aç",
                 onClick = onToggleCamera,
+            )
+            AudioOutputButton(
+                availableDevices = availableAudioDevices,
+                selectedDevice = selectedAudioDevice,
+                onSelectDevice = onSelectAudioDevice,
             )
             IconButton(
                 onClick = onEndCall,

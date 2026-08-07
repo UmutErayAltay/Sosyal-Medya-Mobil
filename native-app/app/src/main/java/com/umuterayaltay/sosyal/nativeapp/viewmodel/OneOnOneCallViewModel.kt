@@ -3,6 +3,7 @@ package com.umuterayaltay.sosyal.nativeapp.viewmodel
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
+import com.twilio.audioswitch.AudioDevice
 import com.umuterayaltay.sosyal.nativeapp.ServiceLocator
 import com.umuterayaltay.sosyal.nativeapp.repository.CallPhase
 import com.umuterayaltay.sosyal.nativeapp.webrtc.WebRtcCallManager
@@ -25,6 +26,12 @@ class OneOnOneCallViewModel : ViewModel() {
     val remoteVideoTrack = sessionManager.remoteVideoTrack
     val isMicEnabled = sessionManager.isMicEnabled
     val isCameraEnabled = sessionManager.isCameraEnabled
+    val availableAudioDevices = sessionManager.availableAudioDevices
+    val selectedAudioDevice = sessionManager.selectedAudioDevice
+
+    fun selectAudioDevice(device: AudioDevice) {
+        sessionManager.selectAudioDevice(device)
+    }
 
     private var outgoingStarted = false
 

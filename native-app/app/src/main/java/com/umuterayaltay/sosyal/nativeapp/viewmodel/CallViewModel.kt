@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.twilio.audioswitch.AudioDevice
 import com.umuterayaltay.sosyal.nativeapp.ServiceLocator
 import com.umuterayaltay.sosyal.nativeapp.repository.CallTokenResult
 import io.livekit.android.LiveKit
@@ -67,6 +68,28 @@ class CallViewModel(private val conversationId: String) : ViewModel() {
     private val _isCameraEnabled = MutableStateFlow(true)
     val isCameraEnabled: StateFlow<Boolean> = _isCameraEnabled.asStateFlow()
 
+    // Ses çıkışı seçimi — Room'un KENDİ audioSwitchHandler'ı (LiveKit SDK
+    // built-in, io.livekit.android.audio.AudioSwitchHandler) kullanılıyor,
+    // OneOnOneCallScreen'in WebRtcCallManager'da örneklediği AYNI sınıf
+    // (bkz. o dosyanın yorumu) — burada AYRICA örneklenmiyor, Room zaten
+    // kendi audio routing'ini bu sınıfla yönetiyor, biz sadece dinleyip
+    // StateFlow'a yansıtıyoruz.
+    private val _availableAudioDevices = MutableStateFlow<List<AudioDevice>>(emptyList())
+    val availableAudioDevices: StateFlow<List<AudioDevice>> = _availableAudioDevices.asStateFlow()
+
+    private val _selectedAudioDevice = MutableStateFlow<AudioDevice?>(null)
+    val selectedAudioDevice: StateFlow<AudioDevice?> = _selectedAudioDevice.asStateFlow()
+
+    private val audioDeviceChangeListener = { devices: List<AudioDevice>, selected: AudioDevice? ->
+        _availableAudioDevices.value = devices
+        _selectedAudioDevice.value = selected
+    }
+
+    fun selectAudioDevice(device: AudioDevice) {
+        room?.audioSwitchHandler?.selectDevice(device)
+        _selectedAudioDevice.value = device
+    }
+
     private val _events = MutableSharedFlow<CallEvent>()
     val events: SharedFlow<CallEvent> = _events.asSharedFlow()
 
@@ -101,6 +124,15 @@ class CallViewModel(private val conversationId: String) : ViewModel() {
             room = newRoom
             _isMicEnabled.value = true
             _isCameraEnabled.value = true
+            // Room bağlandığı anda audioSwitchHandler'ı KENDİSİ start eder —
+            // biz sadece dinleyip mevcut listeyi/seçimi StateFlow'a yansıtıyoruz.
+            // Nullable: Room varsayılan olarak AudioSwitchHandler kullanır ama
+            // API farklı bir AudioHandler ile özelleştirilme ihtimaline karşı
+            // null dönebiliyor — bu proje özelleştirmiyor, pratikte hep dolu.
+            val switchHandler = newRoom.audioSwitchHandler
+            switchHandler?.registerAudioDeviceChangeListener(audioDeviceChangeListener)
+            _availableAudioDevices.value = switchHandler?.availableAudioDevices ?: emptyList()
+            _selectedAudioDevice.value = switchHandler?.selectedAudioDevice
             _uiState.value = CallUiState.Connected(newRoom)
         } catch (e: Exception) {
             _uiState.value = CallUiState.Error("Aramaya bağlanılamadı, lütfen tekrar deneyin")
@@ -153,6 +185,9 @@ class CallViewModel(private val conversationId: String) : ViewModel() {
     fun endCall() {
         val activeRoom = room ?: return
         room = null
+        activeRoom.audioSwitchHandler?.unregisterAudioDeviceChangeListener(audioDeviceChangeListener)
+        _availableAudioDevices.value = emptyList()
+        _selectedAudioDevice.value = null
         viewModelScope.launch {
             activeRoom.disconnect()
         }
@@ -168,6 +203,11 @@ class CallViewModel(private val conversationId: String) : ViewModel() {
         val activeRoom = room
         room = null
         if (activeRoom != null) {
+            try {
+                activeRoom.audioSwitchHandler?.unregisterAudioDeviceChangeListener(audioDeviceChangeListener)
+            } catch (e: Exception) {
+                // En iyi-çaba temizlik.
+            }
             CoroutineScope(Dispatchers.IO).launch {
                 activeRoom.disconnect()
             }

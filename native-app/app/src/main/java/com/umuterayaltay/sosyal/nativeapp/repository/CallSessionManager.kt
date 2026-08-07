@@ -2,6 +2,7 @@ package com.umuterayaltay.sosyal.nativeapp.repository
 
 import android.content.Context
 import android.util.Log
+import com.twilio.audioswitch.AudioDevice
 import com.umuterayaltay.sosyal.nativeapp.webrtc.WebRtcCallManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -109,6 +110,19 @@ class CallSessionManager(
 
     private val _isCameraEnabled = MutableStateFlow(false)
     val isCameraEnabled: StateFlow<Boolean> = _isCameraEnabled.asStateFlow()
+
+    // Ses çıkışı seçimi — WebRtcCallManager'ın AudioSwitchHandler'ından
+    // geçiş yapılır (bkz. o sınıfın yorumu). Liste/seçim reaktif olarak
+    // güncellenir (kulaklık takılıp çıkarılması gibi).
+    private val _availableAudioDevices = MutableStateFlow<List<AudioDevice>>(emptyList())
+    val availableAudioDevices: StateFlow<List<AudioDevice>> = _availableAudioDevices.asStateFlow()
+
+    private val _selectedAudioDevice = MutableStateFlow<AudioDevice?>(null)
+    val selectedAudioDevice: StateFlow<AudioDevice?> = _selectedAudioDevice.asStateFlow()
+
+    fun selectAudioDevice(device: AudioDevice) {
+        webRtc?.selectAudioDevice(device)
+    }
 
     fun eglBaseContext() = WebRtcCallManager.eglBaseContextOrNull()
 
@@ -252,6 +266,8 @@ class CallSessionManager(
                     return@launch
                 }
                 webRtc = rtc
+                rtc.availableAudioDevices.onEach { _availableAudioDevices.value = it }.launchIn(scope)
+                rtc.selectedAudioDevice.onEach { _selectedAudioDevice.value = it }.launchIn(scope)
                 _localVideoTrack.value = rtc.localVideoTrack
                 _isCameraEnabled.value = isVideo
                 _isMicEnabled.value = true
@@ -320,6 +336,8 @@ class CallSessionManager(
                     return@launch
                 }
                 webRtc = rtc
+                rtc.availableAudioDevices.onEach { _availableAudioDevices.value = it }.launchIn(scope)
+                rtc.selectedAudioDevice.onEach { _selectedAudioDevice.value = it }.launchIn(scope)
                 _localVideoTrack.value = rtc.localVideoTrack
                 _isCameraEnabled.value = incoming.isVideo
                 _isMicEnabled.value = true
@@ -415,6 +433,8 @@ class CallSessionManager(
         pendingOfferSdp = null
         _localVideoTrack.value = null
         _remoteVideoTrack.value = null
+        _availableAudioDevices.value = emptyList()
+        _selectedAudioDevice.value = null
 
         // KULLANICI RAPORU (gerçek cihaz: aramayı bitirip TEKRAR arayınca
         // "arama bitirildi" yazıyor, hiçbir şey olmuyor) — kök neden: BackHandler/
