@@ -195,8 +195,20 @@ fun OverlayTopBar(
     // olarak) açar - artık çift sayım YOK, sızan farklı renk YOK.
     val density = LocalDensity.current
     val statusBarHeight = with(density) { WindowInsets.statusBars.getTop(density).toDp() }
+    // KULLANICI RAPORU (6. tur): "navbar tam yukarı gidip kaybolmuyor,
+    // bildirimler kısmının arkasında gözüküyor" — kök neden, bu Box'ın
+    // TOPLAM yüksekliğinin (statusBarHeight'lık Spacer + TOP_BAR_HEIGHT'lık
+    // gerçek bar, bkz. TopBarSurface) gizliyken sadece TOP_BAR_HEIGHT kadar
+    // yukarı kaydırılmasıydı — statusBarHeight'lık Spacer'ın kendisi hâlâ
+    // ekranın gerçek tepesinde kalıyordu, bu da GERÇEK bar'ın (Spacer'ın
+    // altındaki içerik) statusBarHeight kadarlık alt kesitinin status
+    // bar/bildirim simgeleri bölgesine sıkışmış kalmasına yol açıyordu.
+    // Gizliyken statusBarHeight İKİ KEZ düşülmeli: biri (aşağıdaki genel
+    // `- statusBarHeight`) görünürken uygulanan telafiyi karşılamak için,
+    // biri de bu Box'ın kendi statusBarHeight'lık Spacer'ını TAMAMEN
+    // ekranın dışına çıkarmak için.
     val offsetY by animateDpAsState(
-        targetValue = (if (visible) 0.dp else -TOP_BAR_HEIGHT) - statusBarHeight,
+        targetValue = (if (visible) 0.dp else -TOP_BAR_HEIGHT - statusBarHeight) - statusBarHeight,
         animationSpec = tween(durationMillis = TOP_BAR_ANIM_MS, easing = FastOutSlowInEasing),
         label = "topBarOffsetY",
     )
