@@ -5,6 +5,7 @@ import com.umuterayaltay.sosyal.nativeapp.network.CommentDto
 import com.umuterayaltay.sosyal.nativeapp.network.EditPostRequest
 import com.umuterayaltay.sosyal.nativeapp.network.InteractionsApi
 import com.umuterayaltay.sosyal.nativeapp.network.LikeRequest
+import com.umuterayaltay.sosyal.nativeapp.network.ReactCommentRequest
 import com.umuterayaltay.sosyal.nativeapp.network.RetrofitClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -57,6 +58,24 @@ sealed class ToggleArchiveResult {
 sealed class TogglePinResult {
     data class Success(val pinned: Boolean) : TogglePinResult()
     data class Error(val code: String?) : TogglePinResult()
+}
+
+// Yorum mutasyonları (sil/beğen/tepki) — app/api_v1/interactions.py'nin
+// birebir mirror'ı.
+sealed class DeleteCommentResult {
+    object Success : DeleteCommentResult()
+    data class Error(val code: String?) : DeleteCommentResult()
+}
+
+sealed class ToggleCommentLikeResult {
+    data class Success(val liked: Boolean, val count: Int) : ToggleCommentLikeResult()
+    data class Error(val code: String?) : ToggleCommentLikeResult()
+}
+
+sealed class ReactCommentResult {
+    /** [reaction] null olabilir — aynı emoji tekrar gönderilince tepki SİLİNMİŞ demektir. */
+    data class Success(val reaction: String?) : ReactCommentResult()
+    data class Error(val code: String?) : ReactCommentResult()
 }
 
 /**
@@ -275,6 +294,54 @@ class InteractionsRepository(
             TogglePinResult.Error("network_error")
         } catch (e: Exception) {
             TogglePinResult.Error("unknown_error")
+        }
+    }
+
+    suspend fun deleteComment(commentId: String): DeleteCommentResult = withContext(Dispatchers.IO) {
+        try {
+            val response = interactionsApi.deleteComment(commentId)
+            val body = response.body()
+            if (response.isSuccessful && body != null && body.ok) {
+                DeleteCommentResult.Success
+            } else {
+                DeleteCommentResult.Error(body?.error ?: RetrofitClient.parseErrorCode(response))
+            }
+        } catch (e: IOException) {
+            DeleteCommentResult.Error("network_error")
+        } catch (e: Exception) {
+            DeleteCommentResult.Error("unknown_error")
+        }
+    }
+
+    suspend fun toggleCommentLike(commentId: String): ToggleCommentLikeResult = withContext(Dispatchers.IO) {
+        try {
+            val response = interactionsApi.toggleCommentLike(commentId)
+            val body = response.body()
+            if (response.isSuccessful && body != null && body.error == null) {
+                ToggleCommentLikeResult.Success(body.liked, body.count)
+            } else {
+                ToggleCommentLikeResult.Error(body?.error ?: RetrofitClient.parseErrorCode(response))
+            }
+        } catch (e: IOException) {
+            ToggleCommentLikeResult.Error("network_error")
+        } catch (e: Exception) {
+            ToggleCommentLikeResult.Error("unknown_error")
+        }
+    }
+
+    suspend fun reactComment(commentId: String, reaction: String): ReactCommentResult = withContext(Dispatchers.IO) {
+        try {
+            val response = interactionsApi.reactComment(commentId, ReactCommentRequest(reaction))
+            val body = response.body()
+            if (response.isSuccessful && body != null && body.ok) {
+                ReactCommentResult.Success(body.reaction)
+            } else {
+                ReactCommentResult.Error(body?.error ?: RetrofitClient.parseErrorCode(response))
+            }
+        } catch (e: IOException) {
+            ReactCommentResult.Error("network_error")
+        } catch (e: Exception) {
+            ReactCommentResult.Error("unknown_error")
         }
     }
 }

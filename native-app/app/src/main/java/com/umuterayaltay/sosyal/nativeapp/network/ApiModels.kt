@@ -637,6 +637,47 @@ data class PostDetailResponse(
     val error: String? = null,
 )
 
+// Yorum mutasyonları (sil/beğen/tepki) — app/api_v1/interactions.py
+// api_delete_comment()/api_toggle_comment_like()/api_react_comment() ile
+// birebir JSON sözleşmesi.
+data class DeleteCommentResponse(
+    val ok: Boolean = false,
+    @SerializedName("comment_id") val commentId: String? = null,
+    val error: String? = null,
+)
+
+data class ToggleCommentLikeResponse(
+    val liked: Boolean = false,
+    val count: Int = 0,
+    val error: String? = null,
+)
+
+data class ReactCommentRequest(
+    val reaction: String,
+)
+
+data class ReactCommentResponse(
+    val ok: Boolean = false,
+    // null dönebilir (aynı emoji tekrar gönderilince tepki SİLİNİR) — bilerek
+    // nullable, "tepki yok" ile "alan hiç gelmedi" burada AYNI anlama gelir.
+    val reaction: String? = null,
+    val error: String? = null,
+)
+
+// @mention arama — app/api_v1/mentions.py api_search_mentions() ile birebir.
+// DİKKAT: web KASITLI olarak `id` DÖNDÜRMÜYOR (istemcinin tek ihtiyacı metne
+// "@username " eklemek) — UserSearchDto'nun AKSİNE burada id YOK, o yüzden
+// UserSearchDto reuse EDİLMEDİ (id: String non-null olduğu için Gson boş
+// id'yi null'a düşürüp reflection ile null-safety'yi atlatırdı).
+data class MentionSuggestionDto(
+    val username: String?,
+    @SerializedName("avatar_url") val avatarUrl: String?,
+)
+
+data class MentionSearchResponse(
+    val users: List<MentionSuggestionDto>? = null,
+)
+
 data class AddCommentRequest(
     val content: String,
     @SerializedName("parent_comment_id") val parentCommentId: String? = null,

@@ -5,26 +5,37 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.umuterayaltay.sosyal.nativeapp.ServiceLocator
 import com.umuterayaltay.sosyal.nativeapp.network.CommentDto
+import com.umuterayaltay.sosyal.nativeapp.network.MentionSuggestionDto
 import com.umuterayaltay.sosyal.nativeapp.repository.AddCommentResult
+import com.umuterayaltay.sosyal.nativeapp.repository.DeleteCommentResult
 import com.umuterayaltay.sosyal.nativeapp.repository.DeletePostResult
 import com.umuterayaltay.sosyal.nativeapp.repository.EditPostResult
+import com.umuterayaltay.sosyal.nativeapp.repository.MentionSearchResult
 import com.umuterayaltay.sosyal.nativeapp.repository.Post
 import com.umuterayaltay.sosyal.nativeapp.repository.PostDetailResult
+import com.umuterayaltay.sosyal.nativeapp.repository.ReactCommentResult
 import com.umuterayaltay.sosyal.nativeapp.repository.ReportResult
 import com.umuterayaltay.sosyal.nativeapp.repository.RepostResult
 import com.umuterayaltay.sosyal.nativeapp.repository.ToggleArchiveResult
 import com.umuterayaltay.sosyal.nativeapp.repository.ToggleBookmarkResult
+import com.umuterayaltay.sosyal.nativeapp.repository.ToggleCommentLikeResult
 import com.umuterayaltay.sosyal.nativeapp.repository.ToggleLikeResult
 import com.umuterayaltay.sosyal.nativeapp.repository.ToggleMutePostResult
 import com.umuterayaltay.sosyal.nativeapp.repository.TogglePinResult
 import com.umuterayaltay.sosyal.nativeapp.repository.VotePollResult
 import com.umuterayaltay.sosyal.nativeapp.repository.applyVote
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+
+// app/mentions.py MENTION_RE ile AYNI karakter sınıfı (web'in mentionAutocomplete.js
+// TRIGGER_RE'siyle birebir) — metnin SONUNDA aktif bir "@prefix" var mı bakar.
+private val MENTION_TRIGGER_RE = Regex("(?:^|\\s)@([\\p{L}\\p{N}_.-]+)$")
 
 sealed class PostDetailEvent {
     data object SessionExpired : PostDetailEvent()
@@ -54,6 +65,7 @@ class PostDetailViewModel(private val postId: String) : ViewModel() {
     private val bookmarksRepository = ServiceLocator.bookmarksRepository
     private val repostsRepository = ServiceLocator.repostsRepository
     private val reportsRepository = ServiceLocator.reportsRepository
+    private val mentionsRepository = ServiceLocator.mentionsRepository
     private val tokenStore = ServiceLocator.tokenStore
     private val authRepository = ServiceLocator.authRepository
 
@@ -77,6 +89,18 @@ class PostDetailViewModel(private val postId: String) : ViewModel() {
 
     private val _replyingTo = MutableStateFlow<CommentDto?>(null)
     val replyingTo: StateFlow<CommentDto?> = _replyingTo.asStateFlow()
+
+    // @etiketleme otomatik tamamlama — web'in mentionAutocomplete.js'indeki
+    // AYNI tetikleyici deseni ("@" + kelime karakterleri, imlecin O ANA
+    // KADARKİ kısmında), ama BASİTLEŞTİRİLDİ: Compose'un burada kullandığı
+    // düz `String` (TextFieldValue DEĞİL — bkz. CommentInputBar) imleç
+    // pozisyonunu taşımıyor, bu yüzden tetikleyici metnin HER ZAMAN SONUNDA
+    // aranır (imleci ortaya alıp "@" yazmak nadir bir kullanım, web'in kendisi
+    // de bu senaryoyu debounce+stale-token korumasıyla ele alıyor, burada v1
+    // kapsamı olarak bilinçli kısıtlandı).
+    private val _mentionSuggestions = MutableStateFlow<List<MentionSuggestionDto>>(emptyList())
+    val mentionSuggestions: StateFlow<List<MentionSuggestionDto>> = _mentionSuggestions.asStateFlow()
+    private var mentionSearchJob: Job? = null
 
     private val _loading = MutableStateFlow(true)
     val loading: StateFlow<Boolean> = _loading.asStateFlow()
@@ -196,6 +220,37 @@ class PostDetailViewModel(private val postId: String) : ViewModel() {
 
     fun onCommentTextChange(text: String) {
         _commentText.value = text
+        val match = MENTION_TRIGGER_RE.find(text)
+        mentionSearchJob?.cancel()
+        if (match == null) {
+            _mentionSuggestions.value = emptyList()
+            return
+        }
+        val prefix = match.groupValues[1]
+        mentionSearchJob = viewModelScope.launch {
+            delay(200) // web'in DEBOUNCE_MS'iyle AYNI değer
+            when (val result = mentionsRepository.search(prefix)) {
+                is MentionSearchResult.Success -> _mentionSuggestions.value = result.users
+                // Otomatik tamamlama kritik değil — web'in "sessizce yut"
+                // felsefesiyle AYNI, kullanıcıya görünür bir hata YOK.
+                is MentionSearchResult.Error -> _mentionSuggestions.value = emptyList()
+            }
+        }
+    }
+
+    /** Mention dropdown'ından bir kullanıcı seçilince — metindeki son "@prefix"
+     * "@username " ile değiştirilir (web'in selectUser()'ıyla AYNI mantık). */
+    fun selectMention(username: String) {
+        val text = _commentText.value
+        val match = MENTION_TRIGGER_RE.find(text) ?: return
+        val prefixRange = match.groups[1]!!.range
+        val atIndex = prefixRange.first - 1
+        if (atIndex < 0 || text[atIndex] != '@') return
+        val before = text.substring(0, atIndex)
+        val after = text.substring(prefixRange.last + 1)
+        _commentText.value = before + "@" + username + " " + after
+        mentionSearchJob?.cancel()
+        _mentionSuggestions.value = emptyList()
     }
 
     fun setReplyingTo(comment: CommentDto) {
@@ -219,6 +274,7 @@ class PostDetailViewModel(private val postId: String) : ViewModel() {
                 is AddCommentResult.Success -> {
                     _commentText.value = ""
                     _replyingTo.value = null
+                    _mentionSuggestions.value = emptyList()
                     _comments.value = if (parentId == null) {
                         _comments.value + result.comment
                     } else {
@@ -244,6 +300,81 @@ class PostDetailViewModel(private val postId: String) : ViewModel() {
                 }
             }
         }
+    }
+
+    /** Yorumlar İKİ seviyeli (ana yorum + replies, bkz. addComment()'daki AYNI
+     * varsayım) — bir yorumun ana listede mi yoksa bir üst yorumun replies'inde
+     * mi olduğunu bilmeden GÜNCELLEYEBİLMEK için her iki seviyeyi de tarar. */
+    private fun updateCommentInTree(commentId: String, transform: (CommentDto) -> CommentDto) {
+        _comments.value = _comments.value.map { top ->
+            when {
+                top.id == commentId -> transform(top)
+                top.replies != null -> top.copy(
+                    replies = top.replies.map { reply -> if (reply.id == commentId) transform(reply) else reply },
+                )
+                else -> top
+            }
+        }
+    }
+
+    private fun removeCommentFromTree(commentId: String) {
+        _comments.value = _comments.value
+            .filterNot { it.id == commentId }
+            .map { top -> if (top.replies != null) top.copy(replies = top.replies.filterNot { it.id == commentId }) else top }
+    }
+
+    fun deleteComment(commentId: String) {
+        viewModelScope.launch {
+            when (val result = interactionsRepository.deleteComment(commentId)) {
+                is DeleteCommentResult.Success -> {
+                    removeCommentFromTree(commentId)
+                    _events.emit(PostDetailEvent.ShowToast("Yorum silindi"))
+                }
+                is DeleteCommentResult.Error -> handleCommentActionError(result.code, "Yorum silinemedi")
+            }
+        }
+    }
+
+    fun toggleCommentLike(commentId: String) {
+        viewModelScope.launch {
+            when (val result = interactionsRepository.toggleCommentLike(commentId)) {
+                is ToggleCommentLikeResult.Success -> {
+                    updateCommentInTree(commentId) { it.copy(likeCount = result.count, likedByMe = result.liked) }
+                }
+                is ToggleCommentLikeResult.Error -> handleCommentActionError(result.code, "İşlem başarısız")
+            }
+        }
+    }
+
+    /** Tepki toggle'ı üç yönlü (ekle/değiştir/sil) olduğu için gruplu
+     * {emoji,count,mine} özetini YEREL olarak doğru şekilde yeniden hesaplamak
+     * (diğer kullanıcıların tepkilerini bozmadan) kırılgan bir aritmetik
+     * gerektirir — bunun yerine sunucudan authoritative durumu YENİDEN çekmek
+     * (diğer ViewModel'lerdeki "refresh()" deseniyle AYNI felsefe) daha basit
+     * ve garanti doğru. Tepki verme sık tekrarlanan bir aksiyon olmadığı için
+     * bu turda bu basitlik tercih edildi. */
+    fun reactToComment(commentId: String, reaction: String) {
+        viewModelScope.launch {
+            when (val result = interactionsRepository.reactComment(commentId, reaction)) {
+                is ReactCommentResult.Success -> load()
+                is ReactCommentResult.Error -> handleCommentActionError(result.code, "İşlem başarısız")
+            }
+        }
+    }
+
+    private suspend fun handleCommentActionError(code: String?, fallback: String) {
+        if (code == "unauthorized") {
+            tokenStore.clearToken()
+            _events.emit(PostDetailEvent.SessionExpired)
+            return
+        }
+        val message = when (code) {
+            "not_found" -> "Bu yorum artık mevcut değil"
+            "feature_not_yet_active" -> "Bu özellik henüz aktif değil"
+            "network_error" -> "Bağlantı hatası — internet bağlantınızı kontrol edin"
+            else -> fallback
+        }
+        _events.emit(PostDetailEvent.ShowToast(message))
     }
 
     /** Post üzerindeki "Yeniden Paylaş" aksiyonu — FeedViewModel.repost() ile AYNI

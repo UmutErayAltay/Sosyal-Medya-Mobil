@@ -46,6 +46,8 @@ import com.umuterayaltay.sosyal.nativeapp.network.SharesApi
 import com.umuterayaltay.sosyal.nativeapp.repository.SharesRepository
 import com.umuterayaltay.sosyal.nativeapp.network.ReportsApi
 import com.umuterayaltay.sosyal.nativeapp.repository.ReportsRepository
+import com.umuterayaltay.sosyal.nativeapp.network.MentionsApi
+import com.umuterayaltay.sosyal.nativeapp.repository.MentionsRepository
 import com.umuterayaltay.sosyal.nativeapp.repository.CallSignalingManager
 import com.umuterayaltay.sosyal.nativeapp.repository.CallSessionManager
 // FAZ5_IMPORTS_MARKER — her ajan kendi Api/Repository import'unu bu satırın
@@ -103,6 +105,8 @@ object ServiceLocator {
     lateinit var sharesRepository: SharesRepository
         private set
     lateinit var reportsRepository: ReportsRepository
+        private set
+    lateinit var mentionsRepository: MentionsRepository
         private set
     // 1:1 sesli/görüntülü arama (native görev — WebRTC + Supabase Realtime
     // broadcast, LiveKit grup aramasından TAMAMEN AYRI) — bkz. CallSignalingManager/
@@ -178,6 +182,9 @@ object ServiceLocator {
 
         val reportsApi = retrofit.create(ReportsApi::class.java)
         reportsRepository = ReportsRepository(reportsApi)
+
+        val mentionsApi = retrofit.create(MentionsApi::class.java)
+        mentionsRepository = MentionsRepository(mentionsApi)
 
         // authRepository'ye bağımlı — realtimeConnectionManager ile AYNI
         // gerekçe (/realtime-token onun üzerinden çağrılıyor).

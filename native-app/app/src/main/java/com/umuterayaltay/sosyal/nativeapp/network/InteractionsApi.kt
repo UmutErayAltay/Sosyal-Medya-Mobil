@@ -79,4 +79,18 @@ interface InteractionsApi {
 
     @POST("posts/{id}/pin")
     suspend fun togglePin(@Path("id") postId: String): Response<PinPostResponse>
+
+    // Yorum mutasyonları — app/api_v1/interactions.py'nin BİREBİR mirror'ı,
+    // bkz. ApiModels.kt DTO yorumları.
+    @POST("comments/{id}/delete")
+    suspend fun deleteComment(@Path("id") commentId: String): Response<DeleteCommentResponse>
+
+    @POST("comments/{id}/like")
+    suspend fun toggleCommentLike(@Path("id") commentId: String): Response<ToggleCommentLikeResponse>
+
+    @POST("comments/{id}/react")
+    suspend fun reactComment(
+        @Path("id") commentId: String,
+        @Body request: ReactCommentRequest,
+    ): Response<ReactCommentResponse>
 }

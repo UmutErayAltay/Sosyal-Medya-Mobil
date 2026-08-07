@@ -2,6 +2,8 @@ package com.umuterayaltay.sosyal.nativeapp.ui.screens
 
 import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,8 +30,11 @@ import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Gif
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -60,6 +65,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.umuterayaltay.sosyal.nativeapp.network.CommentDto
+import com.umuterayaltay.sosyal.nativeapp.network.CommentReactionDto
+import com.umuterayaltay.sosyal.nativeapp.network.MentionSuggestionDto
 import com.umuterayaltay.sosyal.nativeapp.ui.components.MediaPickerSheet
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.PostDetailEvent
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.PostDetailViewModel
@@ -95,6 +102,7 @@ fun PostDetailScreen(
     val loading by viewModel.loading.collectAsState()
     val error by viewModel.error.collectAsState()
     val currentUserId by viewModel.currentUserId.collectAsState()
+    val mentionSuggestions by viewModel.mentionSuggestions.collectAsState()
     val context = LocalContext.current
 
     LaunchedEffect(Unit) {
@@ -128,6 +136,8 @@ fun PostDetailScreen(
                     onSendSticker = { id -> viewModel.addComment(stickerId = id) },
                     replyingTo = replyingTo,
                     onCancelReply = viewModel::clearReplyingTo,
+                    mentionSuggestions = mentionSuggestions,
+                    onMentionSelected = viewModel::selectMention,
                 )
             }
         },
@@ -235,6 +245,10 @@ fun PostDetailScreen(
                                 indent = 0.dp,
                                 showReply = true,
                                 onReplyClick = { viewModel.setReplyingTo(comment) },
+                                isOwn = comment.userId == currentUserId,
+                                onLikeClick = { viewModel.toggleCommentLike(comment.id) },
+                                onReactionSelected = { emoji -> viewModel.reactToComment(comment.id, emoji) },
+                                onDeleteClick = { viewModel.deleteComment(comment.id) },
                             )
                             comment.replies?.forEach { reply ->
                                 CommentRow(
@@ -243,6 +257,10 @@ fun PostDetailScreen(
                                     showReply = false,
                                     onReplyClick = {},
                                     isReply = true,
+                                    isOwn = reply.userId == currentUserId,
+                                    onLikeClick = { viewModel.toggleCommentLike(reply.id) },
+                                    onReactionSelected = { emoji -> viewModel.reactToComment(reply.id, emoji) },
+                                    onDeleteClick = { viewModel.deleteComment(reply.id) },
                                 )
                             }
                             HorizontalDivider(
@@ -257,6 +275,7 @@ fun PostDetailScreen(
     }
 }
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun CommentRow(
     comment: CommentDto,
@@ -264,9 +283,21 @@ private fun CommentRow(
     showReply: Boolean,
     onReplyClick: () -> Unit,
     isReply: Boolean = false,
+    // Yorum mutasyonları — isOwn SADECE Sil'i göstermek için (Düzenle bu
+    // turun kapsamı dışı, PostCard'ın post-düzenleme desenindeki gibi bir
+    // ihtiyaç raporu YOK), beğeni/tepki HERKESİN yorumunda kullanılabilir.
+    // VARSAYILAN DEĞERLİ ({} / false) — diğer PostCard callback'leriyle AYNI
+    // gerekçe.
+    isOwn: Boolean = false,
+    onLikeClick: () -> Unit = {},
+    onReactionSelected: (String) -> Unit = {},
+    onDeleteClick: () -> Unit = {},
 ) {
     val avatarSize = if (isReply) 26.dp else 32.dp
+    var showActionsMenu by remember { mutableStateOf(false) }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
 
+    Box {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -277,6 +308,11 @@ private fun CommentRow(
             // "Infinity height" çökmesine yol açardı (standart Compose
             // "kardeşle eşit yükseklik" deseni).
             .height(IntrinsicSize.Min)
+            // Uzun basma: emoji tepki seçici + (kendi yorumumsa) Sil menüsü
+            // açar — PostCard'ın "üç nokta menüsü" yerine, mesaj balonlarındaki
+            // (ConversationScreen) "uzun bas" deseniyle TUTARLI (yorum satırı
+            // zaten dar, ayrı bir ikon için yer sıkışık).
+            .combinedClickable(onClick = {}, onLongClick = { showActionsMenu = true })
             .padding(start = 16.dp + indent, end = 16.dp, top = 6.dp, bottom = 6.dp),
     ) {
         // Yanıtların üst-seviye yorumla ilişkisini görsel olarak açıkça
@@ -363,13 +399,20 @@ private fun CommentRow(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.padding(top = 4.dp),
             ) {
-                // Yorum beğenme bu turun kapsamı dışı (comment_likes'a aksiyon
-                // yok) - sayı SADECE gösterilir, tıklanabilir DEĞİL.
+                // Kalp ikonu artık tıklanabilir (ÖNCEDEN sayı sadece
+                // gösteriliyordu, comment_likes'a hiç aksiyon yoktu) —
+                // PostCard'ın beğeni ikonuyla AYNI görsel dil (dolu/boş kalp).
                 Icon(
                     imageVector = Icons.Filled.Favorite,
-                    contentDescription = "Beğeni sayısı",
-                    tint = MaterialTheme.colorScheme.secondary,
-                    modifier = Modifier.size(14.dp),
+                    contentDescription = if (comment.likedByMe) "Beğeniyi geri al" else "Beğen",
+                    tint = if (comment.likedByMe) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    modifier = Modifier
+                        .size(16.dp)
+                        .clickable(onClick = onLikeClick),
                 )
                 Text(
                     text = " ${comment.likeCount}",
@@ -388,6 +431,90 @@ private fun CommentRow(
                     }
                 }
             }
+            // Tepki çipleri — ConversationScreen'deki ReactionChip ile AYNI
+            // görsel desen (ayrı bir composable, MessageReactionDto/
+            // CommentReactionDto farklı tipler olduğu için tekrar YAZILDI,
+            // paylaşılan bir tip İCAT edilmedi).
+            val reactions = comment.reactions
+            if (!reactions.isNullOrEmpty()) {
+                Row(
+                    modifier = Modifier.padding(top = 2.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    reactions.forEach { reaction -> CommentReactionChip(reaction) }
+                }
+            }
+        }
+    }
+
+    // Uzun basınca: emoji tepki seçici + (kendi yorumumsa) Sil — PostActionsSheet'in
+    // AlertDialog onay deseniyle AYNI, sadece burada tam bir ModalBottomSheet
+    // yerine daha hafif bir DropdownMenu kullanıldı (satır zaten dar/sık).
+    DropdownMenu(
+        expanded = showActionsMenu,
+        onDismissRequest = { showActionsMenu = false },
+    ) {
+        ReactionPicker(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+            onReactionSelected = { emoji ->
+                showActionsMenu = false
+                onReactionSelected(emoji)
+            },
+        )
+        if (isOwn) {
+            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+            DropdownMenuItem(
+                text = { Text("Sil", color = MaterialTheme.colorScheme.error) },
+                onClick = {
+                    showActionsMenu = false
+                    showDeleteConfirm = true
+                },
+            )
+        }
+    }
+    }
+
+    if (showDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            title = { Text("Yorumu sil") },
+            text = { Text("Bu yorumu silmek istediğine emin misin? Bu işlem geri alınamaz.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDeleteConfirm = false
+                        onDeleteClick()
+                    },
+                ) { Text("Sil", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirm = false }) { Text("Vazgeç") }
+            },
+        )
+    }
+}
+
+@Composable
+private fun CommentReactionChip(reaction: CommentReactionDto) {
+    val background = if (reaction.mine) {
+        MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+    } else {
+        MaterialTheme.colorScheme.surfaceVariant
+    }
+    Row(
+        modifier = Modifier
+            .clip(MaterialTheme.shapes.extraLarge)
+            .background(background)
+            .padding(horizontal = 8.dp, vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(text = reaction.reaction, style = MaterialTheme.typography.labelSmall)
+        if (reaction.count > 1) {
+            Text(
+                text = " ${reaction.count}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
@@ -402,6 +529,11 @@ private fun CommentInputBar(
     onSendSticker: (String) -> Unit,
     replyingTo: CommentDto?,
     onCancelReply: () -> Unit,
+    // @etiketleme otomatik tamamlama — web'in mentionAutocomplete.js dropdown'ıyla
+    // AYNI amaç, PostDetailViewModel.onCommentTextChange() zaten debounce'lı
+    // arama tetikliyor, burada SADECE sonuçları göstermek/seçmek var.
+    mentionSuggestions: List<MentionSuggestionDto> = emptyList(),
+    onMentionSelected: (String) -> Unit = {},
 ) {
     // GIF/Sticker seçici (Faz 5 Dalga 3B) — ConversationScreen'deki AYNI
     // "seç=gönder" deseni (MediaPickerSheet dosya yorumuna bkz.): seçim
@@ -431,6 +563,50 @@ private fun CommentInputBar(
         color = MaterialTheme.colorScheme.surface,
     ) {
         Column {
+            if (mentionSuggestions.isNotEmpty()) {
+                HorizontalDivider()
+                Column(modifier = Modifier.padding(vertical = 4.dp)) {
+                    mentionSuggestions.forEach { user ->
+                        val username = user.username ?: return@forEach
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onMentionSelected(username) }
+                                .padding(horizontal = 16.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            if (!user.avatarUrl.isNullOrBlank()) {
+                                AsyncImage(
+                                    model = user.avatarUrl,
+                                    contentDescription = null,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.size(28.dp).clip(CircleShape),
+                                )
+                            } else {
+                                Box(
+                                    modifier = Modifier
+                                        .size(28.dp)
+                                        .clip(CircleShape)
+                                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Person,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(18.dp),
+                                    )
+                                }
+                            }
+                            Text(
+                                text = username,
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.padding(start = 10.dp),
+                            )
+                        }
+                    }
+                }
+            }
             HorizontalDivider()
             if (replyingTo != null) {
                 Row(
