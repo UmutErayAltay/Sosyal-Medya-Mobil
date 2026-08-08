@@ -906,11 +906,22 @@ private fun MessageBubble(
                         // (bkz. ConversationInputBar'da karşılıklı dışlama).
                         val videoUrl = message.videoUrl
                         if (!videoUrl.isNullOrBlank()) {
+                            // Kullanıcı raporu (2026-08-08): "video çok küçük görünüyor,
+                            // etrafı kırpılı gibi" — kök neden RESIZE_MODE_ZOOM'du: bu
+                            // mod videoyu KUTUYU DOLDURACAK kadar büyütüp TAŞAN kısmı
+                            // kırpar (CSS object-fit:cover gibi). Telefon videoları
+                            // genelde DİKEY (9:16) çekiliyor, kutu ise YATAY (220x160)
+                            // orandaydı — dikey videoyu yatay kutuya "cover" ile
+                            // sığdırmak videonun SADECE dar, ortadaki bir dilimini
+                            // (aşırı yakınlaştırılmış/kırpılmış) gösteriyordu. RESIZE_MODE_
+                            // FIT'e geçildi (videonun TAMAMI görünür, gerekirse üst/alt
+                            // boşluk bırakılır — kırpma YOK) + kutu daha dikey bir orana
+                            // (200x260) çekildi, telefon videolarıyla daha az boşluk kalsın.
                             MessageVideoPlayer(
                                 videoUrl = videoUrl,
                                 modifier = Modifier
                                     .padding(top = if (replyTo != null || !imageUrl.isNullOrBlank()) 6.dp else 0.dp)
-                                    .size(width = 220.dp, height = 160.dp)
+                                    .size(width = 200.dp, height = 260.dp)
                                     .clip(MaterialTheme.shapes.medium),
                             )
                         }
@@ -1331,7 +1342,10 @@ private fun MessageVideoPlayer(videoUrl: String, modifier: Modifier = Modifier) 
             PlayerView(ctx).apply {
                 useController = true
                 player = exoPlayer
-                resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                // Kullanıcı raporu: ZOOM (cover) dikey videoyu yatay/uyumsuz
+                // orandaki kutuya sığdırırken aşırı kırpıyordu — FIT (contain)
+                // videonun TAMAMINI gösterir, kırpma yapmaz.
+                resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
             }
         },
         update = { it.player = exoPlayer },
