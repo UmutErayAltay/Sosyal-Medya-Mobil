@@ -10,12 +10,8 @@ build/
 local.properties
 *.apk
 *.aab
-
-# 2026-08-08: kullanıcı isteğiyle native app'in indirilebilir debug APK'sı
-# releases/ altında BİLEREK commit edilir (elle güncellenir, otomatik
-# derleme/CI YOK — güncel tutmak isteyen bunu her defasında elle üretip
-# değiştirmeli).
-!releases/*.apk
+# APK dağıtımı repo ağacında DEĞİL, GitHub Releases'te (gh release create) —
+# 2026-08-08, bkz. https://github.com/UmutErayAltay/Sosyal-Medya-Mobil/releases
 
 *.idsig
 *.log
