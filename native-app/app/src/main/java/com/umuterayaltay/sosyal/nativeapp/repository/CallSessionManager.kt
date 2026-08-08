@@ -207,14 +207,32 @@ class CallSessionManager(
 
     private fun handleOffer(signal: CallSignal.Offer) {
         val currentPhase = _phase.value
-        // 2026-08-08: startCall() artık FCM ile uyandırılan hedefin yeniden
-        // bağlanması için offer'ı periyodik TEKRAR gönderiyor (bkz. startCall
-        // yorumu) — AYNI arayandan gelen bir resend, zaten IncomingRinging'de
-        // olduğumuz için "meşgulüm" sanılıp YANLIŞLIKLA reddedilmemeli
-        // (aksi halde arayan, kendi resend'i yüzünden kendi aramasını
-        // reddedilmiş görürdü).
-        if (currentPhase is CallPhase.IncomingRinging && currentPhase.otherUserId == signal.from) {
-            Log.d(TAG, "handleOffer: ${signal.from}'dan AYNI aramanın resend'i, yok sayılıyor")
+        // 2026-08-08 (kullanıcı raporu, gerçek 2 cihaz: "kabul ekranı geldi
+        // ama bağlanamadık") — startCall() artık FCM ile uyandırılan hedefin
+        // yeniden bağlanması için offer'ı periyodik TEKRAR gönderiyor (bkz.
+        // startCall yorumu). İLK düzeltme (SADECE IncomingRinging'de aynı
+        // arayanı yok say) YETERSİZDİ: aranan taraf "Kabul et"e basıp
+        // Active'e geçtikten HEMEN SONRA (ama arayana giden Answer sinyali
+        // HENÜZ ULAŞMADAN) bir resend offer daha gelebiliyordu — o an phase
+        // artık IncomingRinging DEĞİL Active olduğu için eski kontrol
+        // atlanıyor, "meşgulüm" sanılıp arayana bir Reject gönderiliyordu.
+        // Bu Reject, arayan tarafta HENÜZ işlenmemiş gerçek Answer'dan ÖNCE
+        // ulaşırsa (ağ sıralaması garanti değil) `handleSignal`'ın Reject
+        // dalı OutgoingRinging'i (henüz Answer işlenmediği için hâlâ o
+        // fazda) cleanupAndEnd(REJECTED) ile SONLANDIRIYORDU — yani karşı
+        // taraf GERÇEKTEN kabul etmiş olsa bile arama "reddedilmiş" gibi
+        // düşüyordu. Artık AYNI arayanla HERHANGİ bir aktif/geçiş
+        // fazındayken (IncomingRinging/Active/OutgoingRinging) gelen bir
+        // resend TAMAMEN yok sayılıyor — sadece GERÇEKTEN farklı/yeni bir
+        // arayan "meşgulüm" reddi tetikler.
+        val sameCallerAlreadyEngaged = when (currentPhase) {
+            is CallPhase.IncomingRinging -> currentPhase.otherUserId == signal.from
+            is CallPhase.Active -> currentPhase.otherUserId == signal.from
+            is CallPhase.OutgoingRinging -> currentPhase.otherUserId == signal.from
+            else -> false
+        }
+        if (sameCallerAlreadyEngaged) {
+            Log.d(TAG, "handleOffer: ${signal.from}'dan AYNI aramanın resend'i (phase=$currentPhase), yok sayılıyor")
             return
         }
         if (currentPhase !is CallPhase.Idle) {
