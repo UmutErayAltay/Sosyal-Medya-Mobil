@@ -189,7 +189,7 @@ object ServiceLocator {
         // authRepository'ye bağımlı — realtimeConnectionManager ile AYNI
         // gerekçe (/realtime-token onun üzerinden çağrılıyor).
         callSignalingManager = CallSignalingManager(authRepository)
-        callSessionManager = CallSessionManager(callSignalingManager, authRepository)
+        callSessionManager = CallSessionManager(callSignalingManager, authRepository, messagingRepository)
 
         // FAZ5_INIT_MARKER — her ajan kendi `val xxxApi = retrofit.create(...)`
         // + `xxxRepository = XxxRepository(xxxApi)` satırlarını bu satırın

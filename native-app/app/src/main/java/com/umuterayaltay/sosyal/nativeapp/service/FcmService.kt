@@ -44,6 +44,21 @@ class FcmService : FirebaseMessagingService() {
     override fun onMessageReceived(message: RemoteMessage) {
         super.onMessageReceived(message)
 
+        // 2026-08-08: 1:1 arama "uyandırma" mesajı (data-only, notification
+        // BLOĞU YOK — bkz. app/fcm.py::send_call_wake_fcm() yorumu). Görünür
+        // bir bildirim GÖSTERİLMEZ, SADECE arama dinleyicisi zorla/anında
+        // yeniden bağlanır (kullanıcı raporu: "bir süre sonra arama
+        // gelmiyor" — arka planda bayatlayan Realtime bağlantısı için).
+        // Application.onCreate() (dolayısıyla ServiceLocator.init) süreç
+        // TAMAMEN kapalıyken bile FCM bu servisi tetiklediğinde ÖNCE çalışır,
+        // bu yüzden ServiceLocator burada HER ZAMAN hazır.
+        if (message.data["type"] == "incoming_call_wake") {
+            if (ServiceLocator.authRepository.isLoggedIn()) {
+                ServiceLocator.callSessionManager.forceReconnectListening()
+            }
+            return
+        }
+
         // notification bloğu doluysa (backend'in Notification(title=, body=)
         // alanı) önce o kullanılır, yoksa data payload'undaki title/body'ye
         // düşülür (bkz. app/fcm.py sözleşmesi).

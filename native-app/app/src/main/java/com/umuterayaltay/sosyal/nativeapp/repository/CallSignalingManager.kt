@@ -248,10 +248,15 @@ class CallSignalingManager(private val authRepository: AuthRepository) {
     /**
      * [scope]'ta SÜREKLİ çalışan bir döngü başlatır: bağlan → (başarılıysa)
      * sağlığı izle → kopunca/başarısızsa [RECONNECT_DELAY_MS] bekleyip TEKRAR
-     * dene — sonsuza kadar. idempotent: aynı userId için tekrar çağrı no-op.
+     * dene — sonsuza kadar. idempotent: aynı userId için tekrar çağrı no-op —
+     * [forceRestart] = true bu korumayı ATLAR (2026-08-08, bkz. FcmService.kt
+     * "incoming_call_wake" işleyicisi): mevcut döngü şu an [RECONNECT_DELAY_MS]
+     * bekliyor olabilir (bağlantı arka planda bayatlamış), FCM ile uyandırılan
+     * bir cihazın bu bekleyişin bitmesini bekletmeden HEMEN yeniden denemesi
+     * gerekir — mevcut supervisorJob iptal edilip döngü sıfırdan başlatılır.
      */
-    fun startListening(userId: String, scope: CoroutineScope) {
-        if (supervisorJob != null && listeningUserId == userId) return
+    fun startListening(userId: String, scope: CoroutineScope, forceRestart: Boolean = false) {
+        if (!forceRestart && supervisorJob != null && listeningUserId == userId) return
         supervisorJob?.cancel()
         listeningUserId = userId
         supervisorJob = scope.launch {

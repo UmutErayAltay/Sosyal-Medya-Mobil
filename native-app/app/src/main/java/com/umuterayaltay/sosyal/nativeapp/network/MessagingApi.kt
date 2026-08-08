@@ -147,4 +147,8 @@ interface MessagingApi {
     // konuşma grup değilse (bkz. CallViewModel/CallScreen).
     @POST("messages/conversations/{id}/call-token")
     suspend fun getCallToken(@Path("id") conversationId: String): Response<CallTokenResponse>
+
+    // ---- 1:1 arama FCM uyandırma (2026-08-08) — bkz. RingCallRequest yorumu.
+    @POST("calls/ring")
+    suspend fun ringCall(@Body request: RingCallRequest): Response<SimpleOkResponse>
 }

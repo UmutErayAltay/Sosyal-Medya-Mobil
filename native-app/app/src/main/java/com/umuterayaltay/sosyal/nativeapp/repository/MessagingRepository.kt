@@ -12,6 +12,7 @@ import com.umuterayaltay.sosyal.nativeapp.network.MessageSearchResultDto
 import com.umuterayaltay.sosyal.nativeapp.network.MessagingApi
 import com.umuterayaltay.sosyal.nativeapp.network.ReactRequest
 import com.umuterayaltay.sosyal.nativeapp.network.RenameGroupRequest
+import com.umuterayaltay.sosyal.nativeapp.network.RingCallRequest
 import com.umuterayaltay.sosyal.nativeapp.network.RetrofitClient
 import com.umuterayaltay.sosyal.nativeapp.network.ConversationSummaryDto
 import kotlinx.coroutines.Dispatchers
@@ -598,6 +599,21 @@ class MessagingRepository(
             CallTokenResult.Error("network_error")
         } catch (e: Exception) {
             CallTokenResult.Error("unknown_error")
+        }
+    }
+
+    /** 1:1 arama başlatılınca hedefi FCM ile uyandırır (2026-08-08) — bkz.
+     * RingCallRequest/app/fcm.py::send_call_wake_fcm() yorumu. BİLEREK
+     * best-effort: dönen sonuç arayan tarafın kendi arama akışını (Realtime
+     * offer gönderimi ZATEN ayrı/asıl yol) hiçbir şekilde ENGELLEMEMELİ —
+     * CallSessionManager çağrı yerinde sonucu KONTROL ETMEZ. */
+    suspend fun ringCall(targetUserId: String) {
+        withContext(Dispatchers.IO) {
+            try {
+                messagingApi.ringCall(RingCallRequest(targetUserId))
+            } catch (e: Exception) {
+                // best-effort — arama zaten Realtime broadcast ile devam ediyor.
+            }
         }
     }
 }

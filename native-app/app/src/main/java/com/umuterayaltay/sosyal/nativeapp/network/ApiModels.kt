@@ -1054,6 +1054,13 @@ data class CallTokenResponse(
     val error: String? = null,
 )
 
+/** POST /calls/ring gövdesi — 2026-08-08, bkz. app/api_v1/messaging.py
+ * api_call_ring() ve CallSessionManager.kt startCall() yorumu. Yanıt
+ * {"ok":true}/{"error":"..."} şekli — SimpleOkResponse reuse edilir. */
+data class RingCallRequest(
+    @SerializedName("target_user_id") val targetUserId: String,
+)
+
 // ---- FAZ5: Şifre sıfırlama + Sticker backend/API (Dalga 1C) ----
 
 /** POST /auth/forgot-password gövdesi — yanıt HER ZAMAN {"ok":true}

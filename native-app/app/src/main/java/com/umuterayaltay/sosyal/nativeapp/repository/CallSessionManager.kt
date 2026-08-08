@@ -76,6 +76,10 @@ sealed class CallPhase {
 class CallSessionManager(
     private val signaling: CallSignalingManager,
     private val authRepository: AuthRepository,
+    // 2026-08-08: FCM uyandırma tetiklemesi (bkz. startCall() ringCall
+    // yorumu) — MessagingRepository'ye ring endpoint'i eklendi, ayrı bir
+    // CallsRepository İCAT EDİLMEDİ (tek bir endpoint için gereksiz).
+    private val messagingRepository: MessagingRepository,
 ) {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
@@ -146,6 +150,37 @@ class CallSessionManager(
         signaling.incoming.onEach { handleSignal(it) }.launchIn(scope)
     }
 
+    /** FCM "incoming_call_wake" mesajı geldiğinde (bkz. FcmService.kt)
+     * çağrılır — [startGlobalListening]'in idempotent koruması bu durumda
+     * İSTENMİYOR, mevcut bağlantı ZATEN bayat/kopmuş olabilir ve normal
+     * [RECONNECT_DELAY_MS] beklemesi (4sn) yerine HEMEN yeniden denenmesi
+     * gerekiyor (2026-08-08, kullanıcı raporu: "bir süre sonra arama
+     * gelmiyor"). [myUserId] henüz hiç set edilmemiş olabilir — SÜREÇ
+     * TAMAMEN KAPALIYKEN FCM bu servisi (dolayısıyla taze bir
+     * ServiceLocator/CallSessionManager) tetiklediğinde bu sınıf İLK KEZ
+     * kuruluyor demektir; o durumda [authRepository]'den taze çekilir
+     * (normal [startGlobalListening] akışıyla AYNI, sadece tetikleyici FCM).
+     */
+    fun forceReconnectListening() {
+        scope.launch {
+            val userId = myUserId ?: authRepository.getCurrentUserId() ?: run {
+                Log.w(TAG, "forceReconnectListening: kullanıcı id'si çözülemedi, vazgeçiliyor")
+                return@launch
+            }
+            if (!listening) {
+                // Süreç TAMAMEN kapalıyken FCM ile İLK KEZ uyanıldı — bu sınıf
+                // taze bir instance, sinyal işleyicisi (signaling.incoming.
+                // onEach{...}) HENÜZ kurulmadı. startGlobalListening() normal
+                // akışıyla AYNI (onu da kurar) — sadece tetikleyici FCM oldu.
+                Log.d(TAG, "forceReconnectListening: henüz dinlemiyordu, startGlobalListening'e düşülüyor, userId=$userId")
+                startGlobalListening(userId)
+            } else {
+                Log.d(TAG, "forceReconnectListening: userId=$userId")
+                signaling.startListening(userId, scope, forceRestart = true)
+            }
+        }
+    }
+
     private fun handleSignal(signal: CallSignal) {
         Log.d(TAG, "handleSignal: alındı: $signal, mevcut phase=${_phase.value}")
         val me = myUserId ?: return
@@ -171,7 +206,18 @@ class CallSessionManager(
     }
 
     private fun handleOffer(signal: CallSignal.Offer) {
-        if (_phase.value !is CallPhase.Idle) {
+        val currentPhase = _phase.value
+        // 2026-08-08: startCall() artık FCM ile uyandırılan hedefin yeniden
+        // bağlanması için offer'ı periyodik TEKRAR gönderiyor (bkz. startCall
+        // yorumu) — AYNI arayandan gelen bir resend, zaten IncomingRinging'de
+        // olduğumuz için "meşgulüm" sanılıp YANLIŞLIKLA reddedilmemeli
+        // (aksi halde arayan, kendi resend'i yüzünden kendi aramasını
+        // reddedilmiş görürdü).
+        if (currentPhase is CallPhase.IncomingRinging && currentPhase.otherUserId == signal.from) {
+            Log.d(TAG, "handleOffer: ${signal.from}'dan AYNI aramanın resend'i, yok sayılıyor")
+            return
+        }
+        if (currentPhase !is CallPhase.Idle) {
             // Meşgulüm — web'in AYNI davranışı (call.js: reject SADECE ARAYANA gider).
             Log.d(TAG, "handleOffer: meşgulüm (phase=${_phase.value}), ${signal.from}'a Reject gönderiliyor")
             val me = myUserId ?: return
@@ -273,23 +319,39 @@ class CallSessionManager(
                 _isMicEnabled.value = true
 
                 val myProfile = authRepository.getCurrentUser()
-                val offerDelivered = signaling.sendSignal(
-                    otherCallTopic,
-                    CallSignal.Offer(
-                        from = me,
-                        fromTopic = myTopic,
-                        conversationId = conversationId,
-                        sdp = offerSdp,
-                        video = isVideo,
-                        callerName = myProfile?.username ?: "Birisi",
-                        callerAvatar = myProfile?.avatarUrl,
-                    ),
+                val offerSignal = CallSignal.Offer(
+                    from = me,
+                    fromTopic = myTopic,
+                    conversationId = conversationId,
+                    sdp = offerSdp,
+                    video = isVideo,
+                    callerName = myProfile?.username ?: "Birisi",
+                    callerAvatar = myProfile?.avatarUrl,
                 )
+                val offerDelivered = signaling.sendSignal(otherCallTopic, offerSignal)
                 Log.d(TAG, "startCall: Offer gönderim sonucu=$offerDelivered, hedef=$otherCallTopic")
+
+                // 2026-08-08 (kullanıcı raporu: "bir süre sonra arama gelmiyor",
+                // "karşı taraf kabul ediyor ama aramaya geçmiyor") — hedefin
+                // Realtime bağlantısı arka planda bayatlamış olabilir. FCM ile
+                // uyandırma tetiklenir (best-effort, backend'in fcm.py::
+                // send_call_wake_fcm() yorumuna bkz.) — hedefin FcmService'i
+                // bunu görünce dinleyicisini ANINDA yeniden bağlar. Ama bu
+                // yeniden bağlanma birkaç saniye sürebilir ve Realtime broadcast
+                // KALICI DEĞİLDİR (o an bağlı değilse asla teslim edilmez) —
+                // bu yüzden offer aşağıda periyodik TEKRAR gönderiliyor, tek
+                // seferlik gönderim bu pencereyi kaçırabilirdi.
+                scope.launch { messagingRepository.ringCall(otherUserId) }
 
                 noAnswerJob?.cancel()
                 noAnswerJob = scope.launch {
-                    delay(30_000)
+                    // ~3sn arayla 9 kez tekrar (+ ilk gönderim) = 30sn'lik
+                    // NO_ANSWER penceresinin tamamını kapsar.
+                    repeat(9) {
+                        delay(3_000)
+                        if (_phase.value !is CallPhase.OutgoingRinging) return@launch
+                        signaling.sendSignal(otherCallTopic, offerSignal)
+                    }
                     if (_phase.value is CallPhase.OutgoingRinging) {
                         Log.w(TAG, "startCall: 30sn'de cevap gelmedi (NO_ANSWER), otherUserId=$otherUserId")
                         cleanupAndEnd(CallEndReason.NO_ANSWER)
