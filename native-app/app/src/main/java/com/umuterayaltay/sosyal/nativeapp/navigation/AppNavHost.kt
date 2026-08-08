@@ -29,6 +29,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -75,6 +76,7 @@ import com.umuterayaltay.sosyal.nativeapp.ui.screens.ForgotPasswordScreen
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.MessageSearchScreen
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.StoryViewerScreen
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.StoryCreateScreen
+import kotlinx.coroutines.launch
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.HighlightsScreen
 // FAZ5_IMPORTS_MARKER — her ajan kendi ekran import'unu bu satırın HEMEN
 // ÜSTÜNE ekler (dalga başına ayrı ajan çakışmasın diye).
@@ -233,8 +235,26 @@ fun AppNavHost() {
         },
     ) {
         composable(ROUTE_LOGIN) {
+            // Kullanıcı raporu (2026-08-08): "mobilde arama hiç çalışmıyor,
+            // mobilden-mobile/mobilden-webe/web-mobil hiçbiri" — kök neden,
+            // startGlobalListening()'in SADECE AppNavHost'un kök seviyesindeki
+            // `LaunchedEffect(Unit)` (bkz. üstteki blok) içinden, TEK SEFER,
+            // AppNavHost İLK compose edildiğinde çağrılmasıydı. O an
+            // isLoggedIn() henüz false ise (kullanıcı bu OTURUMDA giriş
+            // yapıyorsa — login/register/Google'ın HEPSİ buraya çıkar) bu
+            // kontrol BİR DAHA ASLA tekrar çalışmıyordu — sinyalleşme istemcisi
+            // (CallSignalingManager.supabase) hiç kurulmadığı için hem gelen
+            // ARAMA hiç dinlenmiyor hem de giden sendSignal() sessizce "supabase
+            // client YOK" ile başarısız oluyordu. Artık BURADA da (idempotent,
+            // startGlobalListening() zaten aynı userId için no-op) çağrılıyor.
+            val loginScope = rememberCoroutineScope()
             LoginScreen(
                 onLoginSuccess = {
+                    loginScope.launch {
+                        ServiceLocator.authRepository.getCurrentUser()?.id?.let {
+                            ServiceLocator.callSessionManager.startGlobalListening(it)
+                        }
+                    }
                     navController.navigate(ROUTE_MAIN) {
                         popUpTo(ROUTE_LOGIN) { inclusive = true }
                     }
@@ -244,9 +264,16 @@ fun AppNavHost() {
             )
         }
         composable("register") {
+            // AYNI kök neden/gerekçe — bkz. ROUTE_LOGIN composable'ındaki yorum.
+            val registerScope = rememberCoroutineScope()
             RegisterScreen(
                 onNavigateBack = { navController.navigateUp() },
                 onRegisterSuccess = {
+                    registerScope.launch {
+                        ServiceLocator.authRepository.getCurrentUser()?.id?.let {
+                            ServiceLocator.callSessionManager.startGlobalListening(it)
+                        }
+                    }
                     navController.navigate(ROUTE_MAIN) {
                         popUpTo(ROUTE_LOGIN) { inclusive = true }
                     }
