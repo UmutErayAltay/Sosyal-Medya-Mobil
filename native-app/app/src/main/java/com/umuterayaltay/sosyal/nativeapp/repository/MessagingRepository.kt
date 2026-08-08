@@ -227,6 +227,16 @@ class MessagingRepository(
         // "video" multipart alanı (backend upload_video()'ya gider).
         videoBytes: ByteArray? = null,
         videoMimeType: String? = null,
+        // 2026-08-08 (kullanıcı raporu: "gidiyor ama hemen geri geliyor,
+        // göndermiyor") — dosya adı ARTIK sabit "message_image"/"message_video"
+        // DEĞİL, çağıran taraf (ConversationViewModel) gerçek MIME'dan gerçek
+        // uzantılı bir isim üretip buraya veriyor. Uzantısız isim backend'in
+        // `_get_extension()` kontrolünü HER ZAMAN başarısız kılıyordu (bkz.
+        // ConversationViewModel'deki kök neden yorumu) — fallback DEĞERLERİ
+        // ("upload.jpg"/"upload.mp4") sadece çağıran taraf her nedense null
+        // geçerse diye son bir güvenlik ağı, normal akışta HİÇ kullanılmaz.
+        imageFileName: String? = null,
+        videoFileName: String? = null,
     ): SendMessageResult =
         withContext(Dispatchers.IO) {
             try {
@@ -234,11 +244,11 @@ class MessagingRepository(
                 val replyToBody: RequestBody? = replyToId?.toRequestBody("text/plain".toMediaTypeOrNull())
                 val imagePart: MultipartBody.Part? = imageBytes?.let { bytes ->
                     val imageBody = bytes.toRequestBody((imageMimeType ?: "image/jpeg").toMediaTypeOrNull())
-                    MultipartBody.Part.createFormData("image", "message_image", imageBody)
+                    MultipartBody.Part.createFormData("image", imageFileName ?: "upload.jpg", imageBody)
                 }
                 val videoPart: MultipartBody.Part? = videoBytes?.let { bytes ->
                     val videoBody = bytes.toRequestBody((videoMimeType ?: "video/mp4").toMediaTypeOrNull())
-                    MultipartBody.Part.createFormData("video", "message_video", videoBody)
+                    MultipartBody.Part.createFormData("video", videoFileName ?: "upload.mp4", videoBody)
                 }
                 val stickerIdBody: RequestBody? = stickerId?.toRequestBody("text/plain".toMediaTypeOrNull())
                 val gifUrlBody: RequestBody? = gifUrl?.toRequestBody("text/plain".toMediaTypeOrNull())

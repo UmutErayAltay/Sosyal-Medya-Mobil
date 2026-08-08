@@ -68,6 +68,33 @@ private const val POLL_INTERVAL_MS = 5000L
  */
 class ConversationViewModel(private val conversationId: String) : ViewModel() {
 
+    companion object {
+        // 2026-08-08 (kullanıcı raporu: "video ve fotoğraf gidiyor ama hemen
+        // geri geliyor, göndermiyor") — kök neden: MultipartBody.Part.
+        // createFormData()'ya sabit "message_image"/"message_video" (UZANTISIZ)
+        // dosya adı veriliyordu. Backend `app/storage_helper.py::_get_extension()`
+        // dosya adından uzantı çıkarır ve `ALLOWED_EXTENSIONS`/`ALLOWED_VIDEO_
+        // EXTENSIONS` listesinde YOKSA (uzantısız asla listede olamaz) daha
+        // magic-byte kontrolüne bile gelmeden `None` döner — her gönderim
+        // SESSİZCE `upload_failed` ile reddediliyordu. CreatePostViewModel'in
+        // VIDEO_MIME_TO_EXTENSION deseniyle AYNI çözüm — gerçek MIME'dan
+        // gerçek uzantı üretilir. GÖRSEL için de (post akışının aksine "sabit
+        // isim yeterli" varsayımı YANLIŞTI — o varsayım SADECE seçilen görsel
+        // hep JPEG ise doğru, PNG/WEBP'te AYNI ext-uyuşmazlığı bug'ına düşer)
+        // gerçek uzantı üretiliyor.
+        private val IMAGE_MIME_TO_EXTENSION = mapOf(
+            "image/png" to ".png",
+            "image/jpeg" to ".jpg",
+            "image/gif" to ".gif",
+            "image/webp" to ".webp",
+        )
+        private val VIDEO_MIME_TO_EXTENSION = mapOf(
+            "video/mp4" to ".mp4",
+            "video/webm" to ".webm",
+            "video/quicktime" to ".mov",
+        )
+    }
+
     private val messagingRepository = ServiceLocator.messagingRepository
     private val authRepository = ServiceLocator.authRepository
     private val tokenStore = ServiceLocator.tokenStore
@@ -390,12 +417,21 @@ class ConversationViewModel(private val conversationId: String) : ViewModel() {
         viewModelScope.launch {
             var imageBytes: ByteArray? = null
             var imageMimeType: String? = null
+            var imageFileName: String? = null
             if (imageUri != null) {
+                imageMimeType = context.contentResolver.getType(imageUri)
+                val imageExt = IMAGE_MIME_TO_EXTENSION[imageMimeType]
+                if (imageExt == null) {
+                    removeOptimisticMessage(tempId)
+                    restoreFailedSend(content, replyingTo, imageUri, videoUri)
+                    _error.value = "Desteklenmeyen görsel formatı (png/jpeg/gif/webp kullanın)"
+                    return@launch
+                }
+                imageFileName = "upload$imageExt"
                 try {
                     withContext(Dispatchers.IO) {
                         imageBytes = context.contentResolver.openInputStream(imageUri)?.use { it.readBytes() }
                     }
-                    imageMimeType = context.contentResolver.getType(imageUri)
                 } catch (e: Exception) {
                     removeOptimisticMessage(tempId)
                     restoreFailedSend(content, replyingTo, imageUri, videoUri)
@@ -406,12 +442,21 @@ class ConversationViewModel(private val conversationId: String) : ViewModel() {
 
             var videoBytes: ByteArray? = null
             var videoMimeType: String? = null
+            var videoFileName: String? = null
             if (videoUri != null) {
+                videoMimeType = context.contentResolver.getType(videoUri)
+                val videoExt = VIDEO_MIME_TO_EXTENSION[videoMimeType]
+                if (videoExt == null) {
+                    removeOptimisticMessage(tempId)
+                    restoreFailedSend(content, replyingTo, imageUri, videoUri)
+                    _error.value = "Desteklenmeyen video formatı (mp4/webm/mov kullanın)"
+                    return@launch
+                }
+                videoFileName = "upload$videoExt"
                 try {
                     withContext(Dispatchers.IO) {
                         videoBytes = context.contentResolver.openInputStream(videoUri)?.use { it.readBytes() }
                     }
-                    videoMimeType = context.contentResolver.getType(videoUri)
                 } catch (e: Exception) {
                     removeOptimisticMessage(tempId)
                     restoreFailedSend(content, replyingTo, imageUri, videoUri)
@@ -431,6 +476,8 @@ class ConversationViewModel(private val conversationId: String) : ViewModel() {
                     gifUrl,
                     videoBytes,
                     videoMimeType,
+                    imageFileName,
+                    videoFileName,
                 )
             ) {
                 is SendMessageResult.Success -> replaceOptimisticMessage(tempId, result.message)

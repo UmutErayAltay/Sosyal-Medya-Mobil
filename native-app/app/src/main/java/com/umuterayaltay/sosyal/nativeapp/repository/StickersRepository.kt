@@ -10,6 +10,16 @@ import okhttp3.MultipartBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
 
+// storage_helper.py ALLOWED_EXTENSIONS/ALLOWED_MIMES ile AYNI eşleme —
+// ConversationViewModel.kt'deki AYNI sabitin (mesaj görseli) bir kopyası,
+// ayrı bir "ortak yardımcı" dosyası İCAT EDİLMEDİ (sadece 2 kullanım yeri var).
+private val IMAGE_MIME_TO_EXTENSION = mapOf(
+    "image/png" to ".png",
+    "image/jpeg" to ".jpg",
+    "image/gif" to ".gif",
+    "image/webp" to ".webp",
+)
+
 sealed class StickersResult {
     data class Success(val stickers: List<StickerDto>) : StickersResult()
     data class Error(val code: String?) : StickersResult()
@@ -87,7 +97,12 @@ class StickersRepository(
         withContext(Dispatchers.IO) {
             try {
                 val imageBody = imageBytes.toRequestBody((imageMimeType ?: "image/jpeg").toMediaTypeOrNull())
-                val imagePart = MultipartBody.Part.createFormData("image", "sticker_image", imageBody)
+                // 2026-08-08 — MessagingRepository.sendMessage()'daki AYNI kök
+                // neden/düzeltme: sabit "sticker_image" (UZANTISIZ) dosya adı
+                // backend'in _get_extension() kontrolünü HER ZAMAN başarısız
+                // kılıyordu (upload_failed). Gerçek MIME'dan gerçek uzantı üretilir.
+                val ext = IMAGE_MIME_TO_EXTENSION[imageMimeType] ?: ".jpg"
+                val imagePart = MultipartBody.Part.createFormData("image", "upload$ext", imageBody)
                 val response = stickersApi.createSticker(imagePart)
                 val body = response.body()
                 if (response.isSuccessful && body?.id != null && body.imageUrl != null) {
