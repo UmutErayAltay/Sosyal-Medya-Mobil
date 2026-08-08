@@ -67,21 +67,38 @@ import com.umuterayaltay.sosyal.nativeapp.viewmodel.StoryBarViewModel
 import kotlinx.coroutines.delay
 
 /**
- * Animasyon turu (2026-08-08, UI güzelleştirme çalışması 3. kısım): liste
- * item'larının stagger'lı fade+slide-up girişi — FeedScreen/DiscoverScreen/
+ * Animasyon turu (2026-08-08, UI güzelleştirme çalışması 3. kısım) — liste
+ * item'larının stagger'lı fade+slide-up girişi. FeedScreen/DiscoverScreen/
  * HashtagScreen/TrendingScreen'in LazyColumn item'larında PAYLAŞILAN
  * (`internal` görünürlük, AYNI paket — Kotlin'de top-level `private`
- * fonksiyonlar dosya sınırını aşamaz, bu yüzden 4 dosyada AYRI AYRI
- * KOPYALANMADI, tek bir yerde tutuldu). `index` en fazla 8 adıma
- * SINIRLANIR (60ms adım = en fazla 480ms) — aşırıya kaçmamak için, uzun
- * listelerde aşağılara indikçe gecikme SABİT kalır, sürekli artmaz. Her
- * çağrı kendi `remember`'ını tutar; bir item'ın composition'ı LazyColumn
- * tarafından key'e göre canlı tutulduğu sürece (görünür kalma/kaydırıp geri
- * gelme) animasyon TEKRAR TETİKLENMEZ, sadece gerçekten yeni bir composition
- * kurulduğunda (ilk giriş) oynar.
+ * fonksiyonlar dosya sınırını aşamaz, bu yüzden AYRI AYRI KOPYALANMADI).
+ *
+ * 2026-08-08 (performans düzeltmesi — kullanıcı raporu "kasıyor, yükleme
+ * çok yavaşladı"): İlk sürüm "composition canlı tutulduğu sürece tekrar
+ * tetiklenmez" varsayıyordu — bu YANLIŞTI, LazyColumn görünür pencerenin
+ * dışına kayan item'ları GERÇEKTEN disposed eder, geri kaydırınca fresh bir
+ * composition kurulur ve animasyon HER seferinde yeniden oynardı (sürekli
+ * kaydırmada gözle görülür "kasıma"). Artık çağıran ekran, kendi
+ * `remember { mutableSetOf<String>() }` ile ekranın YAŞAM SÜRESİ boyunca
+ * (composition dispose/recompose'dan ETKİLENMEYEN bir üst seviyede) hangi
+ * key'lerin daha önce animasyonla girdiğini tutuyor — `seenKeys.add(key)`
+ * SADECE gerçekten YENİ bir key'de `true` döner, aynı key ikinci kez
+ * (scroll-geri-geliş) görüldüğünde animasyon TAMAMEN ATLANIR (AnimatedVisibility
+ * bile mount edilmez). `index` en fazla 8 adıma SINIRLANIR (60ms adım = en
+ * fazla 480ms).
  */
 @Composable
-internal fun PostFeedStaggerReveal(index: Int, content: @Composable () -> Unit) {
+internal fun PostFeedStaggerReveal(
+    index: Int,
+    itemKey: String,
+    seenKeys: MutableSet<String>,
+    content: @Composable () -> Unit,
+) {
+    val isNew = remember(itemKey) { seenKeys.add(itemKey) }
+    if (!isNew) {
+        content()
+        return
+    }
     var visible by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         val delayMs = index.coerceIn(0, 8) * 60L
@@ -135,6 +152,10 @@ fun FeedScreen(
     val suggestedUsers by viewModel.suggestedUsers.collectAsState()
     val currentUserId by viewModel.currentUserId.collectAsState()
     val context = LocalContext.current
+    // Performans düzeltmesi (bkz. PostFeedStaggerReveal yorumu) — bu ekranın
+    // yaşam süresi boyunca hangi post'ların zaten giriş animasyonuyla
+    // gösterildiğini tutar, scroll-geri-gelişte TEKRAR animasyon oynamasın.
+    val seenPostKeys = remember { mutableSetOf<String>() }
 
     LaunchedEffect(Unit) {
         viewModel.events.collect { event ->
@@ -285,7 +306,7 @@ fun FeedScreen(
                     // bir yatay öneri şeridi eklenir. itemsIndexed kullanıldı (posts.size
                     // <= 5 olduğunda hiç tetiklenmez, bu KABUL EDİLEBİLİR bir sınır).
                     itemsIndexed(posts, key = { _, post -> post.id }) { index, post ->
-                        PostFeedStaggerReveal(index = index) {
+                        PostFeedStaggerReveal(index = index, itemKey = post.id, seenKeys = seenPostKeys) {
                         Column {
                             PostCard(
                                 post = post,

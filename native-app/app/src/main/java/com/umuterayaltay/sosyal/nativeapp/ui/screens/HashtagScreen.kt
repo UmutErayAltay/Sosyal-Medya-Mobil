@@ -65,6 +65,8 @@ fun HashtagScreen(
     val error by viewModel.error.collectAsState()
     val currentUserId by viewModel.currentUserId.collectAsState()
     val context = LocalContext.current
+    // Performans düzeltmesi (bkz. FeedScreen.kt PostFeedStaggerReveal yorumu).
+    val seenPostKeys = remember { mutableSetOf<String>() }
 
     LaunchedEffect(Unit) {
         viewModel.events.collect { event ->
@@ -163,7 +165,7 @@ fun HashtagScreen(
                 contentPadding = PaddingValues(vertical = 8.dp),
             ) {
                 itemsIndexed(posts, key = { _, post -> post.id }) { index, post ->
-                    PostFeedStaggerReveal(index = index) {
+                    PostFeedStaggerReveal(index = index, itemKey = post.id, seenKeys = seenPostKeys) {
                     PostCard(
                         post = post,
                         onLikeClick = { viewModel.toggleLike(it.id) },

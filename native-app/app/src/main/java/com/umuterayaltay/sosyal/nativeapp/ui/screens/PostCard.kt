@@ -1,12 +1,8 @@
 package com.umuterayaltay.sosyal.nativeapp.ui.screens
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -175,17 +171,20 @@ fun PostCard(
     var bookmarkedOverride by remember(post.id, post.bookmarkedByMe) { mutableStateOf<Boolean?>(null) }
     val isBookmarked = bookmarkedOverride ?: post.bookmarkedByMe
 
-    // Animasyon turu (2026-08-08, UI güzelleştirme çalışması 3. kısım): kart
-    // ilk kez composition'a girdiğinde fade+hafif slide-up ile belirir.
-    // `remember` başlangıç state'i (false) SADECE bu composable'ın ilk
-    // oluşturulduğu anda üretilir — aynı liste anahtarına (post.id) sahip
-    // kart LazyColumn'da kaydırılıp geri gelirse (Compose composition'ı
-    // canlı tuttuğu sürece) bu state korunur ve animasyon TEKRAR
-    // TETİKLENMEZ, sadece gerçekten yeni bir kart composition'a girdiğinde
-    // (yeni post, ya da composition'ın tamamen atılıp yeniden kurulduğu
-    // nadir durumda) yeniden oynar.
-    var cardVisible by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) { cardVisible = true }
+    // 2026-08-08 (performans düzeltmesi): kartın KENDİ giriş animasyonu
+    // (fade+slide-up) kaldırıldı — çağıran ekranlar (FeedScreen/
+    // DiscoverScreen/ProfileScreen/HashtagScreen/TrendingScreen) ZATEN
+    // kendi seviyelerinde bir giriş animasyonu uyguluyordu (bkz.
+    // PostFeedStaggerReveal/StaggeredPostEntry), bu ikisi ÇİFT sarmalanıp
+    // hem gözle görülür "iki aşamalı" bir gecikme yaratıyordu hem de
+    // LazyColumn kaydırma sırasında composition'ı disposed/recompose
+    // ettiği için animasyon her scroll-geri-gelişte TEKRAR oynuyordu
+    // (önceki yorumdaki "composition canlı tutulduğu sürece tekrar
+    // tetiklenmez" varsayımı YANLIŞTI — LazyColumn görünür pencerenin
+    // dışına çıkan item'ları gerçekten disposed eder). Kullanıcı raporu:
+    // "uygulama kasıyor, yükleme çok yavaşladı". Tek animasyon artık
+    // SADECE çağıran taraftaki sarmalayıcıda ve sadece gerçekten YENİ
+    // post'larda oynuyor (bkz. o dosyalardaki seenKeys/isNew mantığı).
     // Beğeni kalbi + kaydet ikonu için "spring pop" — Animatable ile elle
     // yönetildi (animateXAsState value-driven değil, HER tıklamada aynı
     // spring'i baştan oynatmak gerektiği için scope.launch + animateTo
@@ -194,14 +193,6 @@ fun PostCard(
     val bookmarkScale = remember { Animatable(1f) }
     val animScope = rememberCoroutineScope()
 
-    AnimatedVisibility(
-        visible = cardVisible,
-        enter = fadeIn(animationSpec = tween(durationMillis = 260)) +
-            slideInVertically(
-                animationSpec = tween(durationMillis = 260),
-                initialOffsetY = { fullHeight -> fullHeight / 12 },
-            ),
-    ) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -496,7 +487,6 @@ fun PostCard(
                 }
             }
         }
-    }
     }
 
     if (showActionsSheet) {

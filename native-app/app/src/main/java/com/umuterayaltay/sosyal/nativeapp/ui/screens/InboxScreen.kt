@@ -93,6 +93,10 @@ fun InboxScreen(
     // Madde 1 (navbar üst-binme fix, bkz. HideableTopBar.kt) — SADECE
     // TOP_BAR_HEIGHT yerine status bar inset'ini de içeren gerçek yükseklik.
     val topBarContentPadding = rememberTopBarContentPadding()
+    // Performans düzeltmesi (bkz. FeedScreen.kt PostFeedStaggerReveal yorumu,
+    // AYNI kök neden) — ekranın yaşam süresi boyunca hangi konuşmaların zaten
+    // giriş animasyonuyla gösterildiğini tutar.
+    val seenConversationKeys = remember { mutableSetOf<String>() }
 
     // Madde 6 (top bar mimarisi rewrite): FeedScreen.kt'deki AYNI karar -
     // Scaffold'un topBar slotu TAMAMEN KALDIRILDI, bar artık bir Box overlay
@@ -129,6 +133,7 @@ fun InboxScreen(
                     AnimatedConversationRow(
                         index = index,
                         conversation = conversation,
+                        seenKeys = seenConversationKeys,
                         onClick = { onConversationClick(conversation.id) },
                     )
                 }
@@ -167,18 +172,30 @@ fun InboxScreen(
 /**
  * Animasyon turu (3. kısım) — konuşma satırlarının listeye stagger'lı
  * (index'e göre 60ms kademeli) fade+slide-up girişi, Instagram/WhatsApp'ın
- * liste yükleme hissiyle AYNI. remember(conversation.id) SADECE bu satır
- * ilk kez composition'a girdiğinde tetiklenir — okunmadı rozeti/son mesaj
- * güncellenip AYNI id yeniden recompose olduğunda TEKRAR oynatılmaz. Gecikme
- * ilk ~12 satırla sınırlandı (min(index, 12) * 60ms) — uzun listelerde son
- * öğelerin saçma derecede geç belirmesini önlemek için.
+ * liste yükleme hissiyle AYNI. Gecikme ilk ~12 satırla sınırlandı
+ * (min(index, 12) * 60ms) — uzun listelerde son öğelerin saçma derecede geç
+ * belirmesini önlemek için.
+ *
+ * 2026-08-08 (performans düzeltmesi): "remember(conversation.id) SADECE ilk
+ * kez tetiklenir" varsayımı YANLIŞTI — LazyColumn görünür pencerenin dışına
+ * kayan satırları GERÇEKTEN disposed eder, geri kaydırınca fresh composition
+ * kurulur ve remember(id) de SIFIRDAN çalışır (animasyon TEKRAR oynardı,
+ * sürekli kaydırmada "kasıma"). [seenKeys] çağıran ekranda (InboxScreen)
+ * `remember`'lanıp ekranın yaşam süresi boyunca hangi id'lerin zaten
+ * animasyonla girdiğini tutar — composition dispose/recompose'dan ETKİLENMEZ.
  */
 @Composable
 private fun AnimatedConversationRow(
     index: Int,
     conversation: ConversationSummaryDto,
+    seenKeys: MutableSet<String>,
     onClick: () -> Unit,
 ) {
+    val isNew = remember(conversation.id) { seenKeys.add(conversation.id) }
+    if (!isNew) {
+        ConversationRow(conversation, onClick = onClick)
+        return
+    }
     val visibleState = remember(conversation.id) { MutableTransitionState(false) }
     LaunchedEffect(conversation.id) {
         delay(minOf(index, 12) * 60L)

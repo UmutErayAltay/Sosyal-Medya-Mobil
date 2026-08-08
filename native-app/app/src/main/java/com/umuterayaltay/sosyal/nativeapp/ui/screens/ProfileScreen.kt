@@ -490,6 +490,8 @@ private fun ProfileContent(
     // yuzden burada spesifikasyondaki "imageUrl != null || !imageUrls.isNullOrEmpty()"
     // kontrolunun SADECE imageUrl yarisi uygulanabildi (bkz. rapor sapmasi).
     val mediaPosts = remember(posts) { posts.filter { !it.imageUrl.isNullOrBlank() } }
+    // Performans düzeltmesi (bkz. FeedScreen.kt PostFeedStaggerReveal yorumu).
+    val seenPostKeys = remember { mutableSetOf<String>() }
 
     LazyColumn(
         state = listState,
@@ -599,7 +601,7 @@ private fun ProfileContent(
                     // sadece cagri yerinde stagger'li fade+slide giris - liste
                     // ilk yuklendiginde/sekme degistiginde postlar art arda
                     // hafif gecikmeyle belirir.
-                    StaggeredPostEntry(index = index) {
+                    StaggeredPostEntry(index = index, itemKey = "${selectedTab.name}_${post.id}", seenKeys = seenPostKeys) {
                         PostCard(
                             post = post,
                             onLikeClick = onLikeClick,
@@ -840,9 +842,20 @@ private fun FollowActionButton(
  * FollowListScreen.kt/FollowRequestsScreen.kt'deki stagger-giris fikriyle
  * AYNI - PostCard.kt'ye DOKUNMADAN, sadece cagri yerinde index'e bagli KISA
  * bir gecikmeyle fade+slide giris uygular.
+ *
+ * 2026-08-08 (performans düzeltmesi — bkz. FeedScreen.kt PostFeedStaggerReveal
+ * yorumu, AYNI kök neden): [seenKeys], LazyColumn'un scroll sırasında
+ * composition'ı disposed/recompose ettiği durumlarda animasyonun TEKRAR
+ * oynamasını engeller — çağıran taraf (ProfileScreen) bu Set'i ekranın/sekmenin
+ * yaşam süresi boyunca `remember`'lar.
  */
 @Composable
-private fun StaggeredPostEntry(index: Int, content: @Composable () -> Unit) {
+private fun StaggeredPostEntry(index: Int, itemKey: String, seenKeys: MutableSet<String>, content: @Composable () -> Unit) {
+    val isNew = remember(itemKey) { seenKeys.add(itemKey) }
+    if (!isNew) {
+        content()
+        return
+    }
     var visible by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         delay(minOf(index, 8) * 40L)

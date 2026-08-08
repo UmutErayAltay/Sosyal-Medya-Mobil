@@ -32,6 +32,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -59,6 +60,8 @@ fun TrendingScreen(
     val tags by viewModel.tags.collectAsState()
     val loading by viewModel.loading.collectAsState()
     val error by viewModel.error.collectAsState()
+    // Performans düzeltmesi (bkz. FeedScreen.kt PostFeedStaggerReveal yorumu).
+    val seenTagKeys = remember { mutableSetOf<String>() }
 
     LaunchedEffect(Unit) {
         viewModel.events.collect { event ->
@@ -132,7 +135,7 @@ fun TrendingScreen(
                 contentPadding = PaddingValues(vertical = 8.dp),
             ) {
                 itemsIndexed(tags, key = { _, tag -> tag.tag }) { index, tag ->
-                    PostFeedStaggerReveal(index = index) {
+                    PostFeedStaggerReveal(index = index, itemKey = tag.tag, seenKeys = seenTagKeys) {
                         Column {
                             TrendingRow(rank = index + 1, tag = tag, onClick = { onNavigateToHashtag(tag.tag) })
                             if (index < tags.lastIndex) {
