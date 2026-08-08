@@ -64,7 +64,13 @@ fun MediaPickerSheet(
     sheetState: SheetState,
     onDismiss: () -> Unit,
     onGifSelected: (String) -> Unit,
-    onStickerSelected: (String) -> Unit,
+    // 2026-08-08 (kullanıcı raporu: "çıkartma gönderince direkt yüklenmiyor,
+    // bi süre sonra geliyor") — SADECE id yerine TAM StickerDto (imageUrl
+    // dahil) verilir, böylece çağıran taraf optimistic (anında gösterilen)
+    // mesaj balonuna sticker'ın GÖRSELİNİ de koyabilir (bkz.
+    // ConversationViewModel.send() yorumu) — id'den SONRADAN ayrı bir ağ
+    // isteğiyle image_url çekmeye gerek kalmaz.
+    onStickerSelected: (StickerDto) -> Unit,
 ) {
     var selectedTab by remember { mutableIntStateOf(0) } // 0 = GIF, 1 = Çıkartma
 
@@ -171,7 +177,7 @@ private fun GifTab(onGifSelected: (String) -> Unit) {
 }
 
 @Composable
-private fun StickerTab(onStickerSelected: (String) -> Unit) {
+private fun StickerTab(onStickerSelected: (StickerDto) -> Unit) {
     val stickersRepository = ServiceLocator.stickersRepository
     var stickers by remember { mutableStateOf<List<StickerDto>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
@@ -210,7 +216,7 @@ private fun StickerTab(onStickerSelected: (String) -> Unit) {
                             .aspectRatio(1f)
                             .clip(RoundedCornerShape(8.dp))
                             .background(MaterialTheme.colorScheme.surfaceVariant)
-                            .clickable { onStickerSelected(sticker.id) },
+                            .clickable { onStickerSelected(sticker) },
                     )
                 }
             }

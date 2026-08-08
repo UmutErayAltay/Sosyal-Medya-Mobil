@@ -93,6 +93,7 @@ import com.umuterayaltay.sosyal.nativeapp.ui.components.MediaPickerSheet
 import com.umuterayaltay.sosyal.nativeapp.network.MessageDto
 import com.umuterayaltay.sosyal.nativeapp.network.MessageReactionDto
 import com.umuterayaltay.sosyal.nativeapp.network.MessageSearchResultDto
+import com.umuterayaltay.sosyal.nativeapp.network.StickerDto
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.ConversationEvent
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.ConversationViewModel
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.ConversationViewModelFactory
@@ -259,21 +260,38 @@ fun ConversationScreen(
     // da polling ile gelen) yine `animateScrollToItem` ile YUMUŞAK kayıyor —
     // bu normal/istenen sohbet davranışı, SADECE ilk açılış anlık olmalı.
     var hasScrolledToInitialBottom by remember { mutableStateOf(false) }
+    // Kullanıcı raporu (devam): "en alttan 2. mesajda kalıyor" — LazyColumn'da
+    // `loading_older` spinner'ı (aşağıdaki `if (loadingOlder) item(...)`)
+    // mesaj listesinden ÖNCE eklendiğinde TÜM mesaj index'lerini +1 kaydırır.
+    // Hedef index'i buna göre HESAPLAMAK gerekiyordu — sabit `messages.size - 1`
+    // spinner varken 1 KISA kalıyordu. Asıl kök neden ise aşağıdaki
+    // pagination-tetikleyicisiydi (bkz. o LaunchedEffect'in yeni yorumu).
+    val loadingOlderOffset = if (loadingOlder) 1 else 0
     // Anahtar SADECE son mesajın id'si, bu yüzden loadOlder()'ın listenin
     // BAŞINA eklediği eski sayfalar burayı TETİKLEMEZ.
     LaunchedEffect(messages.lastOrNull()?.id) {
         if (messages.isEmpty()) return@LaunchedEffect
+        val targetIndex = messages.size - 1 + loadingOlderOffset
         if (!hasScrolledToInitialBottom) {
-            listState.scrollToItem(messages.size - 1)
+            listState.scrollToItem(targetIndex)
             hasScrolledToInitialBottom = true
         } else {
-            listState.animateScrollToItem(messages.size - 1)
+            listState.animateScrollToItem(targetIndex)
         }
     }
 
     // Listenin başına (yukarı kaydırınca) yaklaşınca daha eski sayfayı yükle —
     // loadOlder() zaten hasMore/loading guard'lı, tekrar tetiklenmesi zararsız.
-    LaunchedEffect(listState, hasMore) {
+    // ÖNEMLİ: `hasScrolledToInitialBottom &&` guard'ı SONRADAN eklendi —
+    // konuşma İLK açıldığında `listState.firstVisibleItemIndex` başlangıçta
+    // 0'dır (henüz en alta kaydırmadık), bu da bu effect'i SAHTE bir
+    // "kullanıcı yukarı kaydırdı" sinyali sanıp `loadOlder()`'ı YANLIŞLIKLA
+    // tetikliyordu — bu da `loading_older` item'ını tam scrollToItem çalışırken
+    // araya sokup hedef index'i kaydırıyor, "en alttan 2. mesajda kalma"
+    // bug'ına yol açıyordu. Artık İLK kaydırma tamamlanmadan pagination HİÇ
+    // tetiklenmiyor.
+    LaunchedEffect(listState, hasMore, hasScrolledToInitialBottom) {
+        if (!hasScrolledToInitialBottom) return@LaunchedEffect
         snapshotFlow { listState.firstVisibleItemIndex }.collect { firstVisible ->
             if (hasMore && firstVisible <= 2) {
                 viewModel.loadOlder()
@@ -466,7 +484,9 @@ fun ConversationScreen(
                     onSendTextChange = viewModel::onSendTextChange,
                     onSend = { viewModel.send(context) },
                     onSendGif = { url -> viewModel.send(context, gifUrl = url) },
-                    onSendSticker = { id -> viewModel.send(context, stickerId = id) },
+                    onSendSticker = { sticker ->
+                        viewModel.send(context, stickerId = sticker.id, stickerImageUrl = sticker.imageUrl)
+                    },
                     replyingTo = replyingTo,
                     onCancelReply = viewModel::clearReplyingTo,
                     selectedImageUri = selectedImageUri,
@@ -1029,7 +1049,7 @@ private fun ConversationInputBar(
     onSendTextChange: (String) -> Unit,
     onSend: () -> Unit,
     onSendGif: (String) -> Unit,
-    onSendSticker: (String) -> Unit,
+    onSendSticker: (StickerDto) -> Unit,
     replyingTo: MessageDto?,
     onCancelReply: () -> Unit,
     selectedImageUri: Uri?,
@@ -1055,9 +1075,9 @@ private fun ConversationInputBar(
                 showMediaPicker = false
                 onSendGif(url)
             },
-            onStickerSelected = { id ->
+            onStickerSelected = { sticker ->
                 showMediaPicker = false
-                onSendSticker(id)
+                onSendSticker(sticker)
             },
         )
     }

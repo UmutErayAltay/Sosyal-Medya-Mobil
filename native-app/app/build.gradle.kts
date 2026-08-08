@@ -84,6 +84,11 @@ dependencies {
 
     // Görsel yükleme (post kartlarındaki opsiyonel görsel için)
     implementation("io.coil-kt:coil-compose:2.7.0")
+    // 2026-08-08 (kullanıcı raporu: "gifler hareket etmiyor") — coil-compose
+    // TEK BAŞINA GIF'leri animasyonsuz (SADECE ilk kare) çözer, animasyon için
+    // ayrı bir decoder (ImageDecoderDecoder/GifDecoder) GEREKİYOR — bkz.
+    // SosyalApplication.kt ImageLoaderFactory.
+    implementation("io.coil-kt:coil-gif:2.7.0")
 
     // CameraX — hikaye oluşturma ekranında Instagram tarzı canlı kamera
     // önizlemesi + tek dokunuşla foto / basılı-tutmayla video çekimi (bkz.

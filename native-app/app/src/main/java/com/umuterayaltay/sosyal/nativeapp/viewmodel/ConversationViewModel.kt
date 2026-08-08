@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.umuterayaltay.sosyal.nativeapp.ServiceLocator
+import com.umuterayaltay.sosyal.nativeapp.network.CommentStickerDto
 import com.umuterayaltay.sosyal.nativeapp.network.ConversationInfoDto
 import com.umuterayaltay.sosyal.nativeapp.network.ForwardTargetDto
 import com.umuterayaltay.sosyal.nativeapp.network.MessageDto
@@ -314,12 +315,22 @@ class ConversationViewModel(private val conversationId: String) : ViewModel() {
      * gerçek mesaj gelince balon üzerinde belirir.
      *
      * [gifUrl]/[stickerId] (Faz 5 Dalga 3B, MediaPickerSheet'ten) — GİF zaten
-     * kalıcı bir Klipy CDN URL'si olduğu için (yerel content:// URI'sinin
-     * AKSİNE) optimistic balonun imageUrl'ine DOĞRUDAN konur, hemen görünür;
-     * sticker optimistic balonda RENDER edilmiyor (MessageDto.sticker bu turda
-     * hâlâ görüntülenmiyor, bkz. dosya yorumu), sadece gönderim isteğine eklenir.
+     * kalıcı bir Klipy CDN URL'si olduğu için optimistic balonun imageUrl'ine
+     * DOĞRUDAN konur, hemen görünür. [stickerImageUrl] 2026-08-08 (kullanıcı
+     * raporu: "çıkartma direkt yüklenmiyor, bi süre sonra geliyor") eklendi —
+     * MediaPickerSheet artık seçilen sticker'ın TAM DTO'sunu (id + imageUrl)
+     * verdiği için optimistic balon da sticker'ı GERÇEK mesaj gelmeden
+     * gösterebiliyor. Seçilen GÖRSEL (Photo Picker) de AYNI gerekçeyle artık
+     * `imageUri.toString()` (content:// URI, Coil DOĞRUDAN çözebilir) ile
+     * ANINDA gösteriliyor — önceden yüklenene kadar boş kalıyordu, kullanıcı
+     * "fotoğraf gönderilmiyor" sanıyordu.
      */
-    fun send(context: Context, gifUrl: String? = null, stickerId: String? = null) {
+    fun send(
+        context: Context,
+        gifUrl: String? = null,
+        stickerId: String? = null,
+        stickerImageUrl: String? = null,
+    ) {
         val content = _sendText.value.trim()
         val imageUri = _selectedImageUri.value
         if (content.isEmpty() && imageUri == null && gifUrl.isNullOrBlank() && stickerId.isNullOrBlank()) return
@@ -345,8 +356,8 @@ class ConversationViewModel(private val conversationId: String) : ViewModel() {
                 )
             },
             reactions = null,
-            sticker = null,
-            imageUrl = gifUrl,
+            sticker = stickerId?.let { id -> CommentStickerDto(id = id, imageUrl = stickerImageUrl) },
+            imageUrl = gifUrl ?: imageUri?.toString(),
         )
 
         // Input HEMEN temizlenir — "gönderdim" hissi ağ isteği bitmeden verilir.

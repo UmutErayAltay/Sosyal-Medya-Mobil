@@ -555,9 +555,9 @@ private fun CommentInputBar(
                 showMediaPicker = false
                 onSendGif(url)
             },
-            onStickerSelected = { id ->
+            onStickerSelected = { sticker ->
                 showMediaPicker = false
-                onSendSticker(id)
+                onSendSticker(sticker.id)
             },
         )
     }
