@@ -7,10 +7,15 @@ KEYSTORE_INFO.txt
 # Gradle / Android build çıktıları
 .gradle/
 build/
-app/build/
 local.properties
 *.apk
 *.aab
+
+# 2026-08-08: kullanıcı isteğiyle native app'in indirilebilir debug APK'sı
+# releases/ altında BİLEREK commit edilir (elle güncellenir, otomatik
+# derleme/CI YOK — güncel tutmak isteyen bunu her defasında elle üretip
+# değiştirmeli).
+!releases/*.apk
 
 *.idsig
 *.log
