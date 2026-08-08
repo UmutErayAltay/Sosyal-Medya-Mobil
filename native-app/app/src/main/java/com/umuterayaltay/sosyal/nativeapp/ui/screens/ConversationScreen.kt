@@ -248,11 +248,25 @@ fun ConversationScreen(
 
     val listState = rememberLazyListState()
 
-    // Yeni mesaj (gönderilen ya da polling ile gelen) listenin SONUNA
-    // eklenince en alta kaydır — anahtar SADECE son mesajın id'si, bu yüzden
-    // loadOlder()'ın listenin BAŞINA eklediği eski sayfalar burayı TETİKLEMEZ.
+    // Kullanıcı raporu (2026-08-08): konuşma açılınca en üstten en alta doğru
+    // GÖRÜNÜR BİR KAYMA oluyordu — çünkü LazyColumn ilk kompozisyonda index 0
+    // (en üst) ile başlıyor, aşağıdaki effect ise `animateScrollToItem` ile
+    // YUMUŞAK/ANİMASYONLU bir kaydırma tetikliyordu; bu ilk yüklemede de
+    // (mesajlar boştan doluya geçtiğinde) çalıştığı için konuşma her açılışta
+    // yukarıdan aşağı "kayarak" beliriyordu. Artık İLK doluşta `scrollToItem`
+    // (ANİNDEN, animasyonsuz) kullanılıyor — kullanıcı sohbeti DOĞRUDAN en
+    // alttan (en yeni mesajdan) görüyor. Sonraki her yeni mesaj (gönderilen ya
+    // da polling ile gelen) yine `animateScrollToItem` ile YUMUŞAK kayıyor —
+    // bu normal/istenen sohbet davranışı, SADECE ilk açılış anlık olmalı.
+    var hasScrolledToInitialBottom by remember { mutableStateOf(false) }
+    // Anahtar SADECE son mesajın id'si, bu yüzden loadOlder()'ın listenin
+    // BAŞINA eklediği eski sayfalar burayı TETİKLEMEZ.
     LaunchedEffect(messages.lastOrNull()?.id) {
-        if (messages.isNotEmpty()) {
+        if (messages.isEmpty()) return@LaunchedEffect
+        if (!hasScrolledToInitialBottom) {
+            listState.scrollToItem(messages.size - 1)
+            hasScrolledToInitialBottom = true
+        } else {
             listState.animateScrollToItem(messages.size - 1)
         }
     }
