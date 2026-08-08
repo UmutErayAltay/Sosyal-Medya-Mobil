@@ -58,7 +58,12 @@ class CreatePostViewModel : ViewModel() {
     private val _content = MutableStateFlow("")
     val content: StateFlow<String> = _content.asStateFlow()
 
-    private val _visibility = MutableStateFlow("public")
+    // 2026-08-08 (kullanıcı kararı: "sitedeki bütün postları ve hesapları
+    // gizli ve takipçiye özel yap") — yeni post oluşturmanın varsayılan
+    // görünürlüğü "public"ten "followers"a çevrildi (backend'deki AYNI karar,
+    // bkz. app/routes/posts.py). Kullanıcı hâlâ elle "Herkese açık" seçebilir,
+    // sadece varsayılan değişti.
+    private val _visibility = MutableStateFlow("followers")
     val visibility: StateFlow<String> = _visibility.asStateFlow()
 
     private val _selectedImageUri = MutableStateFlow<Uri?>(null)
