@@ -42,6 +42,7 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Gif
+import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Person
@@ -70,6 +71,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -87,7 +89,12 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.media3.common.MediaItem
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.AspectRatioFrameLayout
+import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
 import com.umuterayaltay.sosyal.nativeapp.ui.components.MediaPickerSheet
 import com.umuterayaltay.sosyal.nativeapp.network.MessageDto
@@ -205,6 +212,7 @@ fun ConversationScreen(
     val replyingTo by viewModel.replyingTo.collectAsState()
     val myUserId by viewModel.myUserId.collectAsState()
     val selectedImageUri by viewModel.selectedImageUri.collectAsState()
+    val selectedVideoUri by viewModel.selectedVideoUri.collectAsState()
 
     // ---- Faz 5 Dalga 1B state'leri ----
     val pinnedMessage by viewModel.pinnedMessage.collectAsState()
@@ -491,6 +499,8 @@ fun ConversationScreen(
                     onCancelReply = viewModel::clearReplyingTo,
                     selectedImageUri = selectedImageUri,
                     onImageSelected = viewModel::onImageSelected,
+                    selectedVideoUri = selectedVideoUri,
+                    onVideoSelected = viewModel::onVideoSelected,
                 )
             }
         },
@@ -890,6 +900,20 @@ private fun MessageBubble(
                                     .clip(MaterialTheme.shapes.medium),
                             )
                         }
+                        // 2026-08-08: video mesajı — image_url ile AYNI desen/konum,
+                        // AYRI bir kolon (video_url) olduğu için ikisi TEORİK olarak
+                        // birlikte gelebilir ama pratikte tek seferde biri gönderilir
+                        // (bkz. ConversationInputBar'da karşılıklı dışlama).
+                        val videoUrl = message.videoUrl
+                        if (!videoUrl.isNullOrBlank()) {
+                            MessageVideoPlayer(
+                                videoUrl = videoUrl,
+                                modifier = Modifier
+                                    .padding(top = if (replyTo != null || !imageUrl.isNullOrBlank()) 6.dp else 0.dp)
+                                    .size(width = 220.dp, height = 160.dp)
+                                    .clip(MaterialTheme.shapes.medium),
+                            )
+                        }
                         // Sticker — kullanıcı raporu: mesajlarda hiç görünmüyordu (kök
                         // neden: MessageDto.sticker bilerek Any? tipindeydi, bkz.
                         // ApiModels.kt). Görsel ekiyle AYNI desende (AsyncImage), ama
@@ -903,7 +927,13 @@ private fun MessageBubble(
                                 contentDescription = "Çıkartma",
                                 contentScale = ContentScale.Fit,
                                 modifier = Modifier
-                                    .padding(top = if (replyTo != null || !imageUrl.isNullOrBlank()) 6.dp else 0.dp)
+                                    .padding(
+                                        top = if (replyTo != null || !imageUrl.isNullOrBlank() || !videoUrl.isNullOrBlank()) {
+                                            6.dp
+                                        } else {
+                                            0.dp
+                                        },
+                                    )
                                     .size(96.dp),
                             )
                         }
@@ -913,7 +943,13 @@ private fun MessageBubble(
                                 style = MaterialTheme.typography.bodyLarge,
                                 color = contentColor,
                                 modifier = Modifier.padding(
-                                    top = if (replyTo != null || !imageUrl.isNullOrBlank() || !stickerUrl.isNullOrBlank()) 6.dp else 0.dp,
+                                    top = if (replyTo != null || !imageUrl.isNullOrBlank() ||
+                                        !videoUrl.isNullOrBlank() || !stickerUrl.isNullOrBlank()
+                                    ) {
+                                        6.dp
+                                    } else {
+                                        0.dp
+                                    },
                                 ),
                             )
                         }
@@ -1054,6 +1090,8 @@ private fun ConversationInputBar(
     onCancelReply: () -> Unit,
     selectedImageUri: Uri?,
     onImageSelected: (Uri?) -> Unit,
+    selectedVideoUri: Uri?,
+    onVideoSelected: (Uri?) -> Unit,
 ) {
     // CreatePostScreen'deki AYNI Photo Picker deseni — seçilen Uri ViewModel'e
     // (ConversationViewModel.selectedImageUri) bildirilir, bu composable
@@ -1061,6 +1099,14 @@ private fun ConversationInputBar(
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia(),
     ) { uri -> onImageSelected(uri) }
+
+    // 2026-08-08: video gönderme — AYNI Photo Picker, VideoOnly filtresiyle.
+    // Görsel ile video AYNI anda seçilemez (ViewModel.onImageSelected/
+    // onVideoSelected birbirini temizler) — tek seferde tek ek dosya, UI'da
+    // KARIŞIKLIK yaratmasın diye.
+    val videoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia(),
+    ) { uri -> onVideoSelected(uri) }
 
     // GIF/Sticker seçici (Faz 5 Dalga 3B) — görsel-ekle butonunun AKSİNE
     // önizleme YOK, MediaPickerSheet'te seçim yapılır yapılmaz sheet kapanır
@@ -1154,6 +1200,39 @@ private fun ConversationInputBar(
                     }
                 }
             }
+            if (selectedVideoUri != null) {
+                Box(
+                    modifier = Modifier.padding(start = 12.dp, top = 8.dp),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(64.dp)
+                            .clip(MaterialTheme.shapes.medium)
+                            .background(MaterialTheme.colorScheme.surfaceVariant),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            Icons.Filled.Videocam,
+                            contentDescription = "Video seçildi",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    IconButton(
+                        onClick = { onVideoSelected(null) },
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .size(20.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.8f)),
+                    ) {
+                        Icon(
+                            Icons.Filled.Close,
+                            contentDescription = "Videoyu kaldır",
+                            modifier = Modifier.size(14.dp),
+                        )
+                    }
+                }
+            }
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1170,6 +1249,19 @@ private fun ConversationInputBar(
                     Icon(
                         Icons.Filled.AddPhotoAlternate,
                         contentDescription = "Görsel ekle",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                IconButton(
+                    onClick = {
+                        videoPickerLauncher.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly),
+                        )
+                    },
+                ) {
+                    Icon(
+                        Icons.Filled.Videocam,
+                        contentDescription = "Video ekle",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
@@ -1193,7 +1285,7 @@ private fun ConversationInputBar(
                     ),
                     maxLines = 4,
                 )
-                val canSend = sendText.isNotBlank() || selectedImageUri != null
+                val canSend = sendText.isNotBlank() || selectedImageUri != null || selectedVideoUri != null
                 IconButton(
                     onClick = onSend,
                     enabled = canSend,
@@ -1209,6 +1301,42 @@ private fun ConversationInputBar(
             }
         }
     }
+}
+
+/**
+ * Mesaj balonu içindeki video oynatıcı (2026-08-08) — ReelsScreen.kt'deki
+ * `ReelPage`'in ExoPlayer kurulumuyla AYNI temel desen (composable disposed
+ * olunca `release()`, bellek sızıntısı/arka planda çalan video olmasın diye),
+ * ama tam ekran/otomatik-oynatma/loop YOK — burası bir sohbet balonu, tıklayıp
+ * kendi kontrol çubuğuyla (`useController = true`) oynatır/duraklatır.
+ * [videoUrl] hem gerçek bir CDN URL'si (sunucudan dönen mesaj) HEM de yerel
+ * bir `content://` URI'si (optimistic gönderim sırasında, henüz yüklenmemiş
+ * video) olabilir — ExoPlayer `MediaItem.fromUri()` ikisini de DOĞRUDAN çözer.
+ */
+@Composable
+private fun MessageVideoPlayer(videoUrl: String, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    val exoPlayer = remember(videoUrl) {
+        ExoPlayer.Builder(context).build().apply {
+            setMediaItem(MediaItem.fromUri(videoUrl))
+            playWhenReady = false
+            prepare()
+        }
+    }
+    DisposableEffect(videoUrl) {
+        onDispose { exoPlayer.release() }
+    }
+    AndroidView(
+        factory = { ctx ->
+            PlayerView(ctx).apply {
+                useController = true
+                player = exoPlayer
+                resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+            }
+        },
+        update = { it.player = exoPlayer },
+        modifier = modifier,
+    )
 }
 
 @Composable

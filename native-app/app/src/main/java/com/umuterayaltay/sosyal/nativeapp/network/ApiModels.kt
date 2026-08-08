@@ -443,6 +443,9 @@ data class MessageDto(
     val reactions: List<MessageReactionDto>? = null,
     val sticker: CommentStickerDto? = null,
     @SerializedName("image_url") val imageUrl: String? = null,
+    // 2026-08-08: mesajlarda video gönderme — backend messages.video_url
+    // (migration_message_video.sql), image_url'den AYRI bir kolon.
+    @SerializedName("video_url") val videoUrl: String? = null,
     // Faz 5 Dalga 1B: düzenle/sabitle/ilet — okuma yolunda backend değişikliği
     // GEREKMEDİ (api_message_conversation_detail() zaten select("*") kullanıyor),
     // burada alan eklemek yeterli (bkz. app/api_v1/messaging.py yorumu).

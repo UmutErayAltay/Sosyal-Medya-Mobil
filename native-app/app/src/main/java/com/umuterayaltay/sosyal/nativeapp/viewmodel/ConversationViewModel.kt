@@ -104,6 +104,12 @@ class ConversationViewModel(private val conversationId: String) : ViewModel() {
     private val _selectedImageUri = MutableStateFlow<Uri?>(null)
     val selectedImageUri: StateFlow<Uri?> = _selectedImageUri.asStateFlow()
 
+    // 2026-08-08: gönderilecek video (opsiyonel) — selectedImageUri ile AYNI
+    // desen, AYRI bir state (bir mesajda ikisi birden TEORİK olarak mümkün
+    // ama UI şu an tek seferde birini seçtirir — bkz. ConversationInputBar).
+    private val _selectedVideoUri = MutableStateFlow<Uri?>(null)
+    val selectedVideoUri: StateFlow<Uri?> = _selectedVideoUri.asStateFlow()
+
     // Mesaj balonunu ben/karşı taraf olarak hizalamak için — AuthRepository.
     // getCurrentUser() (Faz 3 Profil'de eklendi) ile BİR KEZ çözülüp burada
     // cache'lenir. Kıyaslama username DEĞİL id ile yapılır: messages.sender_id
@@ -292,6 +298,12 @@ class ConversationViewModel(private val conversationId: String) : ViewModel() {
 
     fun onImageSelected(uri: Uri?) {
         _selectedImageUri.value = uri
+        if (uri != null) _selectedVideoUri.value = null
+    }
+
+    fun onVideoSelected(uri: Uri?) {
+        _selectedVideoUri.value = uri
+        if (uri != null) _selectedImageUri.value = null
     }
 
     /** [context] SADECE seçilen görsel Uri'sinin byte'larını/mime tipini okumak
@@ -323,7 +335,9 @@ class ConversationViewModel(private val conversationId: String) : ViewModel() {
      * gösterebiliyor. Seçilen GÖRSEL (Photo Picker) de AYNI gerekçeyle artık
      * `imageUri.toString()` (content:// URI, Coil DOĞRUDAN çözebilir) ile
      * ANINDA gösteriliyor — önceden yüklenene kadar boş kalıyordu, kullanıcı
-     * "fotoğraf gönderilmiyor" sanıyordu.
+     * "fotoğraf gönderilmiyor" sanıyordu. Seçilen VİDEO (2026-08-08) da AYNI
+     * mantıkla `videoUri.toString()` ile ANINDA gösterilir — ExoPlayer content://
+     * URI'yi DOĞRUDAN oynatabilir, yükleme bitmesini beklemeye gerek yok.
      */
     fun send(
         context: Context,
@@ -333,7 +347,12 @@ class ConversationViewModel(private val conversationId: String) : ViewModel() {
     ) {
         val content = _sendText.value.trim()
         val imageUri = _selectedImageUri.value
-        if (content.isEmpty() && imageUri == null && gifUrl.isNullOrBlank() && stickerId.isNullOrBlank()) return
+        val videoUri = _selectedVideoUri.value
+        if (content.isEmpty() && imageUri == null && videoUri == null &&
+            gifUrl.isNullOrBlank() && stickerId.isNullOrBlank()
+        ) {
+            return
+        }
         val replyingTo = _replyingTo.value
         val replyId = replyingTo?.id
 
@@ -358,6 +377,7 @@ class ConversationViewModel(private val conversationId: String) : ViewModel() {
             reactions = null,
             sticker = stickerId?.let { id -> CommentStickerDto(id = id, imageUrl = stickerImageUrl) },
             imageUrl = gifUrl ?: imageUri?.toString(),
+            videoUrl = videoUri?.toString(),
         )
 
         // Input HEMEN temizlenir — "gönderdim" hissi ağ isteği bitmeden verilir.
@@ -365,6 +385,7 @@ class ConversationViewModel(private val conversationId: String) : ViewModel() {
         _sendText.value = ""
         _replyingTo.value = null
         _selectedImageUri.value = null
+        _selectedVideoUri.value = null
 
         viewModelScope.launch {
             var imageBytes: ByteArray? = null
@@ -377,8 +398,24 @@ class ConversationViewModel(private val conversationId: String) : ViewModel() {
                     imageMimeType = context.contentResolver.getType(imageUri)
                 } catch (e: Exception) {
                     removeOptimisticMessage(tempId)
-                    restoreFailedSend(content, replyingTo, imageUri)
+                    restoreFailedSend(content, replyingTo, imageUri, videoUri)
                     _error.value = "Görsel okunamadı, lütfen tekrar deneyin"
+                    return@launch
+                }
+            }
+
+            var videoBytes: ByteArray? = null
+            var videoMimeType: String? = null
+            if (videoUri != null) {
+                try {
+                    withContext(Dispatchers.IO) {
+                        videoBytes = context.contentResolver.openInputStream(videoUri)?.use { it.readBytes() }
+                    }
+                    videoMimeType = context.contentResolver.getType(videoUri)
+                } catch (e: Exception) {
+                    removeOptimisticMessage(tempId)
+                    restoreFailedSend(content, replyingTo, imageUri, videoUri)
+                    _error.value = "Video okunamadı, lütfen tekrar deneyin"
                     return@launch
                 }
             }
@@ -392,6 +429,8 @@ class ConversationViewModel(private val conversationId: String) : ViewModel() {
                     imageMimeType,
                     stickerId,
                     gifUrl,
+                    videoBytes,
+                    videoMimeType,
                 )
             ) {
                 is SendMessageResult.Success -> replaceOptimisticMessage(tempId, result.message)
@@ -400,7 +439,7 @@ class ConversationViewModel(private val conversationId: String) : ViewModel() {
                     if (result.code == "unauthorized") {
                         handleError(result.code)
                     } else {
-                        restoreFailedSend(content, replyingTo, imageUri)
+                        restoreFailedSend(content, replyingTo, imageUri, videoUri)
                         handleError(result.code)
                     }
                 }
@@ -423,10 +462,11 @@ class ConversationViewModel(private val conversationId: String) : ViewModel() {
      * bağlamını KAYBETMESİN diye giriş alanlarını geri yükler (silinen
      * optimistic satırın YERİNE hiçbir şey konmaz — kullanıcı "Gönder"e
      * tekrar basarak yeniden dener). */
-    private fun restoreFailedSend(content: String, replyingTo: MessageDto?, imageUri: Uri?) {
+    private fun restoreFailedSend(content: String, replyingTo: MessageDto?, imageUri: Uri?, videoUri: Uri? = null) {
         _sendText.value = content
         _replyingTo.value = replyingTo
         _selectedImageUri.value = imageUri
+        _selectedVideoUri.value = videoUri
     }
 
     fun setReplyingTo(message: MessageDto) {

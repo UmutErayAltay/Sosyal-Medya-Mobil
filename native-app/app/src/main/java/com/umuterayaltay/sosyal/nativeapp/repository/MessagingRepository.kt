@@ -223,6 +223,10 @@ class MessagingRepository(
         imageMimeType: String?,
         stickerId: String? = null,
         gifUrl: String? = null,
+        // 2026-08-08: video gönderme — imageBytes ile AYNI desen, ayrı bir
+        // "video" multipart alanı (backend upload_video()'ya gider).
+        videoBytes: ByteArray? = null,
+        videoMimeType: String? = null,
     ): SendMessageResult =
         withContext(Dispatchers.IO) {
             try {
@@ -232,6 +236,10 @@ class MessagingRepository(
                     val imageBody = bytes.toRequestBody((imageMimeType ?: "image/jpeg").toMediaTypeOrNull())
                     MultipartBody.Part.createFormData("image", "message_image", imageBody)
                 }
+                val videoPart: MultipartBody.Part? = videoBytes?.let { bytes ->
+                    val videoBody = bytes.toRequestBody((videoMimeType ?: "video/mp4").toMediaTypeOrNull())
+                    MultipartBody.Part.createFormData("video", "message_video", videoBody)
+                }
                 val stickerIdBody: RequestBody? = stickerId?.toRequestBody("text/plain".toMediaTypeOrNull())
                 val gifUrlBody: RequestBody? = gifUrl?.toRequestBody("text/plain".toMediaTypeOrNull())
 
@@ -240,6 +248,7 @@ class MessagingRepository(
                     contentBody,
                     replyToBody,
                     imagePart,
+                    videoPart,
                     stickerIdBody,
                     gifUrlBody,
                 )
