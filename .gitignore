@@ -20,3 +20,8 @@ manifest-checksum.txt
 .idea/
 *.iml
 .DS_Store
+
+# Mimari & aktif görev dokümanları (sosyal-medya deposundaki .context/ ile
+# AYNI model — kod taramadan önce buraya bakılır, ama repoya commit edilmez,
+# sadece içeriği serbestçe güncellenir)
+.context/
