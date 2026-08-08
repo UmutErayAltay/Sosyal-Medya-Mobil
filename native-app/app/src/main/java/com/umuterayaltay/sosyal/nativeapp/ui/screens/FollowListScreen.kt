@@ -1,5 +1,9 @@
 package com.umuterayaltay.sosyal.nativeapp.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -26,6 +30,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -34,6 +41,7 @@ import com.umuterayaltay.sosyal.nativeapp.viewmodel.FollowListEvent
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.FollowListKind
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.FollowListViewModel
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.FollowListViewModelFactory
+import kotlinx.coroutines.delay
 
 /**
  * Takipci/takip edilen listesi - DiscoverScreen'deki UserResultRow ile TUTARLI
@@ -120,12 +128,14 @@ fun FollowListScreen(
                 contentPadding = PaddingValues(vertical = 8.dp),
             ) {
                 itemsIndexed(users, key = { _, user -> user.id }) { index, user ->
-                    UserRow(
-                        avatarUrl = user.avatarUrl,
-                        username = user.username,
-                        fullName = user.fullName,
-                        onClick = { user.username?.let(onUserClick) },
-                    )
+                    StaggeredListItem(index = index) {
+                        UserRow(
+                            avatarUrl = user.avatarUrl,
+                            username = user.username,
+                            fullName = user.fullName,
+                            onClick = { user.username?.let(onUserClick) },
+                        )
+                    }
                     // Avatar genisligi (40dp) + satir ici bosluklarla hizali
                     // girinti - UserRow.kt'nin KENDISINE dokunulmadi, sadece
                     // etrafina eklendi.
@@ -146,6 +156,28 @@ private fun CenteredMessage(padding: PaddingValues, content: @Composable () -> U
             .padding(padding)
             .padding(32.dp),
         contentAlignment = Alignment.Center,
+    ) {
+        content()
+    }
+}
+
+/**
+ * Liste item'larinin stagger'li (art arda hafif gecikmeli) fade+slide girisi
+ * - Instagram tarzi liste yuklenme hissi. [index] YUKSEK ise gecikme makul bir
+ * tavanda sinirlanir (uzun listede kaydirinca gereksiz beklemeye yol acmasin
+ * diye). Item ilk kez composition'a girdiginde bir kez calisir.
+ */
+@Composable
+private fun StaggeredListItem(index: Int, content: @Composable () -> Unit) {
+    var visible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        delay(minOf(index, 10) * 30L)
+        visible = true
+    }
+    AnimatedVisibility(
+        visible = visible,
+        enter = fadeIn(animationSpec = tween(200)) +
+            slideInVertically(animationSpec = tween(200)) { it / 8 },
     ) {
         content()
     }

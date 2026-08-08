@@ -1,5 +1,12 @@
 package com.umuterayaltay.sosyal.nativeapp.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.keyframes
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -10,6 +17,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -133,6 +141,27 @@ fun LoginScreen(
             if (currentState is LoginUiState.NeedsCode) {
                 // ---- 2FA doğrulama kodu ekranı ----
                 var code by remember { mutableStateOf("") }
+                val codeShake = remember { Animatable(0f) }
+                var codeErrorMessage by remember { mutableStateOf("") }
+                if (uiState is LoginUiState.Error) codeErrorMessage = (uiState as LoginUiState.Error).message
+                LaunchedEffect(uiState) {
+                    if (uiState is LoginUiState.Error) {
+                        codeShake.animateTo(
+                            targetValue = 0f,
+                            animationSpec = keyframes {
+                                durationMillis = 400
+                                0f at 0
+                                -10f at 50
+                                10f at 100
+                                -6f at 150
+                                6f at 200
+                                -3f at 250
+                                3f at 300
+                                0f at 400
+                            },
+                        )
+                    }
+                }
 
                 Text(
                     text = "Authenticator uygulamandaki 6 haneli kodu gir",
@@ -152,12 +181,13 @@ fun LoginScreen(
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier
                         .fillMaxWidth()
+                        .offset(x = codeShake.value.dp)
                         .padding(bottom = 8.dp),
                 )
 
-                if (uiState is LoginUiState.Error) {
+                AnimatedVisibility(visible = uiState is LoginUiState.Error, enter = fadeIn(), exit = fadeOut()) {
                     Text(
-                        text = (uiState as LoginUiState.Error).message,
+                        text = codeErrorMessage,
                         color = MaterialTheme.colorScheme.error,
                         style = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.padding(bottom = 8.dp),
@@ -178,15 +208,19 @@ fun LoginScreen(
                         .fillMaxWidth()
                         .padding(top = 8.dp),
                 ) {
-                    if (uiState is LoginUiState.Loading) {
-                        CircularProgressIndicator(
-                            modifier = Modifier
-                                .size(16.dp)
-                                .padding(end = 8.dp),
-                            strokeWidth = 2.dp,
-                        )
+                    Crossfade(targetState = uiState is LoginUiState.Loading, label = "loginCodeButton") { isLoading ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (isLoading) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier
+                                        .size(16.dp)
+                                        .padding(end = 8.dp),
+                                    strokeWidth = 2.dp,
+                                )
+                            }
+                            Text(if (isLoading) "Doğrulanıyor..." else "Doğrula")
+                        }
                     }
-                    Text(if (uiState is LoginUiState.Loading) "Doğrulanıyor..." else "Doğrula")
                 }
 
                 TextButton(
@@ -206,36 +240,60 @@ fun LoginScreen(
                     modifier = Modifier.fillMaxWidth().padding(bottom = 24.dp),
                 )
 
-                OutlinedTextField(
-                    value = email,
-                    onValueChange = { email = it },
-                    label = { Text("E-posta") },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 12.dp),
-                )
+                val formShake = remember { Animatable(0f) }
+                var formErrorMessage by remember { mutableStateOf("") }
+                if (uiState is LoginUiState.Error) formErrorMessage = (uiState as LoginUiState.Error).message
+                LaunchedEffect(uiState) {
+                    if (uiState is LoginUiState.Error) {
+                        formShake.animateTo(
+                            targetValue = 0f,
+                            animationSpec = keyframes {
+                                durationMillis = 400
+                                0f at 0
+                                -10f at 50
+                                10f at 100
+                                -6f at 150
+                                6f at 200
+                                -3f at 250
+                                3f at 300
+                                0f at 400
+                            },
+                        )
+                    }
+                }
 
-                OutlinedTextField(
-                    value = password,
-                    onValueChange = { password = it },
-                    label = { Text("Şifre") },
-                    singleLine = true,
-                    visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                    trailingIcon = {
-                        IconButton(onClick = { passwordVisible = !passwordVisible }) {
-                            Icon(
-                                imageVector = if (passwordVisible) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
-                                contentDescription = if (passwordVisible) "Şifreyi gizle" else "Şifreyi göster",
-                            )
-                        }
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 8.dp),
-                )
+                Column(modifier = Modifier.offset(x = formShake.value.dp)) {
+                    OutlinedTextField(
+                        value = email,
+                        onValueChange = { email = it },
+                        label = { Text("E-posta") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 12.dp),
+                    )
+
+                    OutlinedTextField(
+                        value = password,
+                        onValueChange = { password = it },
+                        label = { Text("Şifre") },
+                        singleLine = true,
+                        visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                        trailingIcon = {
+                            IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                                Icon(
+                                    imageVector = if (passwordVisible) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                                    contentDescription = if (passwordVisible) "Şifreyi gizle" else "Şifreyi göster",
+                                )
+                            }
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 8.dp),
+                    )
+                }
 
                 TextButton(
                     onClick = onNavigateToForgotPassword,
@@ -245,9 +303,9 @@ fun LoginScreen(
                     Text("Şifremi unuttum")
                 }
 
-                if (uiState is LoginUiState.Error) {
+                AnimatedVisibility(visible = uiState is LoginUiState.Error, enter = fadeIn(), exit = fadeOut()) {
                     Text(
-                        text = (uiState as LoginUiState.Error).message,
+                        text = formErrorMessage,
                         color = MaterialTheme.colorScheme.error,
                         style = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.padding(bottom = 8.dp),
@@ -261,15 +319,19 @@ fun LoginScreen(
                         .fillMaxWidth()
                         .padding(top = 8.dp),
                 ) {
-                    if (uiState is LoginUiState.Loading) {
-                        CircularProgressIndicator(
-                            modifier = Modifier
-                                .size(16.dp)
-                                .padding(end = 8.dp),
-                            strokeWidth = 2.dp,
-                        )
+                    Crossfade(targetState = uiState is LoginUiState.Loading, label = "loginButton") { isLoading ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (isLoading) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier
+                                        .size(16.dp)
+                                        .padding(end = 8.dp),
+                                    strokeWidth = 2.dp,
+                                )
+                            }
+                            Text(if (isLoading) "Giriş yapılıyor..." else "Giriş yap")
+                        }
                     }
-                    Text(if (uiState is LoginUiState.Loading) "Giriş yapılıyor..." else "Giriş yap")
                 }
 
                 TextButton(
@@ -301,15 +363,19 @@ fun LoginScreen(
                     enabled = !googleLoading && uiState !is LoginUiState.Loading,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    if (googleLoading) {
-                        CircularProgressIndicator(
-                            modifier = Modifier
-                                .size(16.dp)
-                                .padding(end = 8.dp),
-                            strokeWidth = 2.dp,
-                        )
+                    Crossfade(targetState = googleLoading, label = "googleButton") { isLoading ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (isLoading) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier
+                                        .size(16.dp)
+                                        .padding(end = 8.dp),
+                                    strokeWidth = 2.dp,
+                                )
+                            }
+                            Text(if (isLoading) "Bağlanıyor..." else "Google ile devam et")
+                        }
                     }
-                    Text(if (googleLoading) "Bağlanıyor..." else "Google ile devam et")
                 }
             }
         }

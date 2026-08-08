@@ -3,6 +3,12 @@ package com.umuterayaltay.sosyal.nativeapp.ui.screens
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -206,30 +212,36 @@ fun CreatePostScreen(
             )
 
             if (selectedImageUri != null) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(220.dp)
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                AnimatedVisibility(
+                    visible = true,
+                    enter = fadeIn(tween(200)) + scaleIn(tween(200), initialScale = 0.85f),
+                    exit = fadeOut(tween(150)) + scaleOut(tween(150), targetScale = 0.85f),
                 ) {
-                    AsyncImage(
-                        model = selectedImageUri,
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize(),
-                    )
-                    IconButton(
-                        onClick = { viewModel.onImageSelected(null) },
-                        enabled = !submitting,
+                    Box(
                         modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(8.dp)
-                            .size(32.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f)),
+                            .fillMaxWidth()
+                            .height(220.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant),
                     ) {
-                        Icon(Icons.Filled.Close, contentDescription = "Görseli kaldır")
+                        AsyncImage(
+                            model = selectedImageUri,
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                        IconButton(
+                            onClick = { viewModel.onImageSelected(null) },
+                            enabled = !submitting,
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(8.dp)
+                                .size(32.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f)),
+                        ) {
+                            Icon(Icons.Filled.Close, contentDescription = "Görseli kaldır")
+                        }
                     }
                 }
             } else if (selectedVideoUri == null && selectedGifUrl.isNullOrBlank()) {
@@ -254,30 +266,36 @@ fun CreatePostScreen(
             // AYNI kural).
             if (selectedImageUri == null && selectedVideoUri == null) {
                 if (!selectedGifUrl.isNullOrBlank()) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(220.dp)
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(MaterialTheme.colorScheme.surfaceVariant),
+                    AnimatedVisibility(
+                        visible = true,
+                        enter = fadeIn(tween(200)) + scaleIn(tween(200), initialScale = 0.85f),
+                        exit = fadeOut(tween(150)) + scaleOut(tween(150), targetScale = 0.85f),
                     ) {
-                        AsyncImage(
-                            model = selectedGifUrl,
-                            contentDescription = null,
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize(),
-                        )
-                        IconButton(
-                            onClick = { viewModel.onGifCleared() },
-                            enabled = !submitting,
+                        Box(
                             modifier = Modifier
-                                .align(Alignment.TopEnd)
-                                .padding(8.dp)
-                                .size(32.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f)),
+                                .fillMaxWidth()
+                                .height(220.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(MaterialTheme.colorScheme.surfaceVariant),
                         ) {
-                            Icon(Icons.Filled.Close, contentDescription = "GIF'i kaldır")
+                            AsyncImage(
+                                model = selectedGifUrl,
+                                contentDescription = null,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                            IconButton(
+                                onClick = { viewModel.onGifCleared() },
+                                enabled = !submitting,
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(8.dp)
+                                    .size(32.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f)),
+                            ) {
+                                Icon(Icons.Filled.Close, contentDescription = "GIF'i kaldır")
+                            }
                         }
                     }
                 } else {
@@ -301,6 +319,11 @@ fun CreatePostScreen(
             if (selectedImageUri == null) {
                 if (selectedVideoUri != null) {
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        AnimatedVisibility(
+                            visible = true,
+                            enter = fadeIn(tween(200)) + scaleIn(tween(200), initialScale = 0.9f),
+                            exit = fadeOut(tween(150)),
+                        ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
@@ -322,6 +345,7 @@ fun CreatePostScreen(
                             ) {
                                 Icon(Icons.Filled.Close, contentDescription = "Videoyu kaldır")
                             }
+                        }
                         }
                         Row(
                             verticalAlignment = Alignment.CenterVertically,

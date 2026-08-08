@@ -1,5 +1,9 @@
 package com.umuterayaltay.sosyal.nativeapp.ui.screens
 
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -23,6 +27,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -100,10 +105,30 @@ fun MainScaffold(navController: NavHostController, onSessionExpired: () -> Unit)
                 tonalElevation = 0.dp,
             ) {
                 MainTab.entries.forEach { tab ->
+                    // Animasyon/mikro-etkileşim turu: seçili sekmenin ikonu hafif
+                    // büyüyüp geri döner (spring tabanlı "bounce" geri bildirimi) -
+                    // sekme değiştirme MANTIĞI (selectedTab state'i, onClick) BURADA
+                    // DA değişmedi, sadece ikon ölçeği selectedTab'a bağlı animate
+                    // ediliyor. Medium bouncy + orta stiffness: hissedilir ama
+                    // Instagram/Twitter'ın "abartısız" hissinin ötesine geçmez.
+                    val iconScale by animateFloatAsState(
+                        targetValue = if (selectedTab == tab) 1.15f else 1f,
+                        animationSpec = spring(
+                            dampingRatio = Spring.DampingRatioMediumBouncy,
+                            stiffness = Spring.StiffnessLow,
+                        ),
+                        label = "tabIconScale",
+                    )
                     NavigationBarItem(
                         selected = selectedTab == tab,
                         onClick = { selectedTab = tab },
-                        icon = { Icon(tab.icon, contentDescription = tab.label) },
+                        icon = {
+                            Icon(
+                                tab.icon,
+                                contentDescription = tab.label,
+                                modifier = Modifier.scale(iconScale),
+                            )
+                        },
                         label = { Text(tab.label) },
                         colors = NavigationBarItemDefaults.colors(
                             selectedIconColor = MaterialTheme.colorScheme.primary,
@@ -118,7 +143,14 @@ fun MainScaffold(navController: NavHostController, onSessionExpired: () -> Unit)
         },
     ) { padding ->
         Box(modifier = Modifier.padding(padding)) {
-            when (selectedTab) {
+            // Animasyon/mikro-etkileşim turu: sekmeler arası içerik geçişi artık
+            // ani kesme yerine yumuşak bir Crossfade ile yapılıyor. `when` bloğu
+            // ÖNCEDEN de selectedTab'a göre TEK bir dalı composable ediyordu (yani
+            // diğer sekmelerin state'i zaten tab değişince tamamen dispose
+            // oluyordu) - Crossfade bu davranışı DEĞİŞTİRMEZ, sadece eski/yeni
+            // dal arasındaki geçişi animasyonlu hale getirir.
+            Crossfade(targetState = selectedTab, label = "mainTabCrossfade") { tab ->
+            when (tab) {
                 MainTab.Feed -> FeedScreen(
                     onSessionExpired = onSessionExpired,
                     onNavigateToPostDetail = { postId -> navController.navigate("postDetail/$postId") },
@@ -173,6 +205,7 @@ fun MainScaffold(navController: NavHostController, onSessionExpired: () -> Unit)
                     // onNavigateBack YOK: bu, alt navigasyondaki KOK "Profil" sekmesi
                     // - geri tusu YOK (push edilmis bir route degil).
                 )
+            }
             }
         }
     }

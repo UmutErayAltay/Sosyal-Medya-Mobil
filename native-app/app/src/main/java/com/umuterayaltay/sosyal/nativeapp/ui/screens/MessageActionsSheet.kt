@@ -1,5 +1,10 @@
 package com.umuterayaltay.sosyal.nativeapp.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.MutableTransitionState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.slideInHorizontally
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -19,10 +24,13 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.SheetState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.umuterayaltay.sosyal.nativeapp.network.MessageDto
+import kotlinx.coroutines.delay
 
 /**
  * Mesaj balonuna uzun basınca açılan aksiyon menüsü — ConversationScreen'in
@@ -58,19 +66,27 @@ fun MessageActionsSheet(
     val isTextOnly = message.imageUrl.isNullOrBlank() && message.sticker == null
     val isPinned = message.pinnedAt != null
 
+    // Animasyon turu (3. kısım) — sheet'in kendisi Material3'ün varsayılan
+    // slide-up+scrim animasyonunu ZATEN kullanıyor (ModalBottomSheet), o
+    // DEĞİŞTİRİLMEDİ. Ek olarak İÇERİK satırları küçük bir stagger (30ms
+    // aralıklı, sağdan hafif kayarak) ile beliriyor — "hissedilir ama
+    // abartısız" polish. actionIndex sıralı çağrılara göre elle artırılıyor
+    // (satırlar koşullu olduğu için itemsIndexed benzeri bir liste yok).
+    var actionIndex = 0
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
-        ActionRow(icon = Icons.AutoMirrored.Filled.Reply, label = "Yanıtla", onClick = onReply)
+        ActionRow(icon = Icons.AutoMirrored.Filled.Reply, label = "Yanıtla", onClick = onReply, entranceIndex = actionIndex++)
         if (isMine && isTextOnly) {
-            ActionRow(icon = Icons.Filled.Edit, label = "Düzenle", onClick = onEdit)
+            ActionRow(icon = Icons.Filled.Edit, label = "Düzenle", onClick = onEdit, entranceIndex = actionIndex++)
         }
         if (isMine) {
-            ActionRow(icon = Icons.Filled.Delete, label = "Sil", onClick = onDelete)
+            ActionRow(icon = Icons.Filled.Delete, label = "Sil", onClick = onDelete, entranceIndex = actionIndex++)
         }
-        ActionRow(icon = Icons.AutoMirrored.Filled.Send, label = "İlet", onClick = onForward)
+        ActionRow(icon = Icons.AutoMirrored.Filled.Send, label = "İlet", onClick = onForward, entranceIndex = actionIndex++)
         ActionRow(
             icon = Icons.Filled.PushPin,
             label = if (isPinned) "Sabitlemeyi kaldır" else "Sabitle",
             onClick = onPin,
+            entranceIndex = actionIndex++,
         )
         HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
         Row(
@@ -101,19 +117,30 @@ private fun ActionRow(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     label: String,
     onClick: () -> Unit,
+    entranceIndex: Int = 0,
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 20.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
+    val visibleState = remember { MutableTransitionState(false) }
+    LaunchedEffect(Unit) {
+        delay(entranceIndex * 30L)
+        visibleState.targetState = true
+    }
+    AnimatedVisibility(
+        visibleState = visibleState,
+        enter = fadeIn(tween(180)) + slideInHorizontally(tween(180)) { it / 6 },
     ) {
-        Icon(imageVector = icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier.padding(start = 16.dp),
-        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onClick)
+                .padding(horizontal = 20.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(imageVector = icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(start = 16.dp),
+            )
+        }
     }
 }

@@ -5,6 +5,13 @@ import android.content.pm.PackageManager
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -45,6 +52,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -183,35 +191,50 @@ fun OneOnOneCallScreen(
                 },
                 onClose = onNavigateBack,
             )
-            else -> when (val currentPhase = phase) {
-                is CallPhase.Idle -> Unit // yukarıdaki LaunchedEffect zaten geri dönüyor
-                is CallPhase.OutgoingRinging -> OutgoingRingingContent(
-                    name = currentPhase.otherName,
-                    avatarUrl = currentPhase.otherAvatar,
-                    onCancel = {
-                        viewModel.hangup()
-                        onNavigateBack()
-                    },
-                )
-                is CallPhase.IncomingRinging -> ConnectingContent()
-                is CallPhase.Active -> ActiveCallContent(
-                    phaseData = currentPhase,
-                    localVideoTrack = localVideoTrack,
-                    remoteVideoTrack = remoteVideoTrack,
-                    isMicEnabled = isMicEnabled,
-                    isCameraEnabled = isCameraEnabled,
-                    availableAudioDevices = availableAudioDevices,
-                    selectedAudioDevice = selectedAudioDevice,
-                    eglBaseContext = viewModel.eglBaseContext(),
-                    onToggleMic = viewModel::toggleMic,
-                    onToggleCamera = viewModel::toggleCamera,
-                    onSelectAudioDevice = viewModel::selectAudioDevice,
-                    onEndCall = {
-                        viewModel.hangup()
-                        onNavigateBack()
-                    },
-                )
-                is CallPhase.Ended -> EndedContent(reason = currentPhase.reason)
+            // Ringing -> Active -> Ended geçişleri arasında sade bir crossfade —
+            // SADECE görsel katman: `phase` state makinesinin KENDİSİ (nereden
+            // nereye geçilebileceği, viewModel.hangup()/acceptIncoming() vb.)
+            // yukarıdaki LaunchedEffect/BackHandler'da AYNEN korunuyor, burada
+            // sadece hangi Content composable'ının render edildiği AnimatedContent
+            // ile sarmalandı. contentKey = phase sınıfı (Active içindeki
+            // startedAtMs/elapsedMs güncellemeleri YENİDEN crossfade
+            // TETİKLEMESİN diye).
+            else -> AnimatedContent(
+                targetState = phase,
+                contentKey = { it::class },
+                transitionSpec = { fadeIn(tween(220)) togetherWith fadeOut(tween(160)) },
+                label = "callPhase",
+            ) { animatedPhase ->
+                when (val currentPhase = animatedPhase) {
+                    is CallPhase.Idle -> Unit // yukarıdaki LaunchedEffect zaten geri dönüyor
+                    is CallPhase.OutgoingRinging -> OutgoingRingingContent(
+                        name = currentPhase.otherName,
+                        avatarUrl = currentPhase.otherAvatar,
+                        onCancel = {
+                            viewModel.hangup()
+                            onNavigateBack()
+                        },
+                    )
+                    is CallPhase.IncomingRinging -> ConnectingContent()
+                    is CallPhase.Active -> ActiveCallContent(
+                        phaseData = currentPhase,
+                        localVideoTrack = localVideoTrack,
+                        remoteVideoTrack = remoteVideoTrack,
+                        isMicEnabled = isMicEnabled,
+                        isCameraEnabled = isCameraEnabled,
+                        availableAudioDevices = availableAudioDevices,
+                        selectedAudioDevice = selectedAudioDevice,
+                        eglBaseContext = viewModel.eglBaseContext(),
+                        onToggleMic = viewModel::toggleMic,
+                        onToggleCamera = viewModel::toggleCamera,
+                        onSelectAudioDevice = viewModel::selectAudioDevice,
+                        onEndCall = {
+                            viewModel.hangup()
+                            onNavigateBack()
+                        },
+                    )
+                    is CallPhase.Ended -> EndedContent(reason = currentPhase.reason)
+                }
             }
         }
     }
@@ -475,6 +498,7 @@ private fun CallControlsBar(
             CallControlButton(
                 icon = if (isMicEnabled) Icons.Filled.Mic else Icons.Filled.MicOff,
                 contentDescription = if (isMicEnabled) "Mikrofonu kapat" else "Mikrofonu aç",
+                active = isMicEnabled,
                 onClick = onToggleMic,
             )
             // Kamera butonu web'in call.js#onCameraButton()'ıyla AYNI ikili
@@ -485,6 +509,7 @@ private fun CallControlsBar(
                 CallControlButton(
                     icon = if (isCameraEnabled) Icons.Filled.Videocam else Icons.Filled.VideocamOff,
                     contentDescription = if (isCameraEnabled) "Kamerayı kapat" else "Kamerayı aç",
+                    active = isCameraEnabled,
                     onClick = onToggleCamera,
                 )
             }
@@ -509,21 +534,38 @@ private fun CallControlsBar(
     }
 }
 
+/**
+ * CallScreen.kt'deki (grup arama) AYNI görsel geri bildirim — durum
+ * değişince zemin rengi geçişi + kısa "pop" ölçeklenme. Toggle mantığı
+ * DEĞİŞMEDİ.
+ */
 @Composable
 private fun RowScope.CallControlButton(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     contentDescription: String,
+    active: Boolean = true,
     onClick: () -> Unit,
 ) {
+    val containerColor by animateColorAsState(
+        targetValue = if (active) Color.White.copy(alpha = 0.15f) else MaterialTheme.colorScheme.error.copy(alpha = 0.85f),
+        animationSpec = tween(200),
+        label = "callControlContainerColor",
+    )
+    val scale = remember { Animatable(1f) }
+    LaunchedEffect(active) {
+        scale.animateTo(1.15f, tween(80))
+        scale.animateTo(1f, tween(120))
+    }
     IconButton(
         onClick = onClick,
         colors = IconButtonDefaults.iconButtonColors(
-            containerColor = Color.White.copy(alpha = 0.15f),
+            containerColor = containerColor,
             contentColor = Color.White,
         ),
         modifier = Modifier
             .clip(CircleShape)
-            .size(56.dp),
+            .size(56.dp)
+            .scale(scale.value),
     ) {
         Icon(icon, contentDescription = contentDescription)
     }

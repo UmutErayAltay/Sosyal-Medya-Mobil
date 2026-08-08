@@ -1,5 +1,8 @@
 package com.umuterayaltay.sosyal.nativeapp.ui.screens
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -197,6 +200,7 @@ fun NotificationPreferencesScreen(
                         onCheckedChange = { newValue ->
                             viewModel.updateField { row.setter(it, newValue) }
                         },
+                        modifier = Modifier.animateItem(),
                     )
                     if (index == PREFERENCE_ROWS.lastIndex || PREFERENCE_ROWS[index + 1].section == row.section) {
                         HorizontalDivider()
@@ -238,10 +242,24 @@ private fun PreferenceSwitchRow(
     checked: Boolean,
     enabled: Boolean,
     onCheckedChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
+    // Açık satır hafif bir zemin rengiyle vurgulanıyor — Switch'in kendi
+    // animasyonuna EK, satırın tamamının açık/kapalı olduğunu tarama
+    // hızında netleştirmek için (davranış/kaydetme mantığı DEĞİŞMEDİ).
+    val rowBackground by animateColorAsState(
+        targetValue = if (checked) {
+            MaterialTheme.colorScheme.primary.copy(alpha = 0.05f)
+        } else {
+            androidx.compose.ui.graphics.Color.Transparent
+        },
+        animationSpec = tween(200),
+        label = "preferenceRowBackground",
+    )
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
+            .background(rowBackground)
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

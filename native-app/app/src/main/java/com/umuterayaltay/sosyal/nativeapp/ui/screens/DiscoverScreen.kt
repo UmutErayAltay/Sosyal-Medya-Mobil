@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
@@ -198,23 +199,28 @@ fun DiscoverScreen(
                         if (searchType == SearchType.All || searchType == SearchType.Users) {
                             if (searchUsers.isNotEmpty()) {
                                 item { SectionHeader("Kullanıcılar", count = searchUsers.size) }
-                                items(searchUsers, key = { "user_${it.id}" }) { user ->
-                                    UserResultRow(user, onClick = { user.username?.let(onUserClick) })
+                                itemsIndexed(searchUsers, key = { _, it -> "user_${it.id}" }) { index, user ->
+                                    PostFeedStaggerReveal(index = index) {
+                                        UserResultRow(user, onClick = { user.username?.let(onUserClick) })
+                                    }
                                 }
                             }
                         }
                         if (searchType == SearchType.All || searchType == SearchType.Hashtags) {
                             if (searchHashtags.isNotEmpty()) {
                                 item { SectionHeader("Hashtag'ler", count = searchHashtags.size) }
-                                items(searchHashtags, key = { "tag_${it.tag}" }) { tag ->
-                                    HashtagResultRow(tag, onClick = { onNavigateToHashtag(tag.tag) })
+                                itemsIndexed(searchHashtags, key = { _, it -> "tag_${it.tag}" }) { index, tag ->
+                                    PostFeedStaggerReveal(index = index) {
+                                        HashtagResultRow(tag, onClick = { onNavigateToHashtag(tag.tag) })
+                                    }
                                 }
                             }
                         }
                         if (searchType == SearchType.All || searchType == SearchType.Posts) {
                             if (searchPosts.isNotEmpty()) {
                                 item { SectionHeader("Postlar", count = searchPosts.size) }
-                                items(searchPosts, key = { "post_${it.id}" }) { post ->
+                                itemsIndexed(searchPosts, key = { _, it -> "post_${it.id}" }) { index, post ->
+                                    PostFeedStaggerReveal(index = index) {
                                     PostCard(
                                         post = post,
                                         onLikeClick = { viewModel.toggleLike(it.id) },
@@ -232,6 +238,7 @@ fun DiscoverScreen(
                                         onArchivePost = { postId -> viewModel.toggleArchive(postId) },
                                         onPinPost = { postId -> viewModel.togglePin(postId) },
                                     )
+                                    }
                                 }
                             }
                         }
@@ -287,7 +294,8 @@ fun DiscoverScreen(
                         }
                     }
                     else -> {
-                        items(discoverPosts, key = { "discover_${it.id}" }) { post ->
+                        itemsIndexed(discoverPosts, key = { _, it -> "discover_${it.id}" }) { index, post ->
+                            PostFeedStaggerReveal(index = index) {
                             PostCard(
                                 post = post,
                                 onLikeClick = { viewModel.toggleLike(it.id) },
@@ -305,6 +313,7 @@ fun DiscoverScreen(
                                 onArchivePost = { postId -> viewModel.toggleArchive(postId) },
                                 onPinPost = { postId -> viewModel.togglePin(postId) },
                             )
+                            }
                         }
                         item {
                             when {

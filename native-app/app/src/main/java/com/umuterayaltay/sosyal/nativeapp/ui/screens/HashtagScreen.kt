@@ -8,7 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
@@ -162,7 +162,8 @@ fun HashtagScreen(
                     .padding(padding),
                 contentPadding = PaddingValues(vertical = 8.dp),
             ) {
-                items(posts, key = { it.id }) { post ->
+                itemsIndexed(posts, key = { _, post -> post.id }) { index, post ->
+                    PostFeedStaggerReveal(index = index) {
                     PostCard(
                         post = post,
                         onLikeClick = { viewModel.toggleLike(it.id) },
@@ -180,6 +181,7 @@ fun HashtagScreen(
                         onArchivePost = { postId -> viewModel.toggleArchive(postId) },
                         onPinPost = { postId -> viewModel.togglePin(postId) },
                     )
+                    }
                 }
             }
         }

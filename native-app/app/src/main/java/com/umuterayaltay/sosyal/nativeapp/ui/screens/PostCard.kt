@@ -1,9 +1,18 @@
 package com.umuterayaltay.sosyal.nativeapp.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -37,13 +46,16 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
@@ -53,6 +65,7 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.umuterayaltay.sosyal.nativeapp.repository.Post
 import com.umuterayaltay.sosyal.nativeapp.repository.RepostEmbed
+import kotlinx.coroutines.launch
 
 /**
  * Paylaşılan gönderi kartı — FeedScreen.kt'den ÇIKARILDI (Faz 3, Keşfet ekranı),
@@ -162,6 +175,33 @@ fun PostCard(
     var bookmarkedOverride by remember(post.id, post.bookmarkedByMe) { mutableStateOf<Boolean?>(null) }
     val isBookmarked = bookmarkedOverride ?: post.bookmarkedByMe
 
+    // Animasyon turu (2026-08-08, UI güzelleştirme çalışması 3. kısım): kart
+    // ilk kez composition'a girdiğinde fade+hafif slide-up ile belirir.
+    // `remember` başlangıç state'i (false) SADECE bu composable'ın ilk
+    // oluşturulduğu anda üretilir — aynı liste anahtarına (post.id) sahip
+    // kart LazyColumn'da kaydırılıp geri gelirse (Compose composition'ı
+    // canlı tuttuğu sürece) bu state korunur ve animasyon TEKRAR
+    // TETİKLENMEZ, sadece gerçekten yeni bir kart composition'a girdiğinde
+    // (yeni post, ya da composition'ın tamamen atılıp yeniden kurulduğu
+    // nadir durumda) yeniden oynar.
+    var cardVisible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { cardVisible = true }
+    // Beğeni kalbi + kaydet ikonu için "spring pop" — Animatable ile elle
+    // yönetildi (animateXAsState value-driven değil, HER tıklamada aynı
+    // spring'i baştan oynatmak gerektiği için scope.launch + animateTo
+    // zinciri kullanıldı, bkz. aşağıdaki likeScale/bookmarkScale kullanımı).
+    val likeScale = remember { Animatable(1f) }
+    val bookmarkScale = remember { Animatable(1f) }
+    val animScope = rememberCoroutineScope()
+
+    AnimatedVisibility(
+        visible = cardVisible,
+        enter = fadeIn(animationSpec = tween(durationMillis = 260)) +
+            slideInVertically(
+                animationSpec = tween(durationMillis = 260),
+                initialOffsetY = { fullHeight -> fullHeight / 12 },
+            ),
+    ) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -306,32 +346,69 @@ fun PostCard(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
                         .clip(MaterialTheme.shapes.small)
-                        .clickable { onLikeClick(post) }
+                        .clickable {
+                            // Beğeni kalbi spring-pop: her tıklamada 1.0 → 1.3 → 1.0
+                            // (kalıcı state DEĞİL, sadece dokunsal geri bildirim —
+                            // gerçek beğeni durumu her zaman onLikeClick/post.likedByMe'den
+                            // gelir, bu animasyon MANTIĞI etkilemez).
+                            animScope.launch {
+                                likeScale.snapTo(1f)
+                                likeScale.animateTo(
+                                    1.3f,
+                                    animationSpec = spring(
+                                        dampingRatio = Spring.DampingRatioMediumBouncy,
+                                        stiffness = Spring.StiffnessMedium,
+                                    ),
+                                )
+                                likeScale.animateTo(
+                                    1f,
+                                    animationSpec = spring(
+                                        dampingRatio = Spring.DampingRatioMediumBouncy,
+                                        stiffness = Spring.StiffnessMedium,
+                                    ),
+                                )
+                            }
+                            onLikeClick(post)
+                        }
                         .padding(vertical = 6.dp, horizontal = 8.dp),
                 ) {
                     Icon(
                         imageVector = Icons.Filled.Favorite,
                         contentDescription = if (post.likedByMe) "Beğenmekten vazgeç" else "Beğen",
                         tint = if (post.likedByMe) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(18.dp),
+                        modifier = Modifier
+                            .size(18.dp)
+                            .scale(likeScale.value),
                     )
                     Text(
                         text = " ${post.likeCount}",
                         style = MaterialTheme.typography.labelMedium,
                     )
                 }
+                val commentInteractionSource = remember { MutableInteractionSource() }
+                val commentPressed by commentInteractionSource.collectIsPressedAsState()
+                val commentScale by androidx.compose.animation.core.animateFloatAsState(
+                    targetValue = if (commentPressed) 0.85f else 1f,
+                    animationSpec = spring(stiffness = Spring.StiffnessHigh),
+                    label = "commentIconScale",
+                )
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
                         .clip(MaterialTheme.shapes.small)
-                        .clickable { onCommentClick(post) }
+                        .clickable(
+                            interactionSource = commentInteractionSource,
+                            indication = androidx.compose.foundation.LocalIndication.current,
+                        ) { onCommentClick(post) }
                         .padding(vertical = 6.dp, horizontal = 8.dp),
                 ) {
                     Icon(
                         imageVector = Icons.Filled.ChatBubbleOutline,
                         contentDescription = "Yorum",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(18.dp),
+                        modifier = Modifier
+                            .size(18.dp)
+                            .scale(commentScale),
                     )
                     Text(
                         text = " ${post.commentCount}",
@@ -341,12 +418,24 @@ fun PostCard(
                 // Yeniden Paylaş — PostActionsSheet'teki "Yeniden Paylaş"ın AKSİNE
                 // onay diyaloğu YOK, tek-tık hızlı repost (backend content'siz
                 // repost'u zaten destekliyor, alıntılı repost UI'ı kapsam dışı).
-                IconButton(onClick = { onRepost(post.id) }) {
+                // Basılı tutulduğunda hafif küçülme (0.85x) — IconButton'ın
+                // KENDİ interactionSource'unu okuyarak, tıklama mantığı
+                // (onClick) DEĞİŞMEDEN sadece görsel dokunsal geri bildirim.
+                val repostInteractionSource = remember { MutableInteractionSource() }
+                val repostPressed by repostInteractionSource.collectIsPressedAsState()
+                val repostScale by androidx.compose.animation.core.animateFloatAsState(
+                    targetValue = if (repostPressed) 0.85f else 1f,
+                    animationSpec = spring(stiffness = Spring.StiffnessHigh),
+                    label = "repostIconScale",
+                )
+                IconButton(onClick = { onRepost(post.id) }, interactionSource = repostInteractionSource) {
                     Icon(
                         imageVector = Icons.Filled.Repeat,
                         contentDescription = "Yeniden paylaş",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(20.dp),
+                        modifier = Modifier
+                            .size(20.dp)
+                            .scale(repostScale),
                     )
                 }
                 // Gönder — eskiden PostActionsSheet'in İÇİNDEYDİ, şimdi PostCard
@@ -365,12 +454,32 @@ fun PostCard(
                 // Madde 2: IconButton (uzun-basmayı DESTEKLEMEZ) yerine
                 // combinedClickable'lı bir Box — KISA dokunuş MEVCUT davranışı
                 // (onBookmark, Genel'e toggle) AYNEN korur, UZUN basma
-                // koleksiyon seçiciyi açar.
+                // koleksiyon seçiciyi açar. Kısa dokunuşta da beğeni kalbiyle
+                // AYNI spring-pop (1.0 → 1.2 → 1.0, biraz daha hafif).
                 Box(
                     modifier = Modifier
                         .clip(CircleShape)
                         .combinedClickable(
-                            onClick = { onBookmark(post.id) },
+                            onClick = {
+                                animScope.launch {
+                                    bookmarkScale.snapTo(1f)
+                                    bookmarkScale.animateTo(
+                                        1.2f,
+                                        animationSpec = spring(
+                                            dampingRatio = Spring.DampingRatioMediumBouncy,
+                                            stiffness = Spring.StiffnessMedium,
+                                        ),
+                                    )
+                                    bookmarkScale.animateTo(
+                                        1f,
+                                        animationSpec = spring(
+                                            dampingRatio = Spring.DampingRatioMediumBouncy,
+                                            stiffness = Spring.StiffnessMedium,
+                                        ),
+                                    )
+                                }
+                                onBookmark(post.id)
+                            },
                             onLongClick = { showCollectionPicker = true },
                         )
                         .padding(12.dp),
@@ -380,11 +489,14 @@ fun PostCard(
                         imageVector = if (isBookmarked) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
                         contentDescription = if (isBookmarked) "Kaydedildi" else "Kaydet",
                         tint = if (isBookmarked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(20.dp),
+                        modifier = Modifier
+                            .size(20.dp)
+                            .scale(bookmarkScale.value),
                     )
                 }
             }
         }
+    }
     }
 
     if (showActionsSheet) {

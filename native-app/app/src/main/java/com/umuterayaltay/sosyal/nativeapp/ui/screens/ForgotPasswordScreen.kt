@@ -1,13 +1,21 @@
 package com.umuterayaltay.sosyal.nativeapp.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.keyframes
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -27,6 +35,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -141,6 +150,28 @@ fun ForgotPasswordScreen(
                     modifier = Modifier.fillMaxWidth().padding(bottom = 24.dp),
                 )
 
+                val formShake = remember { Animatable(0f) }
+                var formErrorMessage by remember { mutableStateOf("") }
+                if (uiState is ForgotPasswordUiState.Error) formErrorMessage = (uiState as ForgotPasswordUiState.Error).message
+                LaunchedEffect(uiState) {
+                    if (uiState is ForgotPasswordUiState.Error) {
+                        formShake.animateTo(
+                            targetValue = 0f,
+                            animationSpec = keyframes {
+                                durationMillis = 400
+                                0f at 0
+                                -10f at 50
+                                10f at 100
+                                -6f at 150
+                                6f at 200
+                                -3f at 250
+                                3f at 300
+                                0f at 400
+                            },
+                        )
+                    }
+                }
+
                 OutlinedTextField(
                     value = email,
                     onValueChange = { email = it },
@@ -149,12 +180,13 @@ fun ForgotPasswordScreen(
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
                     modifier = Modifier
                         .fillMaxWidth()
+                        .offset(x = formShake.value.dp)
                         .padding(bottom = 12.dp),
                 )
 
-                if (uiState is ForgotPasswordUiState.Error) {
+                AnimatedVisibility(visible = uiState is ForgotPasswordUiState.Error, enter = fadeIn(), exit = fadeOut()) {
                     Text(
-                        text = (uiState as ForgotPasswordUiState.Error).message,
+                        text = formErrorMessage,
                         color = MaterialTheme.colorScheme.error,
                         style = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.padding(bottom = 8.dp),
@@ -168,15 +200,19 @@ fun ForgotPasswordScreen(
                         .fillMaxWidth()
                         .padding(top = 8.dp),
                 ) {
-                    if (uiState is ForgotPasswordUiState.Loading) {
-                        CircularProgressIndicator(
-                            modifier = Modifier
-                                .size(16.dp)
-                                .padding(end = 8.dp),
-                            strokeWidth = 2.dp,
-                        )
+                    Crossfade(targetState = uiState is ForgotPasswordUiState.Loading, label = "forgotPasswordButton") { isLoading ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (isLoading) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier
+                                        .size(16.dp)
+                                        .padding(end = 8.dp),
+                                    strokeWidth = 2.dp,
+                                )
+                            }
+                            Text(if (isLoading) "Gönderiliyor..." else "Sıfırlama bağlantısı gönder")
+                        }
                     }
-                    Text(if (uiState is ForgotPasswordUiState.Loading) "Gönderiliyor..." else "Sıfırlama bağlantısı gönder")
                 }
             }
         }

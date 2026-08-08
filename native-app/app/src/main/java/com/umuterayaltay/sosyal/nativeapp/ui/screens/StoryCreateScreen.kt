@@ -21,6 +21,8 @@ import androidx.camera.video.Recording
 import androidx.camera.video.VideoCapture
 import androidx.camera.video.VideoRecordEvent
 import androidx.camera.view.PreviewView
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -70,6 +72,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -369,6 +372,12 @@ private fun CameraPreviewAndShutter(
     var isRecording by remember { mutableStateOf(false) }
     var recordProgress by remember { mutableStateOf(0f) }
 
+    // Shutter/flash geri bildirimi — foto cekilince kisa beyaz bir flash
+    // fade-out ile (gercek kamera shutter'i hissi). [flashAlpha] ANINDA
+    // (snapTo) yuksek bir degere sicrar, SONRA yumusakca 0'a soner.
+    val flashAlpha = remember { Animatable(0f) }
+    val flashScope = rememberCoroutineScope()
+
     DisposableEffect(lensFacing) {
         val providerFuture = ProcessCameraProvider.getInstance(context)
         val mainExecutor = ContextCompat.getMainExecutor(context)
@@ -418,6 +427,12 @@ private fun CameraPreviewAndShutter(
 
     fun takePhoto() {
         val capture = imageCapture ?: return
+        // Cekim ANINDA (async kaydetme sonucunu BEKLEMEDEN) shutter flash'i
+        // tetikle — gercek bir kamera shutter'i gibi ANINDA tepki hissettirir.
+        flashScope.launch {
+            flashAlpha.snapTo(0.85f)
+            flashAlpha.animateTo(0f, animationSpec = tween(250))
+        }
         val file = createStoryMediaFile(context, ".jpg")
         val outputOptions = ImageCapture.OutputFileOptions.Builder(file).build()
         capture.takePicture(
@@ -571,6 +586,16 @@ private fun CameraPreviewAndShutter(
                             },
                         )
                     },
+            )
+        }
+
+        // Shutter flash overlay — HER SEYIN USTUNDE (Box'in SON cocugu),
+        // tam ekran beyaz bir katman kisaca belirip soner.
+        if (flashAlpha.value > 0f) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.White.copy(alpha = flashAlpha.value)),
             )
         }
     }

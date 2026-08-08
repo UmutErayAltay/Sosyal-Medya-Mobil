@@ -1,5 +1,10 @@
 package com.umuterayaltay.sosyal.nativeapp.navigation
 
+import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -191,7 +196,42 @@ fun AppNavHost() {
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-    NavHost(navController = navController, startDestination = startDestination) {
+    NavHost(
+        navController = navController,
+        startDestination = startDestination,
+        // Animasyon/mikro-etkileşim turu (UI güzelleştirmenin 3. ve son kısmı,
+        // 1-2. kısım renk paleti + görsel cila commit 912ec20'de bitti) —
+        // route'lar arası varsayılan geçiş, NavHost seviyesinde TEK yerden
+        // TÜM composable() route'larına uygulanır (60'tan fazla composable()
+        // çağrısının her birine tek tek enter/exitTransition eklemek yerine —
+        // aynı sonucu verir, çakışma riski çok daha düşük). Instagram/Twitter
+        // tarzı "hissedilir ama abartısız": yeni ekran sağdan slide-in+fadeIn
+        // ile girer, ALTTA KALAN (geride kalan) ekran slide YAPMAZ, sadece
+        // hafif fadeOut olur. Geri navigasyonda (pop) ayna: çıkan ekran sağa
+        // slide-out+fadeOut, ortaya çıkan ekran sadece fadeIn (zaten
+        // görünürdü, tekrar sağdan sokmaya gerek yok). Bottom-nav SEKMELERİ
+        // arası geçiş (MainScaffold içindeki tab switch) bu route geçişi
+        // DEĞİL — tek composable() içinde state switch, bkz. MainScaffold.kt
+        // Crossfade.
+        enterTransition = {
+            slideIntoContainer(
+                towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                animationSpec = tween(280, easing = FastOutSlowInEasing),
+            ) + fadeIn(animationSpec = tween(280))
+        },
+        exitTransition = {
+            fadeOut(animationSpec = tween(280))
+        },
+        popEnterTransition = {
+            fadeIn(animationSpec = tween(280))
+        },
+        popExitTransition = {
+            slideOutOfContainer(
+                towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                animationSpec = tween(280, easing = FastOutSlowInEasing),
+            ) + fadeOut(animationSpec = tween(280))
+        },
+    ) {
         composable(ROUTE_LOGIN) {
             LoginScreen(
                 onLoginSuccess = {

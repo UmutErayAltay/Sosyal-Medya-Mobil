@@ -1,5 +1,6 @@
 package com.umuterayaltay.sosyal.nativeapp.ui.screens
 
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -134,39 +135,49 @@ fun GroupCreateScreen(
                 ),
             )
 
-            if (selected.isNotEmpty()) {
-                LazyRow(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    items(selected, key = { it.id }) { user ->
-                        InputChip(
-                            selected = true,
-                            onClick = { viewModel.removeSelected(user.id) },
-                            label = { Text(user.username ?: "kullanıcı") },
-                            trailingIcon = {
-                                Icon(
-                                    Icons.Filled.Close,
-                                    contentDescription = "Çıkar",
-                                    modifier = Modifier.size(InputChipDefaults.IconSize),
-                                )
-                            },
-                            colors = InputChipDefaults.inputChipColors(
-                                selectedContainerColor = MaterialTheme.colorScheme.primary,
-                                selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
-                                selectedTrailingIconColor = MaterialTheme.colorScheme.onPrimary,
-                            ),
-                        )
+            // Animasyon turu (3. kısım) — seçili-kişi chip satırı ekleyip
+            // çıkarırken (LazyRow + özet metni birlikte belirip/kaybolurken)
+            // altındaki arama alanı/sonuç listesi ANİDEN zıplamak yerine
+            // animateContentSize() ile yumuşak kayıyor. Sarmalayıcı Column
+            // HER ZAMAN var (koşul artık İÇERDE), animateContentSize bu
+            // yüzden 0-yükseklikten gerçek yüksekliğe geçişi animasyonla
+            // yakalayabiliyor.
+            Column(modifier = Modifier.animateContentSize()) {
+                if (selected.isNotEmpty()) {
+                    LazyRow(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        items(selected, key = { it.id }) { user ->
+                            InputChip(
+                                selected = true,
+                                onClick = { viewModel.removeSelected(user.id) },
+                                label = { Text(user.username ?: "kullanıcı") },
+                                trailingIcon = {
+                                    Icon(
+                                        Icons.Filled.Close,
+                                        contentDescription = "Çıkar",
+                                        modifier = Modifier.size(InputChipDefaults.IconSize),
+                                    )
+                                },
+                                colors = InputChipDefaults.inputChipColors(
+                                    selectedContainerColor = MaterialTheme.colorScheme.primary,
+                                    selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
+                                    selectedTrailingIconColor = MaterialTheme.colorScheme.onPrimary,
+                                ),
+                                modifier = Modifier.animateItem(),
+                            )
+                        }
                     }
+                    Text(
+                        text = "${selected.size} kişi seçildi (en az 2 gerekli)",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                    )
                 }
-                Text(
-                    text = "${selected.size} kişi seçildi (en az 2 gerekli)",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                )
             }
 
             OutlinedTextField(
@@ -216,6 +227,7 @@ fun GroupCreateScreen(
                             selected = user.id in selectedIds,
                             enabled = !creating,
                             onClick = { viewModel.toggleSelected(user) },
+                            modifier = Modifier.animateItem(),
                         )
                     }
                 }

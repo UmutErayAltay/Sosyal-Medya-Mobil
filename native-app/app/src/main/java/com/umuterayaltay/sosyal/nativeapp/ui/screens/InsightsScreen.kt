@@ -1,5 +1,10 @@
 package com.umuterayaltay.sosyal.nativeapp.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateIntAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -37,6 +42,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -50,6 +58,7 @@ import com.umuterayaltay.sosyal.nativeapp.network.InsightsResponse
 import com.umuterayaltay.sosyal.nativeapp.network.TopPostDto
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.InsightsEvent
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.InsightsViewModel
+import kotlinx.coroutines.delay
 
 /**
  * Kendi profil istatistikleri. Web tarafi gibi YENI bir charting kutuphanesi
@@ -153,7 +162,18 @@ fun InsightsScreen(
                             )
                         }
                         itemsIndexed(insights.topPosts, key = { _, post -> post.id }) { index, post ->
-                            TopPostRow(rank = index + 1, post = post)
+                            var visible by remember { mutableStateOf(false) }
+                            LaunchedEffect(Unit) {
+                                delay(minOf(index, 10) * 40L)
+                                visible = true
+                            }
+                            AnimatedVisibility(
+                                visible = visible,
+                                enter = fadeIn(animationSpec = tween(220)) +
+                                    slideInVertically(animationSpec = tween(220)) { it / 8 },
+                            ) {
+                                TopPostRow(rank = index + 1, post = post)
+                            }
                         }
                     }
                 }
@@ -187,29 +207,56 @@ private fun DaySelectorRow(selected: Int, onSelect: (Int) -> Unit) {
     }
 }
 
+/**
+ * Gorsel cila (animasyon turu): tamsayi istatistikler (gonderi/begeni/yorum/
+ * takipci/takip) artik 0'dan hedef degere DOGRU "sayarak" beliriyor
+ * (animateIntAsState) - web'in statik sayilarindan FARKLI olarak ekran
+ * acildiginda hissedilir bir "delight" katiyor. Ondalikli/metin degerler
+ * (ort. etkilesim, en aktif gun) sayim mantigina UYMADIGI icin STATIK kaldi.
+ */
 @Composable
 private fun StatsSection(insights: InsightsResponse) {
-    val rows = buildList {
-        add("Gönderi" to insights.totalPosts.toString())
-        add("Beğeni" to insights.totalLikes.toString())
-        add("Yorum" to insights.totalComments.toString())
-        add("Takipçi" to insights.totalFollowers.toString())
-        add("Takip Edilen" to insights.totalFollowing.toString())
+    val countRows = listOf(
+        "Gönderi" to insights.totalPosts,
+        "Beğeni" to insights.totalLikes,
+        "Yorum" to insights.totalComments,
+        "Takipçi" to insights.totalFollowers,
+        "Takip Edilen" to insights.totalFollowing,
+    )
+    val staticRows = buildList {
         add("Ort. Etkileşim" to insights.avgEngagement.toString())
         if (insights.mostActiveDay != null) {
             add("En Aktif Gün" to insights.mostActiveDay)
         }
     }
+    val rowCount = countRows.size + staticRows.size
+
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(vertical = 4.dp)) {
-            rows.forEachIndexed { index, (label, value) ->
+            countRows.forEachIndexed { index, (label, value) ->
+                CountUpStatRow(label, value)
+                if (index < rowCount - 1) {
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                }
+            }
+            staticRows.forEachIndexed { index, (label, value) ->
                 StatRow(label, value)
-                if (index < rows.lastIndex) {
+                if (countRows.size + index < rowCount - 1) {
                     HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
                 }
             }
         }
     }
+}
+
+@Composable
+private fun CountUpStatRow(label: String, value: Int) {
+    val animatedValue by animateIntAsState(
+        targetValue = value,
+        animationSpec = tween(durationMillis = 700),
+        label = "insights-count-up",
+    )
+    StatRow(label, "$animatedValue")
 }
 
 @Composable

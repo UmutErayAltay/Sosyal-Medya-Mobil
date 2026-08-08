@@ -3,6 +3,12 @@ package com.umuterayaltay.sosyal.nativeapp.ui.screens
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -131,26 +137,30 @@ fun EditProfileScreen(
                 contentAlignment = Alignment.Center,
             ) {
                 Box {
-                    if (selectedAvatarUri != null) {
-                        AsyncImage(
-                            model = selectedAvatarUri,
-                            contentDescription = null,
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.size(96.dp).clip(CircleShape),
-                        )
-                    } else if (!currentAvatarUrl.isNullOrBlank()) {
-                        AsyncImage(
-                            model = currentAvatarUrl,
-                            contentDescription = null,
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.size(96.dp).clip(CircleShape),
-                        )
-                    } else {
-                        Icon(
-                            imageVector = Icons.Filled.Person,
-                            contentDescription = null,
-                            modifier = Modifier.size(96.dp),
-                        )
+                    // Animasyon turu: yeni secilen gorsel <-> mevcut avatar <->
+                    // placeholder arasindaki gecis artik ANI DEGISIM yerine
+                    // crossfade - kullanici galeriden secince veya "kaldir"
+                    // ikonuna basinca daire icerigi yumusakca solar/belirir.
+                    val avatarModel = selectedAvatarUri ?: currentAvatarUrl.takeUnless { it.isNullOrBlank() }
+                    Crossfade(
+                        targetState = avatarModel,
+                        animationSpec = tween(220),
+                        label = "edit-profile-avatar-crossfade",
+                    ) { model ->
+                        if (model != null) {
+                            AsyncImage(
+                                model = model,
+                                contentDescription = null,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.size(96.dp).clip(CircleShape),
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Filled.Person,
+                                contentDescription = null,
+                                modifier = Modifier.size(96.dp),
+                            )
+                        }
                     }
 
                     if (selectedAvatarUri != null) {
@@ -238,7 +248,12 @@ fun EditProfileScreen(
                 )
             }
 
-            if (error != null) {
+            AnimatedVisibility(
+                visible = error != null,
+                enter = fadeIn(animationSpec = tween(200)) +
+                    slideInVertically(animationSpec = tween(200)) { -it / 4 },
+                exit = fadeOut(animationSpec = tween(150)),
+            ) {
                 Text(
                     text = error ?: "",
                     color = MaterialTheme.colorScheme.error,

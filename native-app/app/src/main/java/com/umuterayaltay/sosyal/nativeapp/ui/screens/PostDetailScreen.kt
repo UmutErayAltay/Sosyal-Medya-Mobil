@@ -239,7 +239,14 @@ fun PostDetailScreen(
                     }
                 } else {
                     items(comments, key = { it.id }) { comment ->
-                        Column {
+                        // Animasyon turu (2026-08-08): yeni bir yorum eklenince (ya da
+                        // hiyerarşi/sıra değişince) LazyColumn'un yerleşik `animateItem()`
+                        // yerleştirme animasyonu — hafif slide+fade ile giriş/konum
+                        // değişimi. Elle bir "yeni mi eski mi" bayrağı TUTULMADI, bu
+                        // API zaten SADECE gerçekten eklenen/kaldırılan/taşınan item'lar
+                        // için devreye girer (mevcut item'lar sabit kalınca hiçbir şey
+                        // OYNAMAZ).
+                        Column(modifier = Modifier.animateItem()) {
                             CommentRow(
                                 comment = comment,
                                 indent = 0.dp,

@@ -1,9 +1,17 @@
 package com.umuterayaltay.sosyal.nativeapp.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -32,13 +40,17 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
@@ -54,6 +66,8 @@ import coil.compose.AsyncImage
 import com.umuterayaltay.sosyal.nativeapp.repository.Post
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.ReelsEvent
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.ReelsViewModel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /**
  * Reels sekmesi — tam ekran dikey video akışı (TikTok/Reels tarzı, bir sefer
@@ -187,7 +201,30 @@ fun ReelsScreen(
 private fun ReelPage(post: Post, isActive: Boolean, onLikeClick: (Post) -> Unit, onCommentClick: (Post) -> Unit) {
     val videoUrl = post.videoUrl
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    // Cift-tiklama = Instagram/TikTok'taki AYNI davranis: sadece BEĞENMEZ hale
+    // GETIRMEZ (zaten begenilmisse tekrar begenmeye calismaz), ekranin
+    // ortasinda kisa sureli buyuk bir kalp-pop animasyonu gosterir - geri
+    // bildirim HER durumda (zaten begenilmis olsa bile) gosterilir.
+    var showHeartBurst by remember(post.id) { mutableStateOf(false) }
+    LaunchedEffect(showHeartBurst) {
+        if (showHeartBurst) {
+            delay(650)
+            showHeartBurst = false
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .pointerInput(post.id) {
+                detectTapGestures(
+                    onDoubleTap = {
+                        if (!post.likedByMe) onLikeClick(post)
+                        showHeartBurst = true
+                    },
+                )
+            },
+    ) {
         if (!videoUrl.isNullOrBlank()) {
             val context = LocalContext.current
 
@@ -252,6 +289,36 @@ private fun ReelPage(post: Post, isActive: Boolean, onLikeClick: (Post) -> Unit,
         )
 
         ReelOverlay(post = post, onLikeClick = onLikeClick, onCommentClick = onCommentClick)
+
+        // Cift-tiklama kalp-pop overlayi — sabit bir Color.White YERINE
+        // colorScheme.* renkleri kullanildi (bkz. ReelOverlay yorumundaki
+        // "SADECE colorScheme.*" tasarim kisitlamasi), arka planda YARI
+        // SAYDAM bir surface daire ile video icerigi ne olursa olsun okunur
+        // kalir.
+        AnimatedVisibility(
+            visible = showHeartBurst,
+            enter = scaleIn(
+                initialScale = 0.4f,
+                animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
+            ) + fadeIn(),
+            exit = scaleOut(targetScale = 1.15f) + fadeOut(),
+            modifier = Modifier.align(Alignment.Center),
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(120.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.35f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Favorite,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(68.dp),
+                )
+            }
+        }
     }
 }
 
@@ -332,9 +399,27 @@ private fun ReelOverlay(post: Post, onLikeClick: (Post) -> Unit, onCommentClick:
                 animationSpec = spring(dampingRatio = 0.4f),
                 label = "reel-like-scale",
             )
+            // Animasyon turu: tek-tiklamada [likeScale]'in UZERINE ek bir tek
+            // seferlik "pop" burst'u bindiriliyor (kalbin animateFloatAsState
+            // hedefine ULAŞTIKTAN sonra bile her tiklamada hissedilir bir
+            // sicrama olsun diye) — PostCard'daki kalp-pop hissiyle TUTARLI.
+            val scope = rememberCoroutineScope()
+            val burstScale = remember { Animatable(1f) }
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.clickable { onLikeClick(post) },
+                modifier = Modifier.clickable {
+                    onLikeClick(post)
+                    scope.launch {
+                        burstScale.animateTo(
+                            targetValue = 1.35f,
+                            animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = 300f),
+                        )
+                        burstScale.animateTo(
+                            targetValue = 1f,
+                            animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
+                        )
+                    }
+                },
             ) {
                 Icon(
                     imageVector = Icons.Filled.Favorite,
@@ -342,7 +427,7 @@ private fun ReelOverlay(post: Post, onLikeClick: (Post) -> Unit, onCommentClick:
                     tint = if (post.likedByMe) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.secondary,
                     modifier = Modifier
                         .size(28.dp)
-                        .scale(likeScale),
+                        .scale(likeScale * burstScale.value),
                 )
                 Text(
                     text = "${post.likeCount}",

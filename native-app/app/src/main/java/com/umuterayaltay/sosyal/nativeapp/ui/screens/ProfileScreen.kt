@@ -1,6 +1,14 @@
 package com.umuterayaltay.sosyal.nativeapp.ui.screens
 
 import android.widget.Toast
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -21,6 +29,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
@@ -60,10 +69,12 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
@@ -80,6 +91,8 @@ import com.umuterayaltay.sosyal.nativeapp.repository.Post
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.ProfileEvent
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.ProfileViewModel
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.ProfileViewModelFactory
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 private enum class ProfileTab(val label: String) {
     Posts("Gönderiler"),
@@ -581,24 +594,30 @@ private fun ProfileContent(
                     }
                 }
             } else {
-                items(currentPosts, key = { "${selectedTab.name}_${it.id}" }) { post ->
-                    PostCard(
-                        post = post,
-                        onLikeClick = onLikeClick,
-                        onCommentClick = onCommentClick,
-                        onHashtagClick = onHashtagClick,
-                        onPollVote = onPollVote,
-                        onMutePost = onMutePost,
-                        onBookmark = onBookmarkPost,
-                        onRepost = onRepost,
-                        onReport = onReport,
-                        onSessionExpired = onSessionExpired,
-                        isOwnPost = post.userId == currentUserId,
-                        onEditPost = onEditPost,
-                        onDeletePost = onDeletePost,
-                        onArchivePost = onArchivePost,
-                        onPinPost = onPinPost,
-                    )
+                itemsIndexed(currentPosts, key = { _, post -> "${selectedTab.name}_${post.id}" }) { index, post ->
+                    // Gorsel cila (animasyon turu): PostCard.kt'ye DOKUNMADAN,
+                    // sadece cagri yerinde stagger'li fade+slide giris - liste
+                    // ilk yuklendiginde/sekme degistiginde postlar art arda
+                    // hafif gecikmeyle belirir.
+                    StaggeredPostEntry(index = index) {
+                        PostCard(
+                            post = post,
+                            onLikeClick = onLikeClick,
+                            onCommentClick = onCommentClick,
+                            onHashtagClick = onHashtagClick,
+                            onPollVote = onPollVote,
+                            onMutePost = onMutePost,
+                            onBookmark = onBookmarkPost,
+                            onRepost = onRepost,
+                            onReport = onReport,
+                            onSessionExpired = onSessionExpired,
+                            isOwnPost = post.userId == currentUserId,
+                            onEditPost = onEditPost,
+                            onDeletePost = onDeletePost,
+                            onArchivePost = onArchivePost,
+                            onPinPost = onPinPost,
+                        )
+                    }
                 }
             }
         }
@@ -672,6 +691,10 @@ private fun ProfileHeader(
                     .padding(top = 16.dp)
                     .clip(MaterialTheme.shapes.large)
                     .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                    // Gorsel cila (animasyon turu): stats degerleri (takip/takipci
+                    // sayaci vb.) guncellendiginde satirin boyutu YUMUSAKCA
+                    // gecis yapar - ani "ziplama" yerine akici bir buyume/kuculme.
+                    .animateContentSize()
                     .padding(vertical = 14.dp),
                 horizontalArrangement = Arrangement.SpaceEvenly,
             ) {
@@ -757,6 +780,10 @@ private fun StatColumn(label: String, value: Int, onClick: (() -> Unit)? = null)
  * Gorsel cila: 4 takip-durumu butonu artik AYNI yukseklik + oncu ikonla
  * tutarli (onceki halde sadece metin farkliydi, OutlinedButton/Button
  * ayrimi disinda gorsel bir hiyerarsi yoktu). Davranis/callback AYNI kaldi.
+ *
+ * Animasyon turu: butona basinca HAFIF bir "scale-bounce" geri bildirimi
+ * eklendi (kucul-buyu) - [onToggleFollow] mantigi/sirasi DEGISMEDI, sadece
+ * tiklama anina gorsel bir tepki bindirildi.
  */
 @Composable
 private fun FollowActionButton(
@@ -765,10 +792,22 @@ private fun FollowActionButton(
     isPendingRequest: Boolean,
     onToggleFollow: () -> Unit,
 ) {
+    val scope = rememberCoroutineScope()
+    val bounceScale = remember { Animatable(1f) }
+
+    val onBouncedClick: () -> Unit = {
+        scope.launch {
+            bounceScale.animateTo(0.92f, animationSpec = tween(80))
+            bounceScale.animateTo(1f, animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy))
+        }
+        onToggleFollow()
+    }
+
     val buttonModifier = Modifier
         .fillMaxWidth()
         .padding(top = 16.dp)
         .height(46.dp)
+        .scale(bounceScale.value)
 
     when {
         isBlockedByMe -> OutlinedButton(onClick = {}, enabled = false, modifier = buttonModifier) {
@@ -777,22 +816,43 @@ private fun FollowActionButton(
             Text("Engellendi")
         }
 
-        isFollowing -> OutlinedButton(onClick = onToggleFollow, modifier = buttonModifier) {
+        isFollowing -> OutlinedButton(onClick = onBouncedClick, modifier = buttonModifier) {
             Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(8.dp))
             Text("Takip Ediliyor")
         }
 
-        isPendingRequest -> OutlinedButton(onClick = onToggleFollow, modifier = buttonModifier) {
+        isPendingRequest -> OutlinedButton(onClick = onBouncedClick, modifier = buttonModifier) {
             Icon(Icons.Filled.HourglassEmpty, contentDescription = null, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(8.dp))
             Text("İstek Gönderildi")
         }
 
-        else -> Button(onClick = onToggleFollow, modifier = buttonModifier) {
+        else -> Button(onClick = onBouncedClick, modifier = buttonModifier) {
             Icon(Icons.Filled.PersonAdd, contentDescription = null, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(8.dp))
             Text("Takip Et")
         }
+    }
+}
+
+/**
+ * FollowListScreen.kt/FollowRequestsScreen.kt'deki stagger-giris fikriyle
+ * AYNI - PostCard.kt'ye DOKUNMADAN, sadece cagri yerinde index'e bagli KISA
+ * bir gecikmeyle fade+slide giris uygular.
+ */
+@Composable
+private fun StaggeredPostEntry(index: Int, content: @Composable () -> Unit) {
+    var visible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        delay(minOf(index, 8) * 40L)
+        visible = true
+    }
+    AnimatedVisibility(
+        visible = visible,
+        enter = fadeIn(animationSpec = tween(220)) +
+            slideInVertically(animationSpec = tween(220)) { it / 10 },
+    ) {
+        content()
     }
 }

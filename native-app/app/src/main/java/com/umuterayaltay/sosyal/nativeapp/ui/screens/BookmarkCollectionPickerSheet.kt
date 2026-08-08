@@ -172,6 +172,7 @@ fun BookmarkCollectionPickerSheet(
                         icon = Icons.Filled.Folder,
                         label = collection.name,
                         onClick = { assignToCollection(collection.id) },
+                        modifier = Modifier.animateItem(),
                     )
                 }
                 item {
@@ -246,9 +247,10 @@ private fun CollectionPickerRow(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     label: String,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
             .padding(horizontal = 20.dp, vertical = 14.dp),

@@ -1,5 +1,11 @@
 package com.umuterayaltay.sosyal.nativeapp.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -114,17 +120,33 @@ fun NewMessageScreen(
                     contentPadding = PaddingValues(vertical = 8.dp),
                 ) {
                     items(results, key = { it.id }) { user ->
+                        // Animasyon turu (3. kısım) — kullanıcı yazdıkça sonuç
+                        // listesi filtrelenirken satırların animateItem() ile
+                        // YUMUŞAK yer değiştirmesi/belirmesi/kaybolması (Compose
+                        // 1.7+ LazyItemScope API'si, YENİ bağımlılık gerekmiyor —
+                        // NotificationPreferencesScreen.kt'de AYNI API zaten
+                        // kullanılıyor).
                         UserRow(
                             avatarUrl = user.avatarUrl,
                             username = user.username,
                             fullName = user.fullName,
+                            modifier = Modifier.animateItem(),
                             onClick = { user.username?.let(viewModel::selectUser) },
                         )
                     }
                 }
             }
 
-            if (starting) {
+            // Animasyon turu — "Konuşma başlatılıyor..." göstergesi artık sert
+            // bir if() YERİNE AnimatedVisibility ile fade+slide-up'la belirip/
+            // kayarak kaybolur (kullanıcıya tıklama sonrası GERÇEKLEŞEN bir şey
+            // olduğu hissini pekiştirir), viewModel.starting state MANTIĞI
+            // AYNEN korunuyor.
+            AnimatedVisibility(
+                visible = starting,
+                enter = fadeIn(tween(180)) + slideInVertically(tween(180)) { it / 2 },
+                exit = fadeOut(tween(150)) + slideOutVertically(tween(150)) { it / 2 },
+            ) {
                 Surface(
                     color = MaterialTheme.colorScheme.surfaceVariant,
                     modifier = Modifier.fillMaxWidth(),

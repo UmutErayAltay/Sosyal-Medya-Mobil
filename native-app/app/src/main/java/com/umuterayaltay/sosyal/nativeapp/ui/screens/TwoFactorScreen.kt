@@ -1,5 +1,11 @@
 package com.umuterayaltay.sosyal.nativeapp.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.keyframes
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -9,6 +15,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -42,6 +49,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -237,12 +245,47 @@ private fun EnrollDialog(
     val isCodeStep = step is EnrollStep.AwaitingCode
     val canSubmit = if (isCodeStep) code.length == 6 else password.isNotBlank()
 
+    // Kod her hane girildikçe hafif bir "pop" ile büyüyüp normale dönüyor —
+    // gerçek 6-kutulu bir tasarım YOK (tek OutlinedTextField), o yüzden
+    // geri bildirim doğrudan alanın kendisine uygulanıyor.
+    val codeScale = remember { Animatable(1f) }
+    var lastCodeLength by remember { mutableStateOf(0) }
+    LaunchedEffect(code) {
+        if (code.length > lastCodeLength) {
+            codeScale.snapTo(1f)
+            codeScale.animateTo(1.06f, tween(80))
+            codeScale.animateTo(1f, tween(120))
+        }
+        lastCodeLength = code.length
+    }
+
+    // Hatalı kod/şifre girişinde diyalog içeriği hafifçe sallanıyor.
+    val dialogShake = remember { Animatable(0f) }
+    LaunchedEffect(error) {
+        if (error != null) {
+            dialogShake.animateTo(
+                targetValue = 0f,
+                animationSpec = keyframes {
+                    durationMillis = 400
+                    0f at 0
+                    -10f at 50
+                    10f at 100
+                    -6f at 150
+                    6f at 200
+                    -3f at 250
+                    3f at 300
+                    0f at 400
+                },
+            )
+        }
+    }
+
     AlertDialog(
         onDismissRequest = { if (!busy) onDismiss() },
         icon = { Icon(Icons.Filled.Lock, contentDescription = null) },
         title = { Text(if (isCodeStep) "Kodu doğrula" else "İki adımlı doğrulamayı etkinleştir") },
         text = {
-            Column {
+            Column(modifier = Modifier.offset(x = dialogShake.value.dp)) {
                 when (step) {
                     is EnrollStep.AwaitingPassword -> {
                         Text(
@@ -284,13 +327,15 @@ private fun EnrollDialog(
                             singleLine = true,
                             enabled = !busy,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .scale(codeScale.value),
                         )
                     }
                 }
-                if (error != null) {
+                AnimatedVisibility(visible = error != null, enter = fadeIn(), exit = fadeOut()) {
                     Text(
-                        text = error,
+                        text = error ?: "",
                         color = MaterialTheme.colorScheme.error,
                         style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.padding(top = 8.dp),
@@ -339,12 +384,43 @@ private fun DisableDialog(
     var password by remember { mutableStateOf("") }
     var code by remember { mutableStateOf("") }
 
+    val codeScale = remember { Animatable(1f) }
+    var lastCodeLength by remember { mutableStateOf(0) }
+    LaunchedEffect(code) {
+        if (code.length > lastCodeLength) {
+            codeScale.snapTo(1f)
+            codeScale.animateTo(1.06f, tween(80))
+            codeScale.animateTo(1f, tween(120))
+        }
+        lastCodeLength = code.length
+    }
+
+    val dialogShake = remember { Animatable(0f) }
+    LaunchedEffect(error) {
+        if (error != null) {
+            dialogShake.animateTo(
+                targetValue = 0f,
+                animationSpec = keyframes {
+                    durationMillis = 400
+                    0f at 0
+                    -10f at 50
+                    10f at 100
+                    -6f at 150
+                    6f at 200
+                    -3f at 250
+                    3f at 300
+                    0f at 400
+                },
+            )
+        }
+    }
+
     AlertDialog(
         onDismissRequest = { if (!busy) onDismiss() },
         icon = { Icon(Icons.Filled.LockOpen, contentDescription = null) },
         title = { Text("İki adımlı doğrulamayı kapat") },
         text = {
-            Column {
+            Column(modifier = Modifier.offset(x = dialogShake.value.dp)) {
                 Text(
                     "Kapatmak için şifreni ve authenticator uygulamandaki güncel 6 haneli " +
                         "kodu birlikte gir.",
@@ -369,11 +445,13 @@ private fun DisableDialog(
                     singleLine = true,
                     enabled = !busy,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .scale(codeScale.value),
                 )
-                if (error != null) {
+                AnimatedVisibility(visible = error != null, enter = fadeIn(), exit = fadeOut()) {
                     Text(
-                        text = error,
+                        text = error ?: "",
                         color = MaterialTheme.colorScheme.error,
                         style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.padding(top = 8.dp),

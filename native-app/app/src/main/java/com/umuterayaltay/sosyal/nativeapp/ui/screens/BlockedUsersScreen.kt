@@ -1,5 +1,11 @@
 package com.umuterayaltay.sosyal.nativeapp.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -11,7 +17,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Block
@@ -29,12 +35,16 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.BlockedUsersEvent
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.BlockedUsersViewModel
+import kotlinx.coroutines.delay
 
 /**
  * "Engellenen Kullanıcılar" ekranı — CloseFriendsScreen'in liste görsel
@@ -55,6 +65,19 @@ fun BlockedUsersScreen(
     val users by viewModel.users.collectAsState()
     val loading by viewModel.loading.collectAsState()
     val error by viewModel.error.collectAsState()
+
+    // CloseFriendsScreen.kt'deki AYNI fikir: "Engeli Kaldır" tiklaninca satiri
+    // ANINDA fade-out ile gizler.
+    var hiddenIds by remember { mutableStateOf(setOf<String>()) }
+
+    // CloseFriendsScreen.kt'deki AYNI kendi-kendini-onaran guvenlik agi:
+    // unblock() basarisiz olursa (bkz. BlockedUsersViewModel.unblock() - SADECE
+    // Success'te local listeden cikariyor) satir `users` icinde hala vardir -
+    // hiddenIds'ten cikarilip TEKRAR gorunur olur.
+    LaunchedEffect(users) {
+        val stillPresentIds = users.map { it.id }.toSet()
+        hiddenIds = hiddenIds.filter { it !in stillPresentIds }.toSet()
+    }
 
     LaunchedEffect(Unit) {
         viewModel.events.collect { event ->
@@ -117,19 +140,26 @@ fun BlockedUsersScreen(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(vertical = 8.dp),
                 ) {
-                    items(users, key = { it.id }) { user ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            UserRow(
-                                avatarUrl = user.avatarUrl,
-                                username = user.username,
-                                fullName = user.fullName,
-                                modifier = Modifier.weight(1f),
-                            )
-                            TextButton(onClick = { user.username?.let(viewModel::unblock) }) {
-                                Text("Engeli Kaldır", color = MaterialTheme.colorScheme.error)
+                    itemsIndexed(users, key = { _, user -> user.id }) { index, user ->
+                        StaggeredBlockedItem(index = index, visible = user.id !in hiddenIds) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                UserRow(
+                                    avatarUrl = user.avatarUrl,
+                                    username = user.username,
+                                    fullName = user.fullName,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                TextButton(
+                                    onClick = {
+                                        hiddenIds = hiddenIds + user.id
+                                        user.username?.let(viewModel::unblock)
+                                    },
+                                ) {
+                                    Text("Engeli Kaldır", color = MaterialTheme.colorScheme.error)
+                                }
                             }
                         }
                     }
@@ -144,6 +174,28 @@ private fun CenteredBox(content: @Composable () -> Unit) {
     Box(
         modifier = Modifier.fillMaxSize().padding(32.dp),
         contentAlignment = Alignment.Center,
+    ) {
+        content()
+    }
+}
+
+/**
+ * CloseFriendsScreen.kt'deki StaggeredCloseFriendItem ile AYNI fikir: satir
+ * ilk kez composition'a girdiginde index'e bagli KISA bir gecikmeyle belirir,
+ * [visible] false olunca ("Engeli Kaldır" tiklaninca) fade-out ile cikar.
+ */
+@Composable
+private fun StaggeredBlockedItem(index: Int, visible: Boolean, content: @Composable () -> Unit) {
+    var entered by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        delay(minOf(index, 10) * 30L)
+        entered = true
+    }
+    AnimatedVisibility(
+        visible = entered && visible,
+        enter = fadeIn(animationSpec = tween(200)) +
+            slideInVertically(animationSpec = tween(200)) { it / 8 },
+        exit = fadeOut(animationSpec = tween(200)) + shrinkVertically(animationSpec = tween(200)),
     ) {
         content()
     }

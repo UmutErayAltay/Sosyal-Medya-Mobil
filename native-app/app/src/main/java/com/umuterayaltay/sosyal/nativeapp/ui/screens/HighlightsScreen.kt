@@ -1,6 +1,10 @@
 package com.umuterayaltay.sosyal.nativeapp.ui.screens
 
 import android.widget.Toast
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.scaleIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -14,7 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBackIosNew
@@ -53,6 +57,7 @@ import com.umuterayaltay.sosyal.nativeapp.repository.HighlightItem
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.HighlightsEvent
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.HighlightsViewModel
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.HighlightsViewModelFactory
+import kotlinx.coroutines.delay
 
 /**
  * Öne çıkanlar (highlights) — bağımsız ekran (görev kapsamı: ProfileScreen'e
@@ -188,14 +193,25 @@ fun HighlightsScreen(
                 contentPadding = PaddingValues(padding.calculateTopPadding(), 12.dp, 12.dp, 12.dp),
                 modifier = Modifier.fillMaxSize(),
             ) {
-                items(highlights, key = { it.id }) { highlight ->
-                    HighlightGridItem(
-                        highlight = highlight,
-                        onClick = {
-                            openHighlightId = highlight.id
-                            viewModel.viewHighlight(highlight.id)
-                        },
-                    )
+                itemsIndexed(highlights, key = { _, highlight -> highlight.id }) { index, highlight ->
+                    var visible by remember { mutableStateOf(false) }
+                    LaunchedEffect(Unit) {
+                        delay(minOf(index, 12) * 25L)
+                        visible = true
+                    }
+                    AnimatedVisibility(
+                        visible = visible,
+                        enter = fadeIn(animationSpec = tween(220)) +
+                            scaleIn(initialScale = 0.85f, animationSpec = tween(220)),
+                    ) {
+                        HighlightGridItem(
+                            highlight = highlight,
+                            onClick = {
+                                openHighlightId = highlight.id
+                                viewModel.viewHighlight(highlight.id)
+                            },
+                        )
+                    }
                 }
             }
         }

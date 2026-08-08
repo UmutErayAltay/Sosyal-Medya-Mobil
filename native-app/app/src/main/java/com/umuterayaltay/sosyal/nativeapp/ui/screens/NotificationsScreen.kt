@@ -1,5 +1,8 @@
 package com.umuterayaltay.sosyal.nativeapp.ui.screens
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.EaseOutCubic
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -10,6 +13,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -30,12 +34,15 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.animation.core.Animatable
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -46,6 +53,7 @@ import coil.compose.AsyncImage
 import com.umuterayaltay.sosyal.nativeapp.network.NotificationDto
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.NotificationsEvent
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.NotificationsViewModel
+import kotlinx.coroutines.delay
 
 /**
  * Bildirimler ekranı — InboxScreen'in LazyColumn + loading/error/empty
@@ -135,10 +143,11 @@ fun NotificationsScreen(
                     .padding(padding),
                 contentPadding = PaddingValues(vertical = 8.dp),
             ) {
-                itemsIndexed(notifications, key = { index, _ -> index }) { _, notification ->
+                itemsIndexed(notifications, key = { index, _ -> index }) { index, notification ->
                     val target = resolveNotificationTarget(notification)
                     NotificationRow(
                         notification = notification,
+                        staggerIndex = index,
                         onClick = target?.let {
                             {
                                 when (it) {
@@ -216,17 +225,35 @@ private fun CenteredMessage(padding: PaddingValues, content: @Composable () -> U
 }
 
 @Composable
-private fun NotificationRow(notification: NotificationDto, onClick: (() -> Unit)?) {
+private fun NotificationRow(notification: NotificationDto, staggerIndex: Int, onClick: (() -> Unit)?) {
     // Okunmamış bildirimler kalın metin + sağdaki nokta rozetiyle ZATEN ayrışıyordu
     // (davranış aynı) — buraya EK olarak hafif bir zemin tonu eklendi, tarama
-    // hızında "hangileri yeni" sorusunu tek bakışta netleştirmek için.
-    val background = if (!notification.isRead) {
-        MaterialTheme.colorScheme.primary.copy(alpha = 0.06f)
-    } else {
-        Color.Transparent
+    // hızında "hangileri yeni" sorusunu tek bakışta netleştirmek için. Okundu
+    // işaretlenince bu ton animateColorAsState ile YUMUŞAK geçiyor (anlık
+    // değişim yerine).
+    val background by animateColorAsState(
+        targetValue = if (!notification.isRead) {
+            MaterialTheme.colorScheme.primary.copy(alpha = 0.06f)
+        } else {
+            Color.Transparent
+        },
+        animationSpec = tween(350),
+        label = "notificationRowBackground",
+    )
+
+    // Liste ilk yüklendiğinde satırlar stagger'lı (index bazlı gecikmeli)
+    // fade-in + hafif yukarı kayma ile beliriyor — sadece görsel giriş
+    // efekti, click/okundu mantığı DEĞİŞMEDİ.
+    val entrance = remember { Animatable(0f) }
+    LaunchedEffect(Unit) {
+        delay((staggerIndex.coerceAtMost(12) * 35).toLong())
+        entrance.animateTo(1f, tween(280, easing = EaseOutCubic))
     }
+
     val baseModifier = Modifier
         .fillMaxWidth()
+        .alpha(entrance.value)
+        .offset(y = ((1f - entrance.value) * 24f).dp)
         .background(background)
     val rowModifier = if (onClick != null) {
         baseModifier

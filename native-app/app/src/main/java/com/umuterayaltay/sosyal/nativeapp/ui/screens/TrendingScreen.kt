@@ -132,9 +132,13 @@ fun TrendingScreen(
                 contentPadding = PaddingValues(vertical = 8.dp),
             ) {
                 itemsIndexed(tags, key = { _, tag -> tag.tag }) { index, tag ->
-                    TrendingRow(rank = index + 1, tag = tag, onClick = { onNavigateToHashtag(tag.tag) })
-                    if (index < tags.lastIndex) {
-                        HorizontalDivider(modifier = Modifier.padding(start = 56.dp))
+                    PostFeedStaggerReveal(index = index) {
+                        Column {
+                            TrendingRow(rank = index + 1, tag = tag, onClick = { onNavigateToHashtag(tag.tag) })
+                            if (index < tags.lastIndex) {
+                                HorizontalDivider(modifier = Modifier.padding(start = 56.dp))
+                            }
+                        }
                     }
                 }
             }

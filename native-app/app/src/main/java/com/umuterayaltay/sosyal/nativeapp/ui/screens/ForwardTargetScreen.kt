@@ -1,7 +1,9 @@
 package com.umuterayaltay.sosyal.nativeapp.ui.screens
 
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -38,36 +40,44 @@ fun ForwardTargetScreen(
     onDismiss: () -> Unit,
     onTargetSelected: (ForwardTargetDto) -> Unit,
 ) {
+    // Animasyon turu (3. kısım) — sheet'in kendisi Material3'ün varsayılan
+    // slide-up animasyonunu ZATEN kullanıyor (ModalBottomSheet). Ek olarak
+    // içerik Column'u animateContentSize() ile sarmalandı — yükleniyor
+    // (120dp) / boş (kompakt metin) / liste (320dp) durumları arasında
+    // geçerken sheet içeriği ANİDEN zıplamak yerine yumuşak boyut değiştiriyor.
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
-        Text(
-            text = "Şuna ilet:",
-            style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
-        )
-        when {
-            loading -> Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(120.dp)
-                    .padding(16.dp),
-                contentAlignment = Alignment.Center,
-            ) { CircularProgressIndicator() }
-            targets.isEmpty() -> Text(
-                text = "Henüz bir konuşman yok",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp),
+        Column(modifier = Modifier.animateContentSize()) {
+            Text(
+                text = "Şuna ilet:",
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
             )
-            else -> LazyColumn(modifier = Modifier.height(320.dp)) {
-                items(targets, key = { it.id }) { target ->
-                    Text(
-                        text = target.name ?: "Bilinmeyen",
-                        style = MaterialTheme.typography.bodyLarge,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onTargetSelected(target) }
-                            .padding(horizontal = 20.dp, vertical = 14.dp),
-                    )
+            when {
+                loading -> Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(120.dp)
+                        .padding(16.dp),
+                    contentAlignment = Alignment.Center,
+                ) { CircularProgressIndicator() }
+                targets.isEmpty() -> Text(
+                    text = "Henüz bir konuşman yok",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp),
+                )
+                else -> LazyColumn(modifier = Modifier.height(320.dp)) {
+                    items(targets, key = { it.id }) { target ->
+                        Text(
+                            text = target.name ?: "Bilinmeyen",
+                            style = MaterialTheme.typography.bodyLarge,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .animateItem()
+                                .clickable { onTargetSelected(target) }
+                                .padding(horizontal = 20.dp, vertical = 14.dp),
+                        )
+                    }
                 }
             }
         }

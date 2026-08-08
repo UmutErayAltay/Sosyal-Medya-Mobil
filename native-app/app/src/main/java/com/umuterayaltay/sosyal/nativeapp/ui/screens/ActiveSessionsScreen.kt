@@ -152,6 +152,7 @@ fun ActiveSessionsScreen(
                             session = session,
                             revoking = revokingId == session.id,
                             onRevoke = { viewModel.revoke(session.id) },
+                            modifier = Modifier.animateItem(),
                         )
                     }
                 }
@@ -235,9 +236,10 @@ private fun SessionRow(
     session: SessionDto,
     revoking: Boolean,
     onRevoke: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,

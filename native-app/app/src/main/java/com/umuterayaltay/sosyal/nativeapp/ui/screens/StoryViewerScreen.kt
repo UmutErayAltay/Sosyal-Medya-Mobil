@@ -1,5 +1,10 @@
 package com.umuterayaltay.sosyal.nativeapp.ui.screens
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -40,6 +45,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
@@ -135,13 +141,29 @@ fun StoryViewerScreen(
             else -> {
                 val story = stories.getOrNull(currentIndex) ?: return@Box
 
-                StorySegment(
-                    story = story,
-                    paused = paused,
-                    onAdvance = {
-                        if (!viewModel.goNext()) onNavigateBack()
-                    },
-                )
+                // Hikaye gecisinde crossfade — YENI segment, StorySegment
+                // (video/gorsel/metin) DEGISMEDEN, KISA bir alpha animasyonuyla
+                // belirir. Bilincli olarak eski segmenti AYRI bir composition'da
+                // TUTMUYORUZ (ör. Crossfade/AnimatedContent ile): otomatik
+                // ilerleme zamanlayicisi (LaunchedEffect(imageUrl, paused))
+                // kisa bir donem arka planda calismaya devam edip ikinci bir
+                // onAdvance/onTimeUp tetiklemesi riski dogurabilirdi. Bunun
+                // yerine SADECE yeni segment fade-in yapar - basili-tutunca
+                // duraklatma mantigina DOKUNULMADI.
+                val segmentTransitionAlpha = remember(story.id) { Animatable(0f) }
+                LaunchedEffect(story.id) {
+                    segmentTransitionAlpha.animateTo(1f, animationSpec = tween(220))
+                }
+
+                Box(modifier = Modifier.fillMaxSize().alpha(segmentTransitionAlpha.value)) {
+                    StorySegment(
+                        story = story,
+                        paused = paused,
+                        onAdvance = {
+                            if (!viewModel.goNext()) onNavigateBack()
+                        },
+                    )
+                }
 
                 // Sol/sağ yarıya dokunma (ileri/geri) + basılı tutunca duraklatma —
                 // web'in mousedown/touchstart pause deseninin native karşılığı.
@@ -368,7 +390,21 @@ private fun SegmentProgressRow(count: Int, currentIndex: Int, paused: Boolean, s
             val progress = when {
                 index < currentIndex -> 1f
                 index > currentIndex -> 0f
-                else -> AnimatedSegmentProgress(paused = paused, key = storyId)
+                else -> {
+                    // Gorsel cila (animasyon turu): ham ilerleme her 100ms'de
+                    // bir "ziplayarak" guncelleniyordu (bkz. AnimatedSegmentProgress
+                    // dongusu) — animateFloatAsState ile bu adimlar arasi da
+                    // YUMUSAKCA (60fps) interpole edilerek cubuk akici doluyor.
+                    // Duraklatildiginda ANINDA donuyor (snap), yeni bir tween
+                    // baslatip "geriden yetismeye" calismasin diye.
+                    val rawProgress = AnimatedSegmentProgress(paused = paused, key = storyId)
+                    val smoothProgress by animateFloatAsState(
+                        targetValue = rawProgress,
+                        animationSpec = if (paused) snap() else tween(durationMillis = 100, easing = LinearEasing),
+                        label = "story-progress-smooth",
+                    )
+                    smoothProgress
+                }
             }
             LinearProgressIndicator(
                 progress = { progress },

@@ -135,11 +135,18 @@ fun MessageSearchScreen(
                     contentPadding = PaddingValues(bottom = 16.dp),
                 ) {
                     items(results, key = { it.id }) { result ->
-                        MessageSearchResultRow(
-                            result = result,
-                            onClick = { result.conversationId?.let(onNavigateToConversation) },
-                        )
-                        HorizontalDivider()
+                        // Animasyon turu (3. kısım) — kullanıcı yazdıkça sonuç
+                        // listesi filtrelenirken satırların animateItem() ile
+                        // yumuşak yer değiştirmesi/belirmesi/kaybolması (bkz.
+                        // NewMessageScreen.kt AYNI desen — Compose 1.7+
+                        // LazyItemScope API'si, yeni bağımlılık gerekmiyor).
+                        Column(modifier = Modifier.animateItem()) {
+                            MessageSearchResultRow(
+                                result = result,
+                                onClick = { result.conversationId?.let(onNavigateToConversation) },
+                            )
+                            HorizontalDivider()
+                        }
                     }
                     if (loadingMore) {
                         item(key = "loading_more") {

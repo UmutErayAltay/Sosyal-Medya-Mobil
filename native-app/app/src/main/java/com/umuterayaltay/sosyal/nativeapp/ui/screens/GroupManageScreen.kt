@@ -1,5 +1,6 @@
 package com.umuterayaltay.sosyal.nativeapp.ui.screens
 
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -186,10 +187,15 @@ fun GroupManageScreen(
                     .fillMaxSize()
                     .padding(padding),
             ) {
+                // Animasyon turu (3. kısım) — görüntüleme <-> düzenleme
+                // (metin alanı + kaydet/vazgeç ikonları) geçişinde satırın
+                // genişliği/dolgusu değişebildiği için animateContentSize()
+                // eklendi, ANİ zıplama yerine yumuşak geçiş.
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                        .padding(horizontal = 16.dp, vertical = 10.dp)
+                        .animateContentSize(),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     if (editingName) {
@@ -274,6 +280,7 @@ fun GroupManageScreen(
                             actionInProgress = memberActionInProgress == member.id,
                             onToggleAdmin = { viewModel.toggleAdmin(member.id) },
                             onRemove = { viewModel.removeMember(member.id) },
+                            modifier = Modifier.animateItem(),
                         )
                     }
                 }
@@ -350,9 +357,10 @@ private fun MemberRow(
     actionInProgress: Boolean,
     onToggleAdmin: () -> Unit,
     onRemove: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -492,6 +500,7 @@ private fun AddMembersContent(
                         selected = user.id in selectedIds,
                         enabled = !adding,
                         onClick = { onToggleSelected(user) },
+                        modifier = Modifier.animateItem(),
                     )
                 }
             }

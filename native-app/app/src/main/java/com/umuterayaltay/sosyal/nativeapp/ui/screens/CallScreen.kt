@@ -5,6 +5,9 @@ import android.content.pm.PackageManager
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -47,6 +50,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -348,11 +352,13 @@ private fun CallControls(
             CallControlButton(
                 icon = if (isMicEnabled) Icons.Filled.Mic else Icons.Filled.MicOff,
                 contentDescription = if (isMicEnabled) "Mikrofonu kapat" else "Mikrofonu aç",
+                active = isMicEnabled,
                 onClick = onToggleMic,
             )
             CallControlButton(
                 icon = if (isCameraEnabled) Icons.Filled.Videocam else Icons.Filled.VideocamOff,
                 contentDescription = if (isCameraEnabled) "Kamerayı kapat" else "Kamerayı aç",
+                active = isCameraEnabled,
                 onClick = onToggleCamera,
             )
             AudioOutputButton(
@@ -376,17 +382,39 @@ private fun CallControls(
     }
 }
 
+/**
+ * Mikrofon/kamera aç-kapa butonu — SADECE görsel geri bildirim eklendi:
+ * durum değişince zemin rengi ([animateColorAsState], kapalıyken hafif
+ * kırmızımsı) ve kısa bir "pop" ölçeklenme geçişi. Toggle mantığının
+ * KENDİSİ (onClick -> viewModel.toggleMic/toggleCamera) DEĞİŞMEDİ.
+ */
 @Composable
-private fun RowScope.CallControlButton(icon: androidx.compose.ui.graphics.vector.ImageVector, contentDescription: String, onClick: () -> Unit) {
+private fun RowScope.CallControlButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    contentDescription: String,
+    active: Boolean = true,
+    onClick: () -> Unit,
+) {
+    val containerColor by animateColorAsState(
+        targetValue = if (active) Color.White.copy(alpha = 0.15f) else MaterialTheme.colorScheme.error.copy(alpha = 0.85f),
+        animationSpec = tween(200),
+        label = "callControlContainerColor",
+    )
+    val scale = remember { Animatable(1f) }
+    LaunchedEffect(active) {
+        scale.animateTo(1.15f, tween(80))
+        scale.animateTo(1f, tween(120))
+    }
     IconButton(
         onClick = onClick,
         colors = IconButtonDefaults.iconButtonColors(
-            containerColor = Color.White.copy(alpha = 0.15f),
+            containerColor = containerColor,
             contentColor = Color.White,
         ),
         modifier = Modifier
             .clip(CircleShape)
-            .size(56.dp),
+            .size(56.dp)
+            .scale(scale.value),
     ) {
         Icon(icon, contentDescription = contentDescription)
     }

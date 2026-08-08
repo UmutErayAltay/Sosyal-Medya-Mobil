@@ -1,9 +1,9 @@
 package com.umuterayaltay.sosyal.nativeapp.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -120,10 +120,17 @@ fun rememberTopBarVisibility(listState: LazyListState): State<Boolean> {
  * `Scaffold`'un `topBar` slotuna verilecek, görünürlüğü [visible] ile kontrol
  * edilen sarmalayıcı — bar tam gizliyken layout'ta YER KAPLAMASIN diye
  * `AnimatedVisibility` kullanılır (İÇERİĞİN ÜSTÜNE binen bir offset/alpha
- * hilesi DEĞİL, gerçek layout-boyutu sıfıra iner). Süre/easing web'in
- * `transition: transform 0.25s ease`'iyle BİREBİR eşleşsin diye SABİT
- * `tween(TOP_BAR_ANIM_MS, FastOutSlowInEasing)` kullanılır (Compose'un
- * varsayılan spring spec'i FARKLI/daha "zıplayan" bir his veriyordu).
+ * hilesi DEĞİL, gerçek layout-boyutu sıfıra iner).
+ *
+ * Animasyon/mikro-etkileşim turu: sabit süreli `tween(TOP_BAR_ANIM_MS,
+ * FastOutSlowInEasing)` yerine artık spring tabanlı bir spec kullanılıyor -
+ * BİLEREK [Spring.DampingRatioNoBouncy] (kritik sönümlü, SIFIR aşım/sekme):
+ * bu dosyanın üstündeki [rememberTopBarVisibility] belgesindeki 4. tur
+ * KULLANICI RAPORU, Compose'un VARSAYILAN spring spec'inin (dampingRatio
+ * ~0.75, gözle görülür sekme) "kasıyor gibi" hissettirdiğini netleştirmişti -
+ * o regresyonu GERİ GETİRMEMEK için sekme YAPMAYAN bir spring seçildi, sadece
+ * tween'in sabit-süreli doğrusal hissinden daha organik/akışkan bir
+ * ivme-yavaşlama eğrisi katıyor.
  */
 @Composable
 fun HideableTopBar(
@@ -131,8 +138,12 @@ fun HideableTopBar(
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit,
 ) {
-    val animSpec = remember { tween<Float>(durationMillis = TOP_BAR_ANIM_MS, easing = FastOutSlowInEasing) }
-    val offsetSpec = remember { tween<androidx.compose.ui.unit.IntOffset>(durationMillis = TOP_BAR_ANIM_MS, easing = FastOutSlowInEasing) }
+    val animSpec = remember {
+        spring<Float>(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow)
+    }
+    val offsetSpec = remember {
+        spring<androidx.compose.ui.unit.IntOffset>(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow)
+    }
     AnimatedVisibility(
         visible = visible,
         modifier = modifier,
@@ -207,9 +218,18 @@ fun OverlayTopBar(
     // `- statusBarHeight`) görünürken uygulanan telafiyi karşılamak için,
     // biri de bu Box'ın kendi statusBarHeight'lık Spacer'ını TAMAMEN
     // ekranın dışına çıkarmak için.
+    //
+    // Animasyon/mikro-etkileşim turu: sabit-süreli `tween` yerine spring
+    // tabanlı bir spec - AMA BİLEREK [Spring.DampingRatioNoBouncy] (kritik
+    // sönümlü, sıfır aşım/sekme). rememberTopBarVisibility'nin belgesindeki
+    // 4. tur KULLANICI RAPORU tam olarak Compose'un VARSAYILAN (sekmeli/daha
+    // "zıplayan") spring spec'ini reddetmişti - o regresyonu GERİ
+    // GETİRMEMEK için burada de aynı no-bounce spring kullanılıyor, sadece
+    // tween'in doğrusal hissinden biraz daha akışkan bir ivme-yavaşlama
+    // eğrisi katıyor.
     val offsetY by animateDpAsState(
         targetValue = (if (visible) 0.dp else -TOP_BAR_HEIGHT - statusBarHeight) - statusBarHeight,
-        animationSpec = tween(durationMillis = TOP_BAR_ANIM_MS, easing = FastOutSlowInEasing),
+        animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow),
         label = "topBarOffsetY",
     )
     Box(modifier = modifier.offset(y = offsetY)) {

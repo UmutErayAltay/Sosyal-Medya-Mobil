@@ -1,5 +1,10 @@
 package com.umuterayaltay.sosyal.nativeapp.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.MutableTransitionState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -14,7 +19,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
@@ -35,6 +40,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -47,6 +53,7 @@ import coil.compose.AsyncImage
 import com.umuterayaltay.sosyal.nativeapp.network.ConversationSummaryDto
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.InboxEvent
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.InboxViewModel
+import kotlinx.coroutines.delay
 
 /**
  * Gelen kutusu (inbox) — DiscoverScreen'deki UserRow/UserResultRow ile GÖRSEL
@@ -118,8 +125,12 @@ fun InboxScreen(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(top = topBarContentPadding + 4.dp, bottom = 4.dp),
             ) {
-                items(conversations, key = { it.id }) { conversation ->
-                    ConversationRow(conversation, onClick = { onConversationClick(conversation.id) })
+                itemsIndexed(conversations, key = { _, item -> item.id }) { index, conversation ->
+                    AnimatedConversationRow(
+                        index = index,
+                        conversation = conversation,
+                        onClick = { onConversationClick(conversation.id) },
+                    )
                 }
             }
         }
@@ -150,6 +161,34 @@ fun InboxScreen(
                 )
             }
         }
+    }
+}
+
+/**
+ * Animasyon turu (3. kısım) — konuşma satırlarının listeye stagger'lı
+ * (index'e göre 60ms kademeli) fade+slide-up girişi, Instagram/WhatsApp'ın
+ * liste yükleme hissiyle AYNI. remember(conversation.id) SADECE bu satır
+ * ilk kez composition'a girdiğinde tetiklenir — okunmadı rozeti/son mesaj
+ * güncellenip AYNI id yeniden recompose olduğunda TEKRAR oynatılmaz. Gecikme
+ * ilk ~12 satırla sınırlandı (min(index, 12) * 60ms) — uzun listelerde son
+ * öğelerin saçma derecede geç belirmesini önlemek için.
+ */
+@Composable
+private fun AnimatedConversationRow(
+    index: Int,
+    conversation: ConversationSummaryDto,
+    onClick: () -> Unit,
+) {
+    val visibleState = remember(conversation.id) { MutableTransitionState(false) }
+    LaunchedEffect(conversation.id) {
+        delay(minOf(index, 12) * 60L)
+        visibleState.targetState = true
+    }
+    AnimatedVisibility(
+        visibleState = visibleState,
+        enter = fadeIn(tween(220)) + slideInVertically(tween(220)) { it / 4 },
+    ) {
+        ConversationRow(conversation, onClick = onClick)
     }
 }
 

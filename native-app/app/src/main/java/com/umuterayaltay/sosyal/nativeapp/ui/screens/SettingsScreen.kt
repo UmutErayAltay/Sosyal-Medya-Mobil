@@ -1,5 +1,12 @@
 package com.umuterayaltay.sosyal.nativeapp.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -222,7 +229,7 @@ fun SettingsScreen(
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                         modifier = Modifier.fillMaxWidth(),
                     )
-                    if (deactivateError != null) {
+                    AnimatedVisibility(visible = deactivateError != null, enter = fadeIn(), exit = fadeOut()) {
                         Text(
                             text = deactivateError ?: "",
                             color = MaterialTheme.colorScheme.error,
@@ -230,7 +237,11 @@ fun SettingsScreen(
                             modifier = Modifier.padding(top = 8.dp),
                         )
                     }
-                    if (deactivating) {
+                    AnimatedVisibility(
+                        visible = deactivating,
+                        enter = fadeIn() + expandVertically(),
+                        exit = fadeOut() + shrinkVertically(),
+                    ) {
                         Row(
                             modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
                             horizontalArrangement = Arrangement.Center,
@@ -315,11 +326,23 @@ private fun ThemeOptionRow(
     selected: Boolean,
     onClick: () -> Unit,
 ) {
+    // Seçili satır hafif bir zemin rengine geçiş yapıyor — tema değişimini
+    // anlık göstermek yerine göz yormayan bir crossfade ile vurguluyor.
+    val background by animateColorAsState(
+        targetValue = if (selected) {
+            MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
+        } else {
+            androidx.compose.ui.graphics.Color.Transparent
+        },
+        animationSpec = tween(200),
+        label = "themeOptionBackground",
+    )
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .background(background, MaterialTheme.shapes.small)
             .clickable(onClick = onClick)
-            .padding(vertical = 4.dp),
+            .padding(vertical = 4.dp, horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         RadioButton(selected = selected, onClick = onClick)

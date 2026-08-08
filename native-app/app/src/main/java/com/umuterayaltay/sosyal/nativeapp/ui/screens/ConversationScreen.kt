@@ -4,6 +4,11 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.MutableTransitionState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -26,6 +31,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -509,13 +515,27 @@ fun ConversationScreen(
                             ) { CircularProgressIndicator(modifier = Modifier.size(24.dp)) }
                         }
                     }
-                    items(messages, key = { it.id }) { message ->
-                        MessageBubble(
-                            message = message,
-                            isMine = myUserId != null && message.senderId == myUserId,
-                            onLongPress = { viewModel.selectMessage(message) },
-                            onPostClick = onNavigateToPostDetail,
-                        )
+                    itemsIndexed(messages, key = { _, message -> message.id }) { index, message ->
+                        // SADECE listenin son öğesi (yeni gönderilen/gelen mesaj)
+                        // giriş animasyonuyla belirir — geçmiş sayfalar (loadOlder
+                        // ile başa eklenen eski mesajlar VEYA konuşma ilk açılışında
+                        // yüklenen tüm geçmiş) HER recompose'da yeniden animasyonla
+                        // "titremesin" diye (bkz. AnimatedMessageBubble yorumu).
+                        if (index == messages.lastIndex) {
+                            AnimatedMessageBubble(
+                                message = message,
+                                isMine = myUserId != null && message.senderId == myUserId,
+                                onLongPress = { viewModel.selectMessage(message) },
+                                onPostClick = onNavigateToPostDetail,
+                            )
+                        } else {
+                            MessageBubble(
+                                message = message,
+                                isMine = myUserId != null && message.senderId == myUserId,
+                                onLongPress = { viewModel.selectMessage(message) },
+                                onPostClick = onNavigateToPostDetail,
+                            )
+                        }
                     }
                 }
             }
@@ -661,6 +681,40 @@ private fun ConversationSearchResults(
                 }
             }
         }
+    }
+}
+
+/**
+ * Animasyon turu (3. kısım, en kritik) — yeni gönderilen (optimistic "local-"
+ * id) VEYA polling ile gelen yeni mesaj balonunun listenin SONUNA eklenirken
+ * fade+slide-up ile belirmesi. ConversationViewModel'in optimistic-send
+ * MANTIĞINA (send()/replaceOptimisticMessage() vb.) hiç dokunulmadı — bu
+ * SADECE görsel bir sarmalayıcı, state/sıralama davranışı AYNEN korunuyor.
+ * remember(message.id) ile id her değiştiğinde (yeni mesaj VEYA "local-"
+ * geçici id'nin sunucudan dönen gerçek id ile değiştirilmesi, bkz.
+ * ConversationViewModel satır ~404) animasyon YENİDEN oynar — ikinci durumda
+ * bu istenen bir yan etki: "gönderiliyor…" durumundan gerçek mesaja geçişi
+ * görsel olarak da hafifçe vurgular.
+ */
+@Composable
+private fun AnimatedMessageBubble(
+    message: MessageDto,
+    isMine: Boolean,
+    onLongPress: () -> Unit,
+    onPostClick: (String) -> Unit,
+) {
+    val visibleState = remember(message.id) { MutableTransitionState(false) }
+    LaunchedEffect(message.id) { visibleState.targetState = true }
+    AnimatedVisibility(
+        visibleState = visibleState,
+        enter = fadeIn(tween(200)) + slideInVertically(tween(200)) { it / 5 },
+    ) {
+        MessageBubble(
+            message = message,
+            isMine = isMine,
+            onLongPress = onLongPress,
+            onPostClick = onPostClick,
+        )
     }
 }
 
