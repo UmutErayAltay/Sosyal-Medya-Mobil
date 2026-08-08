@@ -1,6 +1,10 @@
 package com.umuterayaltay.sosyal.nativeapp.ui.screens
 
+import android.net.Uri
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Animatable
@@ -9,9 +13,11 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.slideInVertically
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -31,9 +37,14 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.Check
@@ -84,21 +95,32 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
+import com.umuterayaltay.sosyal.nativeapp.ServiceLocator
 import com.umuterayaltay.sosyal.nativeapp.network.ProfileDto
 import com.umuterayaltay.sosyal.nativeapp.network.ProfileStatsDto
+import com.umuterayaltay.sosyal.nativeapp.network.StickerDto
+import com.umuterayaltay.sosyal.nativeapp.repository.CreateStickerResult
 import com.umuterayaltay.sosyal.nativeapp.repository.Highlight
 import com.umuterayaltay.sosyal.nativeapp.repository.Post
+import com.umuterayaltay.sosyal.nativeapp.repository.StickersResult
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.ProfileEvent
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.ProfileViewModel
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.ProfileViewModelFactory
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 private enum class ProfileTab(val label: String) {
     Posts("Gönderiler"),
     Media("Medya"),
     Liked("Beğenilenler"),
     Saved("Kaydedilenler"),
+    // 2026-08-08 (kullanıcı raporu: "Çıkartmalarım kısmı da yok onu da
+    // ekleyelim") — web'in profile.html'deki "Çıkartmalarım" tab'ının native
+    // karşılığı. Backend (app/api_v1/stickers.py, TAM CRUD) ve native
+    // StickersRepository ZATEN vardı, SADECE bu sekme eksikti.
+    Stickers("Çıkartmalarım"),
     Archived("Arşiv"),
 }
 
@@ -473,15 +495,18 @@ private fun ProfileContent(
     var selectedTab by remember { mutableStateOf(ProfileTab.Posts) }
     val hidden = isPrivate && !isSelf && !isFollowing
 
-    // Kaydedilenler Archived ile AYNI gerekçeyle SADECE kendi profilimizde
-    // gösterilir — kişisel bir liste (bkz. app/social.py bookmarks yorumu),
-    // başkasının profilinde backend zaten boş dönüyor ama sekmeyi hiç
-    // göstermemek daha nettir.
+    // Kaydedilenler/Çıkartmalarım Archived ile AYNI gerekçeyle SADECE kendi
+    // profilimizde gösterilir — kişisel bir liste (bkz. app/social.py
+    // bookmarks yorumu, web'in profile.html'deki AYNI {% if is_own %} kısıtı
+    // stickers tab'ı için de geçerli), başkasının profilinde backend zaten
+    // boş dönüyor ama sekmeyi hiç göstermemek daha nettir.
     val tabs = remember(isSelf) {
         if (isSelf) {
             ProfileTab.entries.toList()
         } else {
-            ProfileTab.entries.filterNot { it == ProfileTab.Archived || it == ProfileTab.Saved }
+            ProfileTab.entries.filterNot {
+                it == ProfileTab.Archived || it == ProfileTab.Saved || it == ProfileTab.Stickers
+            }
         }
     }
 
@@ -564,12 +589,22 @@ private fun ProfileContent(
                 }
             }
 
+            if (selectedTab == ProfileTab.Stickers) {
+                // Post listesi mantığından TAMAMEN ayrı — Stickers bir Post
+                // listesi DEĞİL, kendi network/state akışı olan bağımsız bir
+                // grid (bkz. ProfileStickersContent, MediaPickerSheet'in
+                // StickerTab'ıyla AYNI ServiceLocator-doğrudan deseni).
+                item { ProfileStickersContent(isSelf = isSelf) }
+                return@LazyColumn
+            }
+
             val currentPosts = when (selectedTab) {
                 ProfileTab.Posts -> posts
                 ProfileTab.Media -> mediaPosts
                 ProfileTab.Liked -> likedPosts
                 ProfileTab.Saved -> bookmarkedPosts
                 ProfileTab.Archived -> archivedPosts
+                ProfileTab.Stickers -> emptyList() // yukarıda erken dönüldü, buraya HİÇ ulaşılmaz
             }
 
             if (currentPosts.isEmpty()) {
@@ -623,6 +658,186 @@ private fun ProfileContent(
                 }
             }
         }
+    }
+}
+
+/**
+ * "Çıkartmalarım" sekmesi içeriği (2026-08-08, kullanıcı raporu) — web'in
+ * profile.html #panel-stickers'ının native karşılığı. MediaPickerSheet'in
+ * StickerTab'ıyla AYNI desen (ViewModel'siz, ServiceLocator'daki
+ * StickersRepository'yi DOĞRUDAN çağırır — bkz. o dosyanın gerekçesi), EK
+ * olarak yükleme (+ buton, PhotoPicker) ve uzun-basarak kaldırma (SADECE
+ * isSelf'te) eklendi. LazyVerticalGrid, ProfileContent'in KENDİ LazyColumn'u
+ * İÇİNDE tek bir `item{}` olarak yaşadığı için `userScrollEnabled = false` +
+ * sticker sayısına göre HESAPLANMIŞ sabit yükseklik kullanır (nested-scroll
+ * yerine dış LazyColumn'un scroll'una bırakılır — MessageSearchScreen.kt'nin
+ * `animateContentSize` deseniyle AYNI "iç içe lazy sınırı" gerekçesi).
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun ProfileStickersContent(isSelf: Boolean) {
+    val stickersRepository = remember { ServiceLocator.stickersRepository }
+    var stickers by remember { mutableStateOf<List<StickerDto>>(emptyList()) }
+    var loading by remember { mutableStateOf(true) }
+    var errorMsg by remember { mutableStateOf<String?>(null) }
+    var uploading by remember { mutableStateOf(false) }
+    var removeTarget by remember { mutableStateOf<StickerDto?>(null) }
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+
+    suspend fun reload() {
+        loading = true
+        when (val result = stickersRepository.getMyStickers()) {
+            is StickersResult.Success -> {
+                stickers = result.stickers
+                errorMsg = null
+            }
+            is StickersResult.Error -> errorMsg = "Çıkartmalar yüklenemedi"
+        }
+        loading = false
+    }
+
+    LaunchedEffect(Unit) { reload() }
+
+    val pickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia(),
+    ) { uri: Uri? ->
+        if (uri != null) {
+            scope.launch {
+                uploading = true
+                val bytes = withContext(Dispatchers.IO) {
+                    context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                }
+                val mime = context.contentResolver.getType(uri)
+                if (bytes != null) {
+                    when (stickersRepository.createSticker(bytes, mime)) {
+                        is CreateStickerResult.Success -> reload()
+                        is CreateStickerResult.Error ->
+                            errorMsg = "Çıkartma yüklenemedi, lütfen tekrar dene"
+                    }
+                }
+                uploading = false
+            }
+        }
+    }
+
+    Column(modifier = Modifier
+        .fillMaxWidth()
+        .padding(horizontal = 16.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("Çıkartmalarım", style = MaterialTheme.typography.titleMedium)
+            if (isSelf) {
+                IconButton(
+                    onClick = {
+                        pickerLauncher.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                        )
+                    },
+                    enabled = !uploading,
+                ) {
+                    if (uploading) {
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp))
+                    } else {
+                        Icon(Icons.Filled.Add, contentDescription = "Yeni çıkartma yükle")
+                    }
+                }
+            }
+        }
+
+        when {
+            loading -> Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(96.dp),
+                contentAlignment = Alignment.Center,
+            ) { CircularProgressIndicator() }
+            errorMsg != null -> Text(
+                text = errorMsg ?: "",
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(vertical = 24.dp),
+            )
+            stickers.isEmpty() -> Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 32.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = if (isSelf) "Henüz çıkartman yok, + ile yükle" else "Henüz çıkartması yok",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                )
+            }
+            else -> {
+                val columns = 4
+                val cellSize = 80.dp
+                val spacing = 8.dp
+                val rows = (stickers.size + columns - 1) / columns
+                val gridHeight = (cellSize * rows) + (spacing * (rows - 1).coerceAtLeast(0))
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(columns),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(gridHeight),
+                    userScrollEnabled = false,
+                    verticalArrangement = Arrangement.spacedBy(spacing),
+                    horizontalArrangement = Arrangement.spacedBy(spacing),
+                ) {
+                    gridItems(stickers, key = { it.id }) { sticker ->
+                        Box(
+                            modifier = Modifier
+                                .size(cellSize)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(MaterialTheme.colorScheme.surfaceVariant)
+                                .then(
+                                    if (isSelf) {
+                                        Modifier.combinedClickable(
+                                            onClick = {},
+                                            onLongClick = { removeTarget = sticker },
+                                        )
+                                    } else {
+                                        Modifier
+                                    },
+                                ),
+                        ) {
+                            AsyncImage(
+                                model = sticker.imageUrl,
+                                contentDescription = null,
+                                contentScale = ContentScale.Fit,
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(8.dp),
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    val target = removeTarget
+    if (target != null) {
+        AlertDialog(
+            onDismissRequest = { removeTarget = null },
+            title = { Text("Çıkartmayı kaldır") },
+            text = { Text("Bu çıkartmayı listenden kaldırmak istiyor musun?") },
+            confirmButton = {
+                TextButton(onClick = {
+                    removeTarget = null
+                    scope.launch {
+                        stickersRepository.removeSticker(target.id)
+                        reload()
+                    }
+                }) { Text("Kaldır") }
+            },
+            dismissButton = {
+                TextButton(onClick = { removeTarget = null }) { Text("Vazgeç") }
+            },
+        )
     }
 }
 
