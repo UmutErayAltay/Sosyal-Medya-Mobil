@@ -11,6 +11,7 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -25,10 +26,14 @@ import androidx.compose.foundation.pager.VerticalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.SmartDisplay
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -90,10 +95,13 @@ fun ReelsScreen(
     val loading by viewModel.loading.collectAsState()
     val error by viewModel.error.collectAsState()
 
+    val context = LocalContext.current
     LaunchedEffect(Unit) {
         viewModel.events.collect { event ->
             when (event) {
                 is ReelsEvent.SessionExpired -> onSessionExpired()
+                is ReelsEvent.ShowToast ->
+                    android.widget.Toast.makeText(context, event.message, android.widget.Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -184,6 +192,9 @@ fun ReelsScreen(
                         isActive = pagerState.currentPage == page,
                         onLikeClick = { viewModel.toggleLike(it.id) },
                         onCommentClick = { onNavigateToPostDetail(it.id) },
+                        onBookmarkClick = { viewModel.toggleBookmark(it.id) },
+                        onRepostClick = { viewModel.repost(it.id) },
+                        onSessionExpired = onSessionExpired,
                     )
                 }
             }
@@ -198,8 +209,29 @@ fun ReelsScreen(
  * release edilir (bellek sızıntısı/arka planda çalan video olmaması için).
  */
 @Composable
-private fun ReelPage(post: Post, isActive: Boolean, onLikeClick: (Post) -> Unit, onCommentClick: (Post) -> Unit) {
+private fun ReelPage(
+    post: Post,
+    isActive: Boolean,
+    onLikeClick: (Post) -> Unit,
+    onCommentClick: (Post) -> Unit,
+    // 2026-08-09 (kullanıcı isteği: "reels'lere gönderme, kaydetme, repost
+    // gibi butonlar gelsin") — PostCard.kt'nin AYNI üç aksiyonu, AYNI
+    // gerekçeyle bu composable'a KENDİ yerel state'i olarak eklendi
+    // (showShareSheet/showCollectionPicker — PostCard'ın DIŞARI hiç
+    // taşımadığı, kendi içinde tuttuğu dialog state'iyle TUTARLI).
+    onBookmarkClick: (Post) -> Unit,
+    onRepostClick: (Post) -> Unit,
+    onSessionExpired: () -> Unit,
+) {
     val videoUrl = post.videoUrl
+    var showShareSheet by remember(post.id) { mutableStateOf(false) }
+    var showCollectionPicker by remember(post.id) { mutableStateOf(false) }
+    // PostCard.kt'deki bookmarkedOverride ile AYNI desen — koleksiyon
+    // seçiciden dönen sonucu, sunucudan yeni [Post] gelene kadar yerel
+    // olarak yansıtır (ReelsViewModel'in KENDİ toggleBookmark'ı zaten
+    // _posts'u güncelliyor, bu override SADECE koleksiyon-seçici yolu için).
+    var bookmarkedOverride by remember(post.id, post.bookmarkedByMe) { mutableStateOf<Boolean?>(null) }
+    val isBookmarked = bookmarkedOverride ?: post.bookmarkedByMe
 
     // Cift-tiklama = Instagram/TikTok'taki AYNI davranis: sadece BEĞENMEZ hale
     // GETIRMEZ (zaten begenilmisse tekrar begenmeye calismaz), ekranin
@@ -288,7 +320,16 @@ private fun ReelPage(post: Post, isActive: Boolean, onLikeClick: (Post) -> Unit,
                 ),
         )
 
-        ReelOverlay(post = post, onLikeClick = onLikeClick, onCommentClick = onCommentClick)
+        ReelOverlay(
+            post = post,
+            isBookmarked = isBookmarked,
+            onLikeClick = onLikeClick,
+            onCommentClick = onCommentClick,
+            onBookmarkClick = { onBookmarkClick(post) },
+            onBookmarkLongClick = { showCollectionPicker = true },
+            onRepostClick = { onRepostClick(post) },
+            onShareClick = { showShareSheet = true },
+        )
 
         // Cift-tiklama kalp-pop overlayi — sabit bir Color.White YERINE
         // colorScheme.* renkleri kullanildi (bkz. ReelOverlay yorumundaki
@@ -320,6 +361,24 @@ private fun ReelPage(post: Post, isActive: Boolean, onLikeClick: (Post) -> Unit,
             }
         }
     }
+
+    if (showShareSheet) {
+        PostShareSheet(
+            postId = post.id,
+            onDismiss = { showShareSheet = false },
+            onSessionExpired = onSessionExpired,
+        )
+    }
+
+    if (showCollectionPicker) {
+        BookmarkCollectionPickerSheet(
+            postId = post.id,
+            alreadyBookmarked = isBookmarked,
+            onDismiss = { showCollectionPicker = false },
+            onSessionExpired = onSessionExpired,
+            onBookmarked = { bookmarkedOverride = it },
+        )
+    }
 }
 
 /**
@@ -333,8 +392,18 @@ private fun ReelPage(post: Post, isActive: Boolean, onLikeClick: (Post) -> Unit,
  * ("SADECE colorScheme.* renkleri") HEM light HEM dark temada okunabilirlik
  * garanti ediliyor (onSurface tanım gereği surface'e karşı kontrastlı).
  */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-private fun ReelOverlay(post: Post, onLikeClick: (Post) -> Unit, onCommentClick: (Post) -> Unit) {
+private fun ReelOverlay(
+    post: Post,
+    isBookmarked: Boolean,
+    onLikeClick: (Post) -> Unit,
+    onCommentClick: (Post) -> Unit,
+    onBookmarkClick: () -> Unit,
+    onBookmarkLongClick: () -> Unit,
+    onRepostClick: () -> Unit,
+    onShareClick: () -> Unit,
+) {
     val scrim = MaterialTheme.colorScheme.surface.copy(alpha = 0.6f)
 
     Row(
@@ -449,6 +518,46 @@ private fun ReelOverlay(post: Post, onLikeClick: (Post) -> Unit, onCommentClick:
                     text = "${post.commentCount}",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurface,
+                )
+            }
+            // Yeniden paylaş/gönder/kaydet — PostCard.kt'nin AYNI üç ikonu
+            // (Icons.Filled.Repeat / AutoMirrored.Filled.Send /
+            // Filled.Bookmark-BookmarkBorder), like/comment sütunuyla AYNI
+            // dikey düzende, scrim+onSurface renk kuralı KORUNDU.
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.clickable { onRepostClick() },
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Repeat,
+                    contentDescription = "Yeniden paylaş",
+                    tint = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.size(26.dp),
+                )
+            }
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.clickable { onShareClick() },
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.Send,
+                    contentDescription = "Gönder",
+                    tint = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.size(26.dp),
+                )
+            }
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.combinedClickable(
+                    onClick = onBookmarkClick,
+                    onLongClick = onBookmarkLongClick,
+                ),
+            ) {
+                Icon(
+                    imageVector = if (isBookmarked) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
+                    contentDescription = if (isBookmarked) "Kaydedildi" else "Kaydet",
+                    tint = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.size(26.dp),
                 )
             }
         }

@@ -40,6 +40,7 @@ import com.umuterayaltay.sosyal.nativeapp.ServiceLocator
 import com.umuterayaltay.sosyal.nativeapp.network.UserSearchDto
 import com.umuterayaltay.sosyal.nativeapp.repository.SearchResult
 import com.umuterayaltay.sosyal.nativeapp.repository.SharePostResult
+import com.umuterayaltay.sosyal.nativeapp.repository.ShareTargetsResult
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -54,6 +55,12 @@ import kotlinx.coroutines.launch
  * satır GÖRÜNÜMÜ ForwardTargetScreen'deki ile AYNI dilde (UserRow REUSE edilir,
  * yeni bir liste bileşeni İCAT EDİLMEDİ), SADECE veri kaynağı ve çoklu-seçim
  * (checkbox) farklı.
+ *
+ * 2026-08-09: sheet açılır açılmaz (hiçbir şey yazılmadan) GET
+ * /messages/share-targets ile varsayılan öneri listesi (takip edilenler)
+ * gösterilir — web'in AYNISI (app/messaging/creation.py::share_targets()).
+ * 2+ karakter yazılınca DiscoverRepository araması devreye girer, silinince
+ * öneri listesine geri dönülür.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -75,6 +82,27 @@ fun PostShareSheet(
     var selectedIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     var note by remember { mutableStateOf("") }
     var sending by remember { mutableStateOf(false) }
+
+    // 2026-08-09 (kullanıcı isteği: Instagram'daki gibi "en çok konuştuğun/
+    // son zamanlarda çok konuştuğun" varsayılan öneri listesi) — sheet
+    // açılır açılmaz, hiçbir şey yazılmadan, GET /messages/share-targets
+    // (q'suz -> takip edilenler) çağrılır. Arama sonucu (results) İLE AYNI
+    // state'te TUTULMAZ (query silinince kullanıcı tekrar öneri listesine
+    // dönsün diye ayrı tutuluyor).
+    var suggested by remember { mutableStateOf<List<UserSearchDto>>(emptyList()) }
+    var loadingSuggested by remember { mutableStateOf(true) }
+    LaunchedEffect(Unit) {
+        when (val result = sharesRepository.getShareTargets()) {
+            is ShareTargetsResult.Success -> suggested = result.users
+            is ShareTargetsResult.Error -> {
+                if (result.code == "unauthorized") {
+                    tokenStore.clearToken()
+                    onSessionExpired()
+                }
+            }
+        }
+        loadingSuggested = false
+    }
 
     // DiscoverScreen'deki AYNI ~400ms debounce gerekçesi — her tuş vuruşunda
     // backend bombalanmasın (burada ayrı bir ViewModel/StateFlow debounce
@@ -100,6 +128,10 @@ fun PostShareSheet(
         searching = false
     }
 
+    // query boşken varsayılan öneriler, 2+ karakterde gerçek arama sonuçları.
+    val displayedUsers = if (query.length < 2) suggested else results
+    val isLoadingList = if (query.length < 2) loadingSuggested else searching
+
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp)) {
             Text(text = "Postu paylaş", style = MaterialTheme.typography.titleMedium)
@@ -116,24 +148,24 @@ fun PostShareSheet(
             )
 
             when {
-                searching -> Box(
+                isLoadingList -> Box(
                     modifier = Modifier.fillMaxWidth().height(120.dp),
                     contentAlignment = Alignment.Center,
                 ) { CircularProgressIndicator() }
-                query.length < 2 -> Text(
-                    text = "Paylaşmak için en az 2 harf yaz",
+                displayedUsers.isEmpty() && query.length < 2 -> Text(
+                    text = "Henüz takip ettiğin kimse yok — aramak için yaz",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(vertical = 24.dp),
                 )
-                results.isEmpty() -> Text(
+                displayedUsers.isEmpty() -> Text(
                     text = "Kullanıcı bulunamadı",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(vertical = 24.dp),
                 )
                 else -> LazyColumn(modifier = Modifier.heightIn(max = 280.dp)) {
-                    items(results, key = { it.id }) { user ->
+                    items(displayedUsers, key = { it.id }) { user ->
                         val isSelected = selectedIds.contains(user.id)
                         Row(
                             modifier = Modifier

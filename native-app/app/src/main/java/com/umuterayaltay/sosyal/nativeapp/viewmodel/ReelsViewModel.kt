@@ -5,6 +5,8 @@ import androidx.lifecycle.viewModelScope
 import com.umuterayaltay.sosyal.nativeapp.ServiceLocator
 import com.umuterayaltay.sosyal.nativeapp.repository.Post
 import com.umuterayaltay.sosyal.nativeapp.repository.ReelsPageResult
+import com.umuterayaltay.sosyal.nativeapp.repository.RepostResult
+import com.umuterayaltay.sosyal.nativeapp.repository.ToggleBookmarkResult
 import com.umuterayaltay.sosyal.nativeapp.repository.ToggleLikeResult
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -15,6 +17,10 @@ import kotlinx.coroutines.launch
 
 sealed class ReelsEvent {
     data object SessionExpired : ReelsEvent()
+    // 2026-08-09 (kullanıcı isteği: "reels'lere gönderme, kaydetme, repost
+    // gibi butonlar gelsin") — FeedEvent.ShowToast ile AYNI amaç (repost
+    // başarı/hata geri bildirimi, bkz. FeedViewModel.repost() yorumu).
+    data class ShowToast(val message: String) : ReelsEvent()
 }
 
 /**
@@ -26,6 +32,10 @@ class ReelsViewModel : ViewModel() {
 
     private val reelsRepository = ServiceLocator.reelsRepository
     private val interactionsRepository = ServiceLocator.interactionsRepository
+    // 2026-08-09: kaydet/repost — FeedViewModel'in AYNI repository'leri,
+    // YENİ bir soyutlama İCAT EDİLMEDİ.
+    private val bookmarksRepository = ServiceLocator.bookmarksRepository
+    private val repostsRepository = ServiceLocator.repostsRepository
     private val tokenStore = ServiceLocator.tokenStore
 
     private val _posts = MutableStateFlow<List<Post>>(emptyList())
@@ -104,6 +114,58 @@ class ReelsViewModel : ViewModel() {
                 }
             }
         }
+    }
+
+    /** ReelOverlay'deki kaydet ikonuna tıklanınca — FeedViewModel.toggleBookmark()
+     * ile AYNI mantık, ama Room-backed FeedRepository.updateBookmarkState()
+     * YOK (Reels'in KENDİ kalıcı önbelleği yok, sayfalama sadece [_posts]
+     * StateFlow'unda tutuluyor) — bu yüzden sonuç DOĞRUDAN [_posts]'a yazılır
+     * (toggleLike() ile AYNI yerel-güncelleme deseni). */
+    fun toggleBookmark(postId: String) {
+        viewModelScope.launch {
+            when (val result = bookmarksRepository.toggleBookmark(postId)) {
+                is ToggleBookmarkResult.Success -> {
+                    _posts.value = _posts.value.map { post ->
+                        if (post.id == postId) post.copy(bookmarkedByMe = result.bookmarked) else post
+                    }
+                }
+                is ToggleBookmarkResult.Error -> {
+                    if (result.code == "unauthorized") {
+                        tokenStore.clearToken()
+                        _events.emit(ReelsEvent.SessionExpired)
+                    }
+                    // Diğer hatalar sessizce yutulur - toggleLike() ile AYNI gerekçe.
+                }
+            }
+        }
+    }
+
+    /** ReelOverlay'deki repost ikonuna tıklanınca — FeedViewModel.repost() ile
+     * AYNI mantık (onay diyaloğu YOK, tek-tık hızlı repost). */
+    fun repost(postId: String) {
+        viewModelScope.launch {
+            when (val result = repostsRepository.repost(postId)) {
+                is RepostResult.Success -> _events.emit(ReelsEvent.ShowToast("Yeniden paylaşıldı"))
+                is RepostResult.Error -> {
+                    if (result.code == "unauthorized") {
+                        tokenStore.clearToken()
+                        _events.emit(ReelsEvent.SessionExpired)
+                    } else {
+                        _events.emit(ReelsEvent.ShowToast(mapRepostError(result.code)))
+                    }
+                }
+            }
+        }
+    }
+
+    private fun mapRepostError(code: String?): String = when (code) {
+        "already_reposted" -> "Zaten yeniden paylaştın"
+        "not_found" -> "Gönderi bulunamadı"
+        "not_public", "private_account" -> "Bu gönderi yeniden paylaşılamaz"
+        "blocked" -> "Bu işlem engellenmiş bir kullanıcı yüzünden yapılamıyor"
+        "not_available" -> "Bu gönderi şu an yeniden paylaşılamıyor"
+        "network_error" -> "Bağlantı hatası — internet bağlantınızı kontrol edin"
+        else -> "Yeniden paylaşılamadı, lütfen tekrar dene"
     }
 
     private fun mapErrorMessage(code: String?): String = when (code) {

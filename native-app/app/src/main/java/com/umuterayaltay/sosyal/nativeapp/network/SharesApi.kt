@@ -2,8 +2,10 @@ package com.umuterayaltay.sosyal.nativeapp.network
 
 import retrofit2.Response
 import retrofit2.http.Body
+import retrofit2.http.GET
 import retrofit2.http.POST
 import retrofit2.http.Path
+import retrofit2.http.Query
 
 /**
  * Post paylaşımı (DM'e gönder) — app/api_v1/messaging.py api_share_post()
@@ -24,4 +26,12 @@ interface SharesApi {
         @Path("postId") postId: String,
         @Body body: SharePostRequest,
     ): Response<SharePostResponse>
+
+    // 2026-08-09 (kullanıcı isteği: "gönderme kısmında en çok konuştuğun,
+    // son zamanlarda çok konuştuğun gibi profiller gözüksün") — web'in
+    // AYNISI (app/messaging/creation.py::share_targets()), api_v1/messaging.py'e
+    // birebir mirror'landı: q boşsa takip edilenler listesi (varsayılan
+    // öneri), q 2+ karakterse username araması — düz JSON dizisi döner.
+    @GET("messages/share-targets")
+    suspend fun getShareTargets(@Query("q") q: String? = null): Response<List<UserSearchDto>>
 }
