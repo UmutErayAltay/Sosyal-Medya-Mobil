@@ -407,11 +407,12 @@ fun AppNavHost() {
                 // Grup sesli/görüntülü arama (native görev — LiveKit) —
                 // "conversation/{conversationId}" route'unun HEMEN yanında,
                 // AYNI conversationId argüman deseniyle tanımlı "call/
-                // {conversationId}" route'una gider (bkz. aşağıdaki
-                // composable("call/{conversationId}")). SADECE ConversationScreen'in
-                // TopAppBar'ındaki (isGroup==true iken görünen) arama ikonundan
-                // erişilir.
-                onCallClick = { navController.navigate("call/$conversationId") },
+                // {conversationId}/{isVideo}" route'una gider (bkz. aşağıdaki
+                // composable). SADECE ConversationScreen'in TopAppBar'ındaki
+                // (isGroup==true iken görünen) AYRI sesli/görüntülü arama
+                // ikonlarından erişilir (2026-08-09 kullanıcı raporu: "grupta
+                // sesli arama butonu yok, sadece görüntülü var").
+                onCallClick = { isVideo -> navController.navigate("call/$conversationId/$isVideo") },
                 // 1:1 sesli/görüntülü arama (native görev — WebRTC + Supabase
                 // Realtime broadcast) — "call/{conversationId}"nin (grup, LiveKit)
                 // HEMEN yanında, AYRI "oneOnOneCall/..." rotasına gider.
@@ -435,12 +436,17 @@ fun AppNavHost() {
             )
         }
         composable(
-            route = "call/{conversationId}",
-            arguments = listOf(navArgument("conversationId") { type = NavType.StringType }),
+            route = "call/{conversationId}/{isVideo}",
+            arguments = listOf(
+                navArgument("conversationId") { type = NavType.StringType },
+                navArgument("isVideo") { type = NavType.BoolType },
+            ),
         ) { backStackEntry ->
             val conversationId = backStackEntry.arguments?.getString("conversationId") ?: return@composable
+            val isVideo = backStackEntry.arguments?.getBoolean("isVideo") ?: true
             CallScreen(
                 conversationId = conversationId,
+                isVideo = isVideo,
                 onNavigateBack = { navController.navigateUp() },
                 onSessionExpired = {
                     navController.navigate(ROUTE_LOGIN) {

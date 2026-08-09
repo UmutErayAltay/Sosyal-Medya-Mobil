@@ -9,6 +9,8 @@ import com.umuterayaltay.sosyal.nativeapp.ServiceLocator
 import com.umuterayaltay.sosyal.nativeapp.repository.CallTokenResult
 import io.livekit.android.LiveKit
 import io.livekit.android.room.Room
+import io.livekit.android.room.track.LocalVideoTrack
+import io.livekit.android.room.track.Track
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -54,7 +56,16 @@ sealed class CallEvent {
  * group_calls_not_configured / 404 not_found / 401 unauthorized / 500
  * token_generation_failed (bkz. MessagingRepository.getCallToken() yorumu).
  */
-class CallViewModel(private val conversationId: String) : ViewModel() {
+class CallViewModel(
+    private val conversationId: String,
+    // 2026-08-09 (kullanıcı raporu: "grupta sesli arama butonu yok, sadece
+    // görüntülü var") — 1:1'in OutgoingRinging/AcceptIncoming'deki isVideo
+    // parametresiyle AYNI gerekçe: sesli arama için kamera BAŞTAN kapalı
+    // başlar, kullanıcı isterse aramanın ORTASINDA toggleCamera() ile
+    // açabilir (LiveKit'te sesli/görüntülü arasında SERT bir ayrım yok,
+    // sadece başlangıç durumu farklı).
+    private val initialVideo: Boolean = true,
+) : ViewModel() {
 
     private val messagingRepository = ServiceLocator.messagingRepository
     private val tokenStore = ServiceLocator.tokenStore
@@ -65,8 +76,29 @@ class CallViewModel(private val conversationId: String) : ViewModel() {
     private val _isMicEnabled = MutableStateFlow(true)
     val isMicEnabled: StateFlow<Boolean> = _isMicEnabled.asStateFlow()
 
-    private val _isCameraEnabled = MutableStateFlow(true)
+    private val _isCameraEnabled = MutableStateFlow(initialVideo)
     val isCameraEnabled: StateFlow<Boolean> = _isCameraEnabled.asStateFlow()
+
+    // Ön/arka kamera değiştirme (2026-08-09) — 1:1'in WebRtcCallManager'ındaki
+    // AYNI ihtiyaç, ama LiveKit'in LocalVideoTrack.switchCamera() 1:1'in
+    // CameraVideoCapturer.switchCamera()'sının AKSİNE dışa açık bir
+    // "isFrontFacing" onay callback'i SUNMUYOR (kendi içinde options.position'ı
+    // GÜNCELLİYOR ama bunu StateFlow gibi gözlemlenebilir kılmıyor) — bu yüzden
+    // burada İYİMSER bir toggle yapılıyor (standart 2-kameralı — ön+arka —
+    // cihazlarda DOĞRU, 3+ kameralı bazı egzotik cihazlarda YANLIŞ olabilir,
+    // kabul edilebilir bir sınır: switchCamera() zaten deviceId/position
+    // verilmeden "bir SONRAKİ kameraya" geçiyor, biz sadece hangi YÖNDE
+    // olduğumuzu TAHMİN ediyoruz).
+    private val _isFrontCamera = MutableStateFlow(true)
+    val isFrontCamera: StateFlow<Boolean> = _isFrontCamera.asStateFlow()
+
+    fun switchCamera() {
+        val activeRoom = room ?: return
+        val track = activeRoom.localParticipant.getTrackPublication(Track.Source.CAMERA)?.track as? LocalVideoTrack
+            ?: return
+        track.switchCamera()
+        _isFrontCamera.value = !_isFrontCamera.value
+    }
 
     // Ses çıkışı seçimi — Room'un KENDİ audioSwitchHandler'ı (LiveKit SDK
     // built-in, io.livekit.android.audio.AudioSwitchHandler) kullanılıyor,
@@ -120,10 +152,10 @@ class CallViewModel(private val conversationId: String) : ViewModel() {
             val newRoom = LiveKit.create(context.applicationContext)
             newRoom.connect(url, token)
             newRoom.localParticipant.setMicrophoneEnabled(true)
-            newRoom.localParticipant.setCameraEnabled(true)
+            newRoom.localParticipant.setCameraEnabled(initialVideo)
             room = newRoom
             _isMicEnabled.value = true
-            _isCameraEnabled.value = true
+            _isCameraEnabled.value = initialVideo
             // Room bağlandığı anda audioSwitchHandler'ı KENDİSİ start eder —
             // biz sadece dinleyip mevcut listeyi/seçimi StateFlow'a yansıtıyoruz.
             // Nullable: Room varsayılan olarak AudioSwitchHandler kullanır ama
@@ -217,9 +249,12 @@ class CallViewModel(private val conversationId: String) : ViewModel() {
 
 /** CallViewModel constructor'ı conversationId parametresi aldığı için
  * ConversationViewModelFactory ile AYNI desen. */
-class CallViewModelFactory(private val conversationId: String) : ViewModelProvider.Factory {
+class CallViewModelFactory(
+    private val conversationId: String,
+    private val initialVideo: Boolean = true,
+) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
-        return CallViewModel(conversationId) as T
+        return CallViewModel(conversationId, initialVideo) as T
     }
 }

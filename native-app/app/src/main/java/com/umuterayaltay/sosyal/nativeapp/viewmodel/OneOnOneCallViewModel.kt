@@ -28,9 +28,14 @@ class OneOnOneCallViewModel : ViewModel() {
     val isCameraEnabled = sessionManager.isCameraEnabled
     val availableAudioDevices = sessionManager.availableAudioDevices
     val selectedAudioDevice = sessionManager.selectedAudioDevice
+    val isFrontCamera = sessionManager.isFrontCamera
 
     fun selectAudioDevice(device: AudioDevice) {
         sessionManager.selectAudioDevice(device)
+    }
+
+    fun switchCamera() {
+        sessionManager.switchCamera()
     }
 
     private var outgoingStarted = false

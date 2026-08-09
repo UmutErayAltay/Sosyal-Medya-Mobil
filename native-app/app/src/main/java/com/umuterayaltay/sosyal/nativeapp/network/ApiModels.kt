@@ -446,6 +446,10 @@ data class MessageDto(
     // 2026-08-08: mesajlarda video gönderme — backend messages.video_url
     // (migration_message_video.sql), image_url'den AYRI bir kolon.
     @SerializedName("video_url") val videoUrl: String? = null,
+    // 2026-08-09: sesli mesaj — backend messages.audio_url (zaten web'in
+    // kullandığı, migration'ı uygulanmış kolon), image_url/video_url'den
+    // AYRI (bkz. app/api_v1/messaging.py api_send_message() yorumu).
+    @SerializedName("audio_url") val audioUrl: String? = null,
     // Faz 5 Dalga 1B: düzenle/sabitle/ilet — okuma yolunda backend değişikliği
     // GEREKMEDİ (api_message_conversation_detail() zaten select("*") kullanıyor),
     // burada alan eklemek yeterli (bkz. app/api_v1/messaging.py yorumu).

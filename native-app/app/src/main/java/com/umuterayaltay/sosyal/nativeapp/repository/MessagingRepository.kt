@@ -239,6 +239,17 @@ class MessagingRepository(
         // geçerse diye son bir güvenlik ağı, normal akışta HİÇ kullanılmaz.
         imageFileName: String? = null,
         videoFileName: String? = null,
+        // 2026-08-09: sesli mesaj — image/videoBytes ile AYNI desen, backend'in
+        // YENİ "audio" multipart alanına gider (bkz. app/api_v1/messaging.py
+        // api_send_message() — form alanı adı `audio`, izin verilen uzantı/MIME
+        // SABİT: .webm/.ogg/.mp3/.m4a/.wav, audio/webm/video/webm/audio/ogg/
+        // audio/mpeg/audio/mp4/audio/wav/audio/x-wav, 10MB üst sınır — bkz.
+        // app/storage_helper.py ALLOWED_AUDIO_*). ConversationViewModel'in
+        // MediaRecorder çıktısı `.m4a`/`audio/mp4` kullanır (`audio/m4a` bu
+        // listede YOK).
+        audioBytes: ByteArray? = null,
+        audioMimeType: String? = null,
+        audioFileName: String? = null,
     ): SendMessageResult =
         withContext(Dispatchers.IO) {
             try {
@@ -252,6 +263,10 @@ class MessagingRepository(
                     val videoBody = bytes.toRequestBody((videoMimeType ?: "video/mp4").toMediaTypeOrNull())
                     MultipartBody.Part.createFormData("video", videoFileName ?: "upload.mp4", videoBody)
                 }
+                val audioPart: MultipartBody.Part? = audioBytes?.let { bytes ->
+                    val audioBody = bytes.toRequestBody((audioMimeType ?: "audio/mp4").toMediaTypeOrNull())
+                    MultipartBody.Part.createFormData("audio", audioFileName ?: "upload.m4a", audioBody)
+                }
                 val stickerIdBody: RequestBody? = stickerId?.toRequestBody("text/plain".toMediaTypeOrNull())
                 val gifUrlBody: RequestBody? = gifUrl?.toRequestBody("text/plain".toMediaTypeOrNull())
 
@@ -261,6 +276,7 @@ class MessagingRepository(
                     replyToBody,
                     imagePart,
                     videoPart,
+                    audioPart,
                     stickerIdBody,
                     gifUrlBody,
                 )

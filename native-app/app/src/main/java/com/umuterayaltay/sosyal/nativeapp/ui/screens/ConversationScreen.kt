@@ -1,5 +1,7 @@
 package com.umuterayaltay.sosyal.nativeapp.ui.screens
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -14,6 +16,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -42,6 +45,9 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Gif
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.MoreVert
@@ -84,14 +90,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
@@ -104,6 +113,7 @@ import com.umuterayaltay.sosyal.nativeapp.network.StickerDto
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.ConversationEvent
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.ConversationViewModel
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.ConversationViewModelFactory
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 // Madde 9 (kullanıcı raporu: chatte paylaşılan post'a tıklanmıyor) — backend'in
@@ -173,8 +183,11 @@ fun ConversationScreen(
     // Grup sesli/görüntülü arama (native görev — LiveKit) — VARSAYILAN
     // DEĞERLİ ({}), onNavigateToPostDetail ile AYNI gerekçe (henüz
     // bağlanmamış çağrı yerleri değişmeden derlenmeye devam eder).
-    // AppNavHost.kt'de yeni "call/{conversationId}" route'una bağlanır.
-    onCallClick: () -> Unit = {},
+    // AppNavHost.kt'de "call/{conversationId}/{isVideo}" route'una bağlanır.
+    // 2026-08-09 (kullanıcı raporu: "grupta sesli arama butonu yok, sadece
+    // görüntülü var") — [isVideo] parametresi eklendi, 1:1'in AYNI ayrı
+    // sesli/görüntülü buton çifti deseni burada da uygulanıyor.
+    onCallClick: (isVideo: Boolean) -> Unit = {},
     // 1:1 sesli/görüntülü arama (native görev — WebRTC + Supabase Realtime
     // broadcast, LiveKit grup aramasından TAMAMEN AYRI) — SADECE isGroup==false
     // iken görünen İKİ AYRI ikon (sesli+görüntülü, bkz. aşağıdaki TopAppBar
@@ -213,6 +226,28 @@ fun ConversationScreen(
     val myUserId by viewModel.myUserId.collectAsState()
     val selectedImageUri by viewModel.selectedImageUri.collectAsState()
     val selectedVideoUri by viewModel.selectedVideoUri.collectAsState()
+    val isRecordingAudio by viewModel.isRecordingAudio.collectAsState()
+    val recordingElapsedMs by viewModel.recordingElapsedMs.collectAsState()
+
+    // Sesli mesaj kaydı için RECORD_AUDIO izni — OneOnOneCallScreen/CallScreen'deki
+    // AYNI çalışma-zamanı izin deseni (manifest'te ZATEN deklare edilmiş, bkz.
+    // AndroidManifest.xml, ama API 23+'ta ayrıca kullanıcıdan İZİN İSTENMELİ).
+    // Bu ekran görüntülü arama ekranlarının AKSİNE açılışta izin İSTEMEZ —
+    // SADECE mikrofon butonuna basılı tutulunca, tam o an gerekince istenir
+    // (kullanıcı hiç sesli mesaj kaydetmeden sohbeti açtığında gereksiz bir
+    // izin diyalogu görmesin diye).
+    var hasAudioPermission by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
+                PackageManager.PERMISSION_GRANTED,
+        )
+    }
+    val audioPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        hasAudioPermission = granted
+        if (granted) viewModel.startRecording(context)
+    }
 
     // ---- Faz 5 Dalga 1B state'leri ----
     val pinnedMessage by viewModel.pinnedMessage.collectAsState()
@@ -408,9 +443,14 @@ fun ConversationScreen(
                                 // Grup sesli/görüntülü arama (native görev — LiveKit) —
                                 // SADECE grup konuşmalarında görünür (1:1'de bu
                                 // endpoint/ekran hiç kullanılmaz, bkz. CallScreen
-                                // dosya yorumu).
-                                IconButton(onClick = onCallClick) {
-                                    Icon(Icons.Filled.VideoCall, contentDescription = "Sesli/görüntülü arama")
+                                // dosya yorumu). 1:1'deki AYRI sesli/görüntülü
+                                // buton çiftiyle AYNI desen (kullanıcı raporu:
+                                // "sadece görüntülü arama var normal arama yok").
+                                IconButton(onClick = { onCallClick(false) }) {
+                                    Icon(Icons.Filled.Call, contentDescription = "Sesli arama")
+                                }
+                                IconButton(onClick = { onCallClick(true) }) {
+                                    Icon(Icons.Filled.VideoCall, contentDescription = "Görüntülü arama")
                                 }
                                 IconButton(onClick = onManageGroupClick) {
                                     Icon(Icons.Filled.Groups, contentDescription = "Grubu Yönet")
@@ -539,6 +579,17 @@ fun ConversationScreen(
                     onImageSelected = viewModel::onImageSelected,
                     selectedVideoUri = selectedVideoUri,
                     onVideoSelected = viewModel::onVideoSelected,
+                    isRecordingAudio = isRecordingAudio,
+                    recordingElapsedMs = recordingElapsedMs,
+                    onStartRecording = {
+                        if (hasAudioPermission) {
+                            viewModel.startRecording(context)
+                        } else {
+                            audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                        }
+                    },
+                    onStopRecordingAndSend = { viewModel.stopRecordingAndSend(context) },
+                    onCancelRecording = viewModel::cancelRecording,
                 )
             }
         },
@@ -963,6 +1014,21 @@ private fun MessageBubble(
                                     .clip(MaterialTheme.shapes.medium),
                             )
                         }
+                        // Sesli mesaj (2026-08-09) — image_url/video_url ile AYNI
+                        // desen/konum, AYRI bir kolon (audio_url).
+                        val audioUrl = message.audioUrl
+                        if (!audioUrl.isNullOrBlank()) {
+                            MessageAudioPlayer(
+                                audioUrl = audioUrl,
+                                modifier = Modifier.padding(
+                                    top = if (replyTo != null || !imageUrl.isNullOrBlank() || !videoUrl.isNullOrBlank()) {
+                                        6.dp
+                                    } else {
+                                        0.dp
+                                    },
+                                ),
+                            )
+                        }
                         // Sticker — kullanıcı raporu: mesajlarda hiç görünmüyordu (kök
                         // neden: MessageDto.sticker bilerek Any? tipindeydi, bkz.
                         // ApiModels.kt). Görsel ekiyle AYNI desende (AsyncImage), ama
@@ -1141,6 +1207,14 @@ private fun ConversationInputBar(
     onImageSelected: (Uri?) -> Unit,
     selectedVideoUri: Uri?,
     onVideoSelected: (Uri?) -> Unit,
+    // 2026-08-09: sesli mesaj — WhatsApp'ın "metin boşken mikrofon, doluyken
+    // gönder" ikili buton deseni. [isRecordingAudio]/[recordingElapsedMs]
+    // ConversationViewModel'in AKTİF kayıt state'i (bkz. o dosyanın yorumu).
+    isRecordingAudio: Boolean,
+    recordingElapsedMs: Long,
+    onStartRecording: () -> Unit,
+    onStopRecordingAndSend: () -> Unit,
+    onCancelRecording: () -> Unit,
 ) {
     // CreatePostScreen'deki AYNI Photo Picker deseni — seçilen Uri ViewModel'e
     // (ConversationViewModel.selectedImageUri) bildirilir, bu composable
@@ -1282,6 +1356,46 @@ private fun ConversationInputBar(
                     }
                 }
             }
+            if (isRecordingAudio) {
+                // WhatsApp'ın "kayıt sürüyor" görünümü — metin/medya butonları
+                // GİZLENİR, sadece kayıt göstergesi + iptal/gönder kalır.
+                // Kaydırarak-iptal (slide-to-cancel) BİLEREK yok — açık "X"
+                // butonu daha basit/güvenilir bir MVP (kayan parmak gesture'ı
+                // bu turun kapsamı DIŞI).
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    IconButton(onClick = onCancelRecording) {
+                        Icon(Icons.Filled.Close, contentDescription = "Kaydı iptal et")
+                    }
+                    Icon(
+                        imageVector = Icons.Filled.Mic,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(horizontal = 4.dp),
+                    )
+                    val elapsedSec = recordingElapsedMs / 1000
+                    Text(
+                        text = "${elapsedSec / 60}:${(elapsedSec % 60).toString().padStart(2, '0')}",
+                        style = MaterialTheme.typography.bodyLarge,
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(start = 8.dp),
+                    )
+                    IconButton(
+                        onClick = onStopRecordingAndSend,
+                        colors = IconButtonDefaults.iconButtonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary,
+                        ),
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Gönder")
+                    }
+                }
+            } else {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1335,18 +1449,48 @@ private fun ConversationInputBar(
                     maxLines = 4,
                 )
                 val canSend = sendText.isNotBlank() || selectedImageUri != null || selectedVideoUri != null
-                IconButton(
-                    onClick = onSend,
-                    enabled = canSend,
-                    colors = IconButtonDefaults.iconButtonColors(
-                        containerColor = if (canSend) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                        contentColor = if (canSend) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                        disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                        disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    ),
-                ) {
-                    Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Gönder")
+                if (canSend) {
+                    IconButton(
+                        onClick = onSend,
+                        colors = IconButtonDefaults.iconButtonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary,
+                        ),
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Gönder")
+                    }
+                } else {
+                    // 2026-08-09 (kullanıcı isteği: "sesli mesaj gibi
+                    // özellikleri getirelim") — metin/medya YOKKEN Gönder
+                    // butonu yerine WhatsApp'taki gibi basılı-tut mikrofon.
+                    // IconButton'ın KENDİ clickable'ı (tıklama) YERİNE ham
+                    // pointerInput+detectTapGestures kullanıldı — basılı
+                    // TUTMA süresini (onPress/tryAwaitRelease) yakalamak
+                    // için, sıradan onClick sadece tek anlık tıklamayı verir.
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                            .pointerInput(Unit) {
+                                detectTapGestures(
+                                    onPress = {
+                                        onStartRecording()
+                                        val released = tryAwaitRelease()
+                                        if (released) onStopRecordingAndSend() else onCancelRecording()
+                                    },
+                                )
+                            },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            Icons.Filled.Mic,
+                            contentDescription = "Basılı tutup sesli mesaj kaydet",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
+            }
             }
         }
     }
@@ -1389,6 +1533,90 @@ private fun MessageVideoPlayer(videoUrl: String, modifier: Modifier = Modifier) 
         update = { it.player = exoPlayer },
         modifier = modifier,
     )
+}
+
+/**
+ * Sesli mesaj oynatıcı (2026-08-09) — [MessageVideoPlayer]'ın AYNI ExoPlayer
+ * deseni (composable disposed olunca `release()`), ama görsel bir video
+ * yüzeyi YERİNE basit bir çal/duraklat düğmesi + geçen/toplam süre metni
+ * (web'in `voiceWaveform.js`'indeki dalga formu görselleştirmesi bu turun
+ * kapsamı DIŞI — MVP karar, ses OYNATILABİLİYOR olması asıl gereksinim).
+ * [audioUrl] hem gerçek bir CDN URL'si HEM de yerel `file://` URI'si
+ * (optimistic gönderim sırasında, henüz yüklenmemiş kayıt) olabilir.
+ */
+@Composable
+private fun MessageAudioPlayer(audioUrl: String, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    val exoPlayer = remember(audioUrl) {
+        ExoPlayer.Builder(context).build().apply {
+            setMediaItem(MediaItem.fromUri(audioUrl))
+            prepare()
+        }
+    }
+    var isPlaying by remember(audioUrl) { mutableStateOf(false) }
+    var positionMs by remember(audioUrl) { mutableStateOf(0L) }
+    var durationMs by remember(audioUrl) { mutableStateOf(0L) }
+
+    DisposableEffect(exoPlayer) {
+        val listener = object : Player.Listener {
+            override fun onIsPlayingChanged(playing: Boolean) {
+                isPlaying = playing
+            }
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                if (playbackState == Player.STATE_READY) durationMs = exoPlayer.duration.coerceAtLeast(0L)
+                // Bitince başa sar — WhatsApp'ın AYNI davranışı, tekrar
+                // basınca sondan değil baştan çalsın.
+                if (playbackState == Player.STATE_ENDED) {
+                    exoPlayer.seekTo(0)
+                    exoPlayer.pause()
+                }
+            }
+        }
+        exoPlayer.addListener(listener)
+        onDispose {
+            exoPlayer.removeListener(listener)
+            exoPlayer.release()
+        }
+    }
+
+    // Çalarken 300ms'de bir gerçek konumu okuyup ilerleme metnini günceller —
+    // ExoPlayer'ın kendisi konum için bir Flow/StateFlow SUNMUYOR, elle
+    // yoklama (polling) gerekiyor.
+    LaunchedEffect(isPlaying) {
+        while (isPlaying) {
+            positionMs = exoPlayer.currentPosition.coerceAtLeast(0L)
+            delay(300)
+        }
+    }
+
+    fun formatMs(ms: Long): String {
+        val totalSec = ms / 1000
+        return "${totalSec / 60}:${(totalSec % 60).toString().padStart(2, '0')}"
+    }
+
+    Row(
+        modifier = modifier
+            .background(MaterialTheme.colorScheme.surfaceVariant, MaterialTheme.shapes.extraLarge)
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        IconButton(
+            onClick = {
+                if (isPlaying) exoPlayer.pause() else exoPlayer.play()
+            },
+        ) {
+            Icon(
+                imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                contentDescription = if (isPlaying) "Duraklat" else "Çal",
+            )
+        }
+        Text(
+            text = "${formatMs(positionMs)} / ${formatMs(durationMs)}",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(end = 8.dp),
+        )
+    }
 }
 
 @Composable

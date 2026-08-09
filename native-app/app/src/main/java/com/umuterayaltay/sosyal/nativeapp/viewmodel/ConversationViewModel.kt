@@ -1,7 +1,9 @@
 package com.umuterayaltay.sosyal.nativeapp.viewmodel
 
 import android.content.Context
+import android.media.MediaRecorder
 import android.net.Uri
+import android.os.Build
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -33,6 +35,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Job
+import java.io.File
 import java.time.Instant
 import java.util.UUID
 
@@ -93,6 +97,15 @@ class ConversationViewModel(private val conversationId: String) : ViewModel() {
             "video/webm" to ".webm",
             "video/quicktime" to ".mov",
         )
+
+        // 2026-08-09: sesli mesaj — MediaRecorder(OutputFormat.MPEG_4 +
+        // AudioEncoder.AAC) çıktısı her zaman .m4a/audio-mp4 (backend'in
+        // ALLOWED_AUDIO_MIMES listesindeki `audio/mp4`, `audio/m4a` DEĞİL —
+        // bkz. MessagingRepository.sendMessage() yorumu), bu yüzden
+        // görsel/video'nun AKSİNE bir MIME->uzantı EŞLEMESİNE gerek yok, TEK
+        // sabit çıktı formatı var.
+        private const val AUDIO_MIME_TYPE = "audio/mp4"
+        private const val AUDIO_FILE_EXTENSION = ".m4a"
     }
 
     private val messagingRepository = ServiceLocator.messagingRepository
@@ -136,6 +149,21 @@ class ConversationViewModel(private val conversationId: String) : ViewModel() {
     // ama UI şu an tek seferde birini seçtirir — bkz. ConversationInputBar).
     private val _selectedVideoUri = MutableStateFlow<Uri?>(null)
     val selectedVideoUri: StateFlow<Uri?> = _selectedVideoUri.asStateFlow()
+
+    // Sesli mesaj kaydı (2026-08-09) — WhatsApp benzeri "basılı tut, bırakınca
+    // gönder" akışı. Görsel/video'nun AKSİNE bir Uri SEÇİMİ değil, AKTİF bir
+    // kayıt SÜRECİ — bu yüzden ayrı state'ler: [isRecordingAudio] UI'ın mikrofon
+    // butonunu "kayıt oluyor" görünümüne geçirmesi için, [recordingElapsedMs]
+    // canlı süre göstergesi için (her saniye güncellenir).
+    private val _isRecordingAudio = MutableStateFlow(false)
+    val isRecordingAudio: StateFlow<Boolean> = _isRecordingAudio.asStateFlow()
+
+    private val _recordingElapsedMs = MutableStateFlow(0L)
+    val recordingElapsedMs: StateFlow<Long> = _recordingElapsedMs.asStateFlow()
+
+    private var mediaRecorder: MediaRecorder? = null
+    private var recordingFile: File? = null
+    private var recordingTimerJob: Job? = null
 
     // Mesaj balonunu ben/karşı taraf olarak hizalamak için — AuthRepository.
     // getCurrentUser() (Faz 3 Profil'de eklendi) ile BİR KEZ çözülüp burada
@@ -331,6 +359,169 @@ class ConversationViewModel(private val conversationId: String) : ViewModel() {
     fun onVideoSelected(uri: Uri?) {
         _selectedVideoUri.value = uri
         if (uri != null) _selectedImageUri.value = null
+    }
+
+    /** Mikrofon butonuna BASILI TUTULUNCA çağrılır — [context] SADECE geçici
+     * kayıt dosyasının cache dizinini bulmak için kullanılır. `Build.VERSION_
+     * CODES.S`+ `MediaRecorder(Context)` yapıcısı ZORUNLU (parametresiz olan
+     * API 31'de deprecated) — CreatePostViewModel'deki MIME->uzantı eşlemesi
+     * GEREKMEZ, MediaRecorder çıktısı HER ZAMAN [AUDIO_MIME_TYPE]/
+     * [AUDIO_FILE_EXTENSION] (bkz. companion object yorumu). Zaten kayıt
+     * SÜRERKEN (`_isRecordingAudio` true) tekrar çağrılırsa no-op — buton
+     * her `onPress` de bunu tetiklemesin diye çağıran taraf (UI) zaten
+     * `detectTapGestures`/pointerInput ile TEK seferlik başlatmalı, ama BURADA
+     * da bir ikinci güvence.
+     */
+    fun startRecording(context: Context) {
+        if (_isRecordingAudio.value) return
+        val file = File(context.cacheDir, "voice_${UUID.randomUUID()}$AUDIO_FILE_EXTENSION")
+        val recorder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            MediaRecorder(context)
+        } else {
+            @Suppress("DEPRECATION")
+            MediaRecorder()
+        }
+        try {
+            recorder.apply {
+                setAudioSource(MediaRecorder.AudioSource.MIC)
+                setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+                setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+                setOutputFile(file.absolutePath)
+                prepare()
+                start()
+            }
+        } catch (e: Exception) {
+            // Mikrofon başka bir uygulama tarafından kullanılıyor olabilir
+            // (nadir ama gerçek bir senaryo) — sessizce vazgeç, kullanıcı
+            // butona tekrar basabilir.
+            recorder.release()
+            return
+        }
+        mediaRecorder = recorder
+        recordingFile = file
+        _recordingElapsedMs.value = 0L
+        _isRecordingAudio.value = true
+        recordingTimerJob = viewModelScope.launch {
+            val startedAt = System.currentTimeMillis()
+            while (true) {
+                delay(200)
+                _recordingElapsedMs.value = System.currentTimeMillis() - startedAt
+            }
+        }
+    }
+
+    /** Mikrofon butonu BIRAKILINCA çağrılır — kaydı durdurur VE HEMEN gönderir
+     * (WhatsApp'ın "bas-konuş-bırak-gönderilir" akışıyla AYNI, ayrı bir onay/
+     * gönder adımı YOK). [context] send()'deki AYNI gerekçeyle gerekli
+     * (ContentResolver DEĞİL burada — doğrudan File — ama tutarlılık için
+     * aynı imza). Çok kısa (< 500ms, yanlışlıkla dokunma) kayıtlar sessizce
+     * İPTAL edilir, backend'e boş/anlamsız bir ses dosyası gönderilmez. */
+    fun stopRecordingAndSend(context: Context) {
+        val recorder = mediaRecorder ?: return
+        val file = recordingFile
+        val elapsed = _recordingElapsedMs.value
+        recordingTimerJob?.cancel()
+        recordingTimerJob = null
+        mediaRecorder = null
+        recordingFile = null
+        _isRecordingAudio.value = false
+        _recordingElapsedMs.value = 0L
+        try {
+            recorder.stop()
+        } catch (e: Exception) {
+            // start() sonrası hiç veri gelmeden stop() edilirse (çok kısa
+            // basma) IllegalStateException fırlatabilir — dosya zaten
+            // anlamsız, aşağıdaki elapsed<500ms kontrolüyle ZATEN atlanacaktı.
+        }
+        recorder.release()
+        if (elapsed < 500L || file == null) {
+            file?.delete()
+            return
+        }
+        sendRecordedAudio(file)
+    }
+
+    /** Kullanıcı kaydı İPTAL ederse (ör. gönder istemediği bir kayıt) —
+     * dosya silinir, HİÇBİR mesaj gönderilmez. */
+    fun cancelRecording() {
+        val recorder = mediaRecorder ?: return
+        val file = recordingFile
+        recordingTimerJob?.cancel()
+        recordingTimerJob = null
+        mediaRecorder = null
+        recordingFile = null
+        _isRecordingAudio.value = false
+        _recordingElapsedMs.value = 0L
+        try {
+            recorder.stop()
+        } catch (e: Exception) {
+            // Yukarıdaki stopRecordingAndSend ile AYNI gerekçe.
+        }
+        recorder.release()
+        file?.delete()
+    }
+
+    /** [send]'deki optimistic-mesaj deseninin sesli mesaja UYARLANMIŞ hali —
+     * görsel/video Photo Picker Uri'sinden (uygulamanın erişimi SÜREKLİ)
+     * FARKLI olarak burada kaynak kendi ürettiğimiz bir cache dosyası, bu
+     * yüzden ayrı bir fonksiyon (send()'in içine gömmek yerine): metin/reply/
+     * diğer medya state'leriyle KARIŞMASIN, sesli mesaj TEK BAŞINA gönderilir
+     * (backend zaten mutually-exclusive bir kural DAYATMIYOR ama UI'da SES
+     * kaydı SIRASINDA zaten metin girişi/diğer medya seçimi ANLAMSIZ). */
+    private fun sendRecordedAudio(file: File) {
+        val tempId = "local-${UUID.randomUUID()}"
+        val localUri = Uri.fromFile(file).toString()
+        val optimisticMessage = MessageDto(
+            id = tempId,
+            senderId = _myUserId.value ?: "",
+            content = "",
+            replyToId = null,
+            readAt = null,
+            createdAt = Instant.now().toString(),
+            profiles = null,
+            replyTo = null,
+            reactions = null,
+            sticker = null,
+            imageUrl = null,
+            videoUrl = null,
+            audioUrl = localUri,
+        )
+        _messages.value = _messages.value + optimisticMessage
+
+        viewModelScope.launch {
+            val audioBytes = try {
+                withContext(Dispatchers.IO) { file.readBytes() }
+            } catch (e: Exception) {
+                removeOptimisticMessage(tempId)
+                _error.value = "Sesli mesaj okunamadı, lütfen tekrar deneyin"
+                return@launch
+            } finally {
+                file.delete()
+            }
+
+            when (
+                val result = messagingRepository.sendMessage(
+                    conversationId = conversationId,
+                    content = "",
+                    replyToId = null,
+                    imageBytes = null,
+                    imageMimeType = null,
+                    audioBytes = audioBytes,
+                    audioMimeType = AUDIO_MIME_TYPE,
+                    audioFileName = "upload$AUDIO_FILE_EXTENSION",
+                )
+            ) {
+                is SendMessageResult.Success -> replaceOptimisticMessage(tempId, result.message)
+                is SendMessageResult.Error -> {
+                    removeOptimisticMessage(tempId)
+                    if (result.code == "unauthorized") {
+                        handleError(result.code)
+                    } else {
+                        _error.value = "Sesli mesaj gönderilemedi, lütfen tekrar deneyin"
+                    }
+                }
+            }
+        }
     }
 
     /** [context] SADECE seçilen görsel Uri'sinin byte'larını/mime tipini okumak
@@ -741,6 +932,15 @@ class ConversationViewModel(private val conversationId: String) : ViewModel() {
      * AYRI, kısa ömürlü bir scope kullanılıyor. */
     override fun onCleared() {
         super.onCleared()
+        // Ekran kayıt SÜRERKEN kapatılırsa (nadir — geri tuşu/uygulama arkaya
+        // atma) MediaRecorder sızmasın diye en iyi-çaba temizlik.
+        try {
+            mediaRecorder?.stop()
+        } catch (e: Exception) {
+            // stopRecordingAndSend()'deki AYNI gerekçe.
+        }
+        mediaRecorder?.release()
+        recordingFile?.delete()
         CoroutineScope(Dispatchers.IO).launch {
             ServiceLocator.realtimeConnectionManager.disconnect(conversationId)
         }

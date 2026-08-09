@@ -25,6 +25,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.CallEnd
+import androidx.compose.material.icons.filled.Cameraswitch
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.Videocam
@@ -67,6 +68,7 @@ import io.livekit.android.compose.state.rememberParticipants
 import io.livekit.android.compose.ui.ScaleType
 import io.livekit.android.compose.ui.VideoTrackView
 import io.livekit.android.room.Room
+import io.livekit.android.room.participant.LocalParticipant
 import io.livekit.android.room.participant.Participant
 import io.livekit.android.room.track.Track
 
@@ -86,16 +88,21 @@ import io.livekit.android.room.track.Track
 @Composable
 fun CallScreen(
     conversationId: String,
+    // 2026-08-09 — AppNavHost'taki "call/{conversationId}/{isVideo}" rota
+    // argümanından gelir, ConversationScreen'in ayrı sesli/görüntülü buton
+    // çiftiyle AYNI gerekçe (bkz. CallViewModel.initialVideo yorumu).
+    isVideo: Boolean = true,
     onNavigateBack: () -> Unit,
     onSessionExpired: () -> Unit,
     viewModel: CallViewModel = viewModel(
-        factory = CallViewModelFactory(conversationId),
+        factory = CallViewModelFactory(conversationId, isVideo),
     ),
 ) {
     val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsState()
     val isMicEnabled by viewModel.isMicEnabled.collectAsState()
     val isCameraEnabled by viewModel.isCameraEnabled.collectAsState()
+    val isFrontCamera by viewModel.isFrontCamera.collectAsState()
     val availableAudioDevices by viewModel.availableAudioDevices.collectAsState()
     val selectedAudioDevice by viewModel.selectedAudioDevice.collectAsState()
 
@@ -189,10 +196,12 @@ fun CallScreen(
                 room = state.room,
                 isMicEnabled = isMicEnabled,
                 isCameraEnabled = isCameraEnabled,
+                isFrontCamera = isFrontCamera,
                 availableAudioDevices = availableAudioDevices,
                 selectedAudioDevice = selectedAudioDevice,
                 onToggleMic = viewModel::toggleMic,
                 onToggleCamera = viewModel::toggleCamera,
+                onSwitchCamera = viewModel::switchCamera,
                 onSelectAudioDevice = viewModel::selectAudioDevice,
                 onEndCall = {
                     viewModel.endCall()
@@ -242,10 +251,12 @@ private fun CallContent(
     room: Room,
     isMicEnabled: Boolean,
     isCameraEnabled: Boolean,
+    isFrontCamera: Boolean,
     availableAudioDevices: List<AudioDevice>,
     selectedAudioDevice: AudioDevice?,
     onToggleMic: () -> Unit,
     onToggleCamera: () -> Unit,
+    onSwitchCamera: () -> Unit,
     onSelectAudioDevice: (AudioDevice) -> Unit,
     onEndCall: () -> Unit,
 ) {
@@ -262,6 +273,7 @@ private fun CallContent(
                 ParticipantTile(
                     room = room,
                     participant = participant,
+                    isFrontCamera = isFrontCamera,
                     modifier = Modifier
                         .aspectRatio(1f)
                         .padding(2.dp),
@@ -276,6 +288,7 @@ private fun CallContent(
             selectedAudioDevice = selectedAudioDevice,
             onToggleMic = onToggleMic,
             onToggleCamera = onToggleCamera,
+            onSwitchCamera = onSwitchCamera,
             onSelectAudioDevice = onSelectAudioDevice,
             onEndCall = onEndCall,
         )
@@ -291,7 +304,12 @@ private fun CallContent(
  * örnek — çift güvence, zararsız).
  */
 @Composable
-private fun ParticipantTile(room: Room, participant: Participant, modifier: Modifier = Modifier) {
+private fun ParticipantTile(
+    room: Room,
+    participant: Participant,
+    isFrontCamera: Boolean,
+    modifier: Modifier = Modifier,
+) {
     // NOT: rememberParticipantTrackReferences'ın GERÇEK 2.4.0 overload seti
     // (gerçek assembleDebug hatasıyla doğrulandı — context7 dokümantasyonundaki
     // örnek passedParticipant+passedRoom'u BİRLİKTE gösteriyordu ama derleyici
@@ -310,10 +328,24 @@ private fun ParticipantTile(room: Room, participant: Participant, modifier: Modi
         key(participant.identity) {
             val trackRef = cameraTracks.firstOrNull()
             if (trackRef != null) {
+                // 2026-08-09 (kullanıcı raporu: "1:1'de düzelttin ama grupta
+                // düzeltmedin") — LiveKit'in VideoTrackView'i 1:1'in aksine
+                // (org.webrtc TextureViewRenderer'ı elle sarmalayan Stream
+                // kütüphanesi) İLK SINIF bir `mirror: Boolean` parametresi
+                // sunuyor, ayrıca "undo" mantığı YOK — bu yüzden SADECE yerel
+                // katılımcı (kendi kutucuğumuz) için `true`, uzak katılımcılar
+                // için varsayılan `false` (karşı tarafın görüntüsü GERÇEK
+                // yönde kalmalı). `isFrontCamera` de EK koşul (kullanıcı
+                // isteği: "arka kameraya geçme de gelsin") — arka kamerada
+                // aynalamak GERÇEK yönle çelişirdi. `VideoTrackView`'in
+                // `mirror` parametresi REAKTİF (DisposableEffect(mirror) ile
+                // `setMirror` her değişimde tekrar çağrılıyor) — 1:1'deki
+                // `key()` ile View yeniden kurma numarasına GEREK YOK.
                 VideoTrackView(
                     trackReference = trackRef,
                     modifier = Modifier.fillMaxSize(),
                     room = room,
+                    mirror = participant is LocalParticipant && isFrontCamera,
                     scaleType = ScaleType.Fill,
                 )
             }
@@ -338,6 +370,7 @@ private fun CallControls(
     selectedAudioDevice: AudioDevice?,
     onToggleMic: () -> Unit,
     onToggleCamera: () -> Unit,
+    onSwitchCamera: () -> Unit,
     onSelectAudioDevice: (AudioDevice) -> Unit,
     onEndCall: () -> Unit,
 ) {
@@ -361,6 +394,16 @@ private fun CallControls(
                 active = isCameraEnabled,
                 onClick = onToggleCamera,
             )
+            // 2026-08-09 (kullanıcı isteği: "arka kameraya geçme de gelsin")
+            // — 1:1'deki AYNI koşul: sadece kamera açıkken anlamlı.
+            if (isCameraEnabled) {
+                CallControlButton(
+                    icon = Icons.Filled.Cameraswitch,
+                    contentDescription = "Kamerayı değiştir",
+                    active = false,
+                    onClick = onSwitchCamera,
+                )
+            }
             AudioOutputButton(
                 availableDevices = availableAudioDevices,
                 selectedDevice = selectedAudioDevice,

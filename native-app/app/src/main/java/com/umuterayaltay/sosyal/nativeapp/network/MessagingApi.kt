@@ -49,6 +49,10 @@ interface MessagingApi {
         @Part("reply_to_id") replyToId: RequestBody?,
         @Part image: MultipartBody.Part?,
         @Part video: MultipartBody.Part?,
+        // 2026-08-09: sesli mesaj — backend api_send_message()'ın YENİ
+        // "audio" multipart alanı (bkz. MessagingRepository.sendMessage()
+        // yorumu).
+        @Part audio: MultipartBody.Part?,
         @Part("sticker_id") stickerId: RequestBody?,
         @Part("gif_url") gifUrl: RequestBody?,
     ): Response<SendMessageResponse>

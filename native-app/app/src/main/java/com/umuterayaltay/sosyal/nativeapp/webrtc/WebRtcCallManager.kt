@@ -119,6 +119,32 @@ class WebRtcCallManager(
     private val _selectedAudioDevice = MutableStateFlow<AudioDevice?>(null)
     val selectedAudioDevice: StateFlow<AudioDevice?> = _selectedAudioDevice.asStateFlow()
 
+    // Ön/arka kamera değiştirme (2026-08-09, kullanıcı isteği) — BAŞLANGIÇTA
+    // her zaman ön kamera (bkz. startLocalVideo'daki isFrontFacing seçimi).
+    // Camera2Session'ın "undo mirror" davranışı SADECE ön kamerada devreye
+    // giriyor (bkz. WebRtcIceServers... değil, OneOnOneCallScreen.kt'deki
+    // setMirror yorumu) — bu yüzden UI, aynalama kararını arka kameraya
+    // geçince KAPATMAK için bu StateFlow'u okuyor.
+    private val _isFrontCamera = MutableStateFlow(true)
+    val isFrontCamera: StateFlow<Boolean> = _isFrontCamera.asStateFlow()
+
+    /** Ön/arka kamera arasında geçiş yapar — sadece kamera GERÇEKTEN
+     * çalışırken (video track kurulduktan sonra) anlamlı, `videoCapturer`
+     * null'ken (sesli arama veya henüz kurulmamış) no-op. */
+    fun switchCamera() {
+        val capturer = videoCapturer ?: return
+        capturer.switchCamera(object : CameraVideoCapturer.CameraSwitchHandler {
+            override fun onCameraSwitchDone(isFrontCamera: Boolean) {
+                _isFrontCamera.value = isFrontCamera
+            }
+            override fun onCameraSwitchError(errorDescription: String?) {
+                // En iyi-çaba — tek kameralı cihazlarda (arka kamerası
+                // olmayan tablet vb.) veya kamera durdurulmuşken oluşabilir,
+                // sessizce yok sayılır (buton tekrar denenebilir).
+            }
+        })
+    }
+
     private val audioDeviceChangeListener = { devices: List<AudioDevice>, selected: AudioDevice? ->
         _availableAudioDevices.value = devices
         _selectedAudioDevice.value = selected

@@ -135,6 +135,16 @@ class CallSessionManager(
         webRtc?.selectAudioDevice(device)
     }
 
+    // Ön/arka kamera değiştirme (2026-08-09) — WebRtcCallManager.isFrontCamera
+    // ile AYNI desen (availableAudioDevices gibi webRtc kurulunca onEach ile
+    // yansıtılır, bkz. aşağıdaki İKİ webRtc = rtc atama noktası).
+    private val _isFrontCamera = MutableStateFlow(true)
+    val isFrontCamera: StateFlow<Boolean> = _isFrontCamera.asStateFlow()
+
+    fun switchCamera() {
+        webRtc?.switchCamera()
+    }
+
     fun eglBaseContext() = WebRtcCallManager.eglBaseContextOrNull()
 
     /** AppNavHost kök seviyesinde LaunchedEffect(Unit) ile çağrılır (görev
@@ -406,6 +416,7 @@ class CallSessionManager(
                 flushPendingRemoteIce(rtc)
                 rtc.availableAudioDevices.onEach { _availableAudioDevices.value = it }.launchIn(scope)
                 rtc.selectedAudioDevice.onEach { _selectedAudioDevice.value = it }.launchIn(scope)
+                rtc.isFrontCamera.onEach { _isFrontCamera.value = it }.launchIn(scope)
                 _localVideoTrack.value = rtc.localVideoTrack
                 _isCameraEnabled.value = isVideo
                 _isMicEnabled.value = true
@@ -495,6 +506,7 @@ class CallSessionManager(
                 flushPendingRemoteIce(rtc)
                 rtc.availableAudioDevices.onEach { _availableAudioDevices.value = it }.launchIn(scope)
                 rtc.selectedAudioDevice.onEach { _selectedAudioDevice.value = it }.launchIn(scope)
+                rtc.isFrontCamera.onEach { _isFrontCamera.value = it }.launchIn(scope)
                 _localVideoTrack.value = rtc.localVideoTrack
                 _isCameraEnabled.value = incoming.isVideo
                 _isMicEnabled.value = true
@@ -594,6 +606,7 @@ class CallSessionManager(
         _remoteVideoTrack.value = null
         _availableAudioDevices.value = emptyList()
         _selectedAudioDevice.value = null
+        _isFrontCamera.value = true
 
         // KULLANICI RAPORU (gerçek cihaz: aramayı bitirip TEKRAR arayınca
         // "arama bitirildi" yazıyor, hiçbir şey olmuyor) — kök neden: BackHandler/

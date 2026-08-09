@@ -13,13 +13,17 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -27,6 +31,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.CallEnd
+import androidx.compose.material.icons.filled.Cameraswitch
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.Person
@@ -45,6 +50,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -54,7 +61,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.twilio.audioswitch.AudioDevice
 import com.umuterayaltay.sosyal.nativeapp.ui.components.AudioOutputButton
@@ -67,6 +78,7 @@ import com.umuterayaltay.sosyal.nativeapp.viewmodel.OneOnOneCallViewModel
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.OneOnOneCallViewModelFactory
 import io.getstream.webrtc.android.compose.VideoRenderer
 import kotlinx.coroutines.delay
+import kotlin.math.roundToInt
 import org.webrtc.RendererCommon
 import org.webrtc.VideoTrack
 
@@ -110,6 +122,7 @@ fun OneOnOneCallScreen(
     val isCameraEnabled by viewModel.isCameraEnabled.collectAsState()
     val availableAudioDevices by viewModel.availableAudioDevices.collectAsState()
     val selectedAudioDevice by viewModel.selectedAudioDevice.collectAsState()
+    val isFrontCamera by viewModel.isFrontCamera.collectAsState()
 
     val isCallerMode = conversationId != null && otherUserId != null && otherCallTopic != null
 
@@ -222,11 +235,13 @@ fun OneOnOneCallScreen(
                         remoteVideoTrack = remoteVideoTrack,
                         isMicEnabled = isMicEnabled,
                         isCameraEnabled = isCameraEnabled,
+                        isFrontCamera = isFrontCamera,
                         availableAudioDevices = availableAudioDevices,
                         selectedAudioDevice = selectedAudioDevice,
                         eglBaseContext = viewModel.eglBaseContext(),
                         onToggleMic = viewModel::toggleMic,
                         onToggleCamera = viewModel::toggleCamera,
+                        onSwitchCamera = viewModel::switchCamera,
                         onSelectAudioDevice = viewModel::selectAudioDevice,
                         onEndCall = {
                             viewModel.hangup()
@@ -378,11 +393,13 @@ private fun ActiveCallContent(
     remoteVideoTrack: VideoTrack?,
     isMicEnabled: Boolean,
     isCameraEnabled: Boolean,
+    isFrontCamera: Boolean,
     availableAudioDevices: List<AudioDevice>,
     selectedAudioDevice: AudioDevice?,
     eglBaseContext: org.webrtc.EglBase.Context?,
     onToggleMic: () -> Unit,
     onToggleCamera: () -> Unit,
+    onSwitchCamera: () -> Unit,
     onSelectAudioDevice: (AudioDevice) -> Unit,
     onEndCall: () -> Unit,
 ) {
@@ -397,7 +414,7 @@ private fun ActiveCallContent(
     val durationText = "${totalSec / 60}:${(totalSec % 60).toString().padStart(2, '0')}"
 
     Column(modifier = Modifier.fillMaxSize()) {
-        Box(modifier = Modifier.weight(1f)) {
+        BoxWithConstraints(modifier = Modifier.weight(1f)) {
             // Karşı tarafın videosu tam ekran (görüntülü aramada VE gerçekten
             // bir remote video track geldiyse) — sesli aramada / kamera henüz
             // gelmemişse gerçek avatar + ad + süre gösterilir (web'in AYNI
@@ -427,18 +444,19 @@ private fun ActiveCallContent(
                 }
             }
 
-            // Kendi görüntümüz — sağ üst köşede küçük PiP (sadece görüntülü
-            // aramada VE kameramız açıkken). Sürüklenebilir mini-PiP web'de
-            // vardı ama bu turun kapsamı DIŞI (görev notu: netleşmemiş bir
-            // tasarım detayına takılma, MVP karar ver) — sabit köşe yeterli.
+            // Kendi görüntümüz — küçük, SÜRÜKLENEBİLİR PiP (sadece görüntülü
+            // aramada VE kameramız açıkken). Kullanıcı isteği (2026-08-09):
+            // "whatsapp'ta olduğu gibi ekranın istediğim kısmına çekebileyim,
+            // web'de var" — web'in call.js'indeki sürükleme AYNI davranışla
+            // (ekran sınırları içinde serbest, bırakınca olduğu yerde kalır,
+            // yapışkan köşe/snap YOK) [DraggablePipBox] ile taşındı. Varsayılan
+            // konum eskisi gibi sağ üst köşe.
             if (phaseData.isVideo && localVideoTrack != null && isCameraEnabled && eglBaseContext != null) {
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(16.dp)
-                        .size(width = 96.dp, height = 128.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(Color(0xFF1C1C1E)),
+                DraggablePipBox(
+                    containerWidth = maxWidth,
+                    containerHeight = maxHeight,
+                    boxWidth = 96.dp,
+                    boxHeight = 128.dp,
                 ) {
                     // 2026-08-09 (kullanıcı kararı: "gerçek aynadaki gibi") —
                     // stream-webrtc-android'in Camera2Session'ı ön kamerada
@@ -447,18 +465,25 @@ private fun ActiveCallContent(
                     // with", bkz. Camera2Session.java) — yani hiçbir renderer
                     // mirror ayarı yapılmazsa (varsayılan `false`) hem yerel
                     // önizleme hem KARŞI TARAFA giden görüntü GERÇEK yönde
-                    // olur (Instagram/WhatsApp'ın alışılmış "ayna gibi" yerel
-                    // önizlemesinin TERSİ). setMirror BURADA, SADECE bu yerel
-                    // PiP kutusunun render'ında çağrılır — karşı tarafa giden
-                    // akışı (kaynak VideoFrame) ETKİLEMEZ, sadece bu View'ın
-                    // EKRANDA nasıl çizildiğini değiştirir.
-                    VideoRenderer(
-                        videoTrack = localVideoTrack,
-                        eglBaseContext = eglBaseContext,
-                        rendererEvents = noopRendererEvents,
-                        onTextureViewCreated = { it.setMirror(true) },
-                        modifier = Modifier.fillMaxSize(),
-                    )
+                    // olur. setMirror BURADA, SADECE bu yerel PiP kutusunun
+                    // render'ında çağrılır — karşı tarafa giden akışı ETKİLEMEZ.
+                    // SADECE ön kamerada aynalanır — arka kamerada Camera2Session
+                    // "undo" davranışı devreye GİRMİYOR, aynalarsak GERÇEK
+                    // yönle ÇELİŞEN bir görüntü olurdu. `onTextureViewCreated`
+                    // SADECE View ilk kurulunca çalışır (Compose `update`
+                    // bloğunda tekrar tetiklenmiyor) — bu yüzden kamera
+                    // değişince View'ın YENİDEN kurulması için `key(isFrontCamera)`
+                    // ile sarmalandı (CallScreen.kt'deki `key(participant.
+                    // identity)` ile AYNI zararsız "yeniden oluştur" deseni).
+                    key(isFrontCamera) {
+                        VideoRenderer(
+                            videoTrack = localVideoTrack,
+                            eglBaseContext = eglBaseContext,
+                            rendererEvents = noopRendererEvents,
+                            onTextureViewCreated = { it.setMirror(isFrontCamera) },
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
                 }
             }
 
@@ -482,6 +507,7 @@ private fun ActiveCallContent(
             selectedAudioDevice = selectedAudioDevice,
             onToggleMic = onToggleMic,
             onToggleCamera = onToggleCamera,
+            onSwitchCamera = onSwitchCamera,
             onSelectAudioDevice = onSelectAudioDevice,
             onEndCall = onEndCall,
         )
@@ -497,6 +523,7 @@ private fun CallControlsBar(
     selectedAudioDevice: AudioDevice?,
     onToggleMic: () -> Unit,
     onToggleCamera: () -> Unit,
+    onSwitchCamera: () -> Unit,
     onSelectAudioDevice: (AudioDevice) -> Unit,
     onEndCall: () -> Unit,
 ) {
@@ -525,6 +552,19 @@ private fun CallControlsBar(
                     active = isCameraEnabled,
                     onClick = onToggleCamera,
                 )
+                // 2026-08-09 (kullanıcı isteği: "arka kameraya geçme de
+                // gelsin") — sadece kamera açıkken anlamlı, kapalıyken
+                // WebRtcCallManager.switchCamera() zaten no-op (videoCapturer
+                // null DEĞİL ama görüntü akışı DURMUŞ olabilir — buton yine de
+                // gösterilmiyor, kafa karıştırmasın).
+                if (isCameraEnabled) {
+                    CallControlButton(
+                        icon = Icons.Filled.Cameraswitch,
+                        contentDescription = "Kamerayı değiştir",
+                        active = false,
+                        onClick = onSwitchCamera,
+                    )
+                }
             }
             AudioOutputButton(
                 availableDevices = availableAudioDevices,
@@ -545,6 +585,59 @@ private fun CallControlsBar(
             }
         }
     }
+}
+
+/**
+ * WhatsApp benzeri sürüklenebilir küçük video kutusu (2026-08-09, kullanıcı
+ * isteği: "arama kısmını whatsapp'ta olduğu gibi ekranın istediğim kısmına
+ * çekebileyim, web'de var, mobilde de olsun"). [containerWidth]/[containerHeight]
+ * kapsayan alanın (BoxWithConstraints'ten gelen maxWidth/maxHeight) boyutu —
+ * kutu bu alanın DIŞINA taşmayacak şekilde eksen bazında kelepçelenir (coerceIn).
+ * Varsayılan konum sağ üst köşe (eski sabit `.align(TopEnd)` davranışıyla AYNI
+ * ilk görünüm). Bırakınca olduğu yerde kalır — yapışkan köşe/snap YOK, web'in
+ * call.js sürüklemesiyle AYNI basit serbest sürükleme.
+ *
+ * `remember(containerWidth, boxWidth)` İLE SINIRLI: varsayılan konum SADECE
+ * kapsayan alan/kutu boyutu DEĞİŞİNCE (pratikte ekran döndürme) yeniden
+ * hesaplanır — normal recomposition'larda (video track güncellemesi vb.)
+ * kullanıcının sürüklediği konum KORUNUR.
+ */
+@Composable
+private fun DraggablePipBox(
+    containerWidth: Dp,
+    containerHeight: Dp,
+    boxWidth: Dp,
+    boxHeight: Dp,
+    content: @Composable BoxScope.() -> Unit,
+) {
+    val density = LocalDensity.current
+    val edgePadding = 16.dp
+
+    var offsetX by remember(containerWidth, boxWidth) {
+        mutableFloatStateOf(with(density) { (containerWidth - boxWidth - edgePadding).toPx() })
+    }
+    var offsetY by remember(containerHeight, boxHeight) {
+        mutableFloatStateOf(with(density) { edgePadding.toPx() })
+    }
+
+    val maxOffsetXPx = with(density) { (containerWidth - boxWidth).toPx() }.coerceAtLeast(0f)
+    val maxOffsetYPx = with(density) { (containerHeight - boxHeight).toPx() }.coerceAtLeast(0f)
+
+    Box(
+        modifier = Modifier
+            .offset { IntOffset(offsetX.roundToInt(), offsetY.roundToInt()) }
+            .size(width = boxWidth, height = boxHeight)
+            .clip(RoundedCornerShape(12.dp))
+            .background(Color(0xFF1C1C1E))
+            .pointerInput(maxOffsetXPx, maxOffsetYPx) {
+                detectDragGestures { change, dragAmount ->
+                    change.consume()
+                    offsetX = (offsetX + dragAmount.x).coerceIn(0f, maxOffsetXPx)
+                    offsetY = (offsetY + dragAmount.y).coerceIn(0f, maxOffsetYPx)
+                }
+            },
+        content = content,
+    )
 }
 
 /**
