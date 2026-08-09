@@ -63,6 +63,45 @@ class StoryCreateViewModel : ViewModel() {
     private val _backgroundColor = MutableStateFlow<String?>(null)
     val backgroundColor: StateFlow<String?> = _backgroundColor.asStateFlow()
 
+    // 2026-08-09 (kullanıcı isteği: "instagram'a benzer hikaye editörü,
+    // yazıyı/anketi çekerek istediğimiz yere koyabilelim") — backend
+    // api_create_story() BUNU ZATEN kabul ediyordu (web'in stories.js'inde
+    // sürükle-bırak editörü ÇOKTAN vardı, bkz. .context/active_context.md),
+    // SADECE native tarafında hiç UI/state YOKTU — submit() bu alanları
+    // HER ZAMAN null gönderiyordu (backend'in kendi varsayılanlarına
+    // düşülüyordu: caption 0.5/0.75, poll 0.5/0.75/1.0). Varsayılanlar
+    // backend'deki AYNI değerler.
+    private val _captionPositionX = MutableStateFlow(0.5f)
+    val captionPositionX: StateFlow<Float> = _captionPositionX.asStateFlow()
+
+    private val _captionPositionY = MutableStateFlow(0.75f)
+    val captionPositionY: StateFlow<Float> = _captionPositionY.asStateFlow()
+
+    private val _pollPositionX = MutableStateFlow(0.5f)
+    val pollPositionX: StateFlow<Float> = _pollPositionX.asStateFlow()
+
+    private val _pollPositionY = MutableStateFlow(0.75f)
+    val pollPositionY: StateFlow<Float> = _pollPositionY.asStateFlow()
+
+    private val _pollScale = MutableStateFlow(1f)
+    val pollScale: StateFlow<Float> = _pollScale.asStateFlow()
+
+    // 2026-08-09 (kullanıcı isteği: "gifi/stickerı çekerek istediğimiz yere
+    // koyabilelim") — GENUINELY YENİ, web'de de yok, backend'e YENİ eklendi
+    // (bkz. app/api_v1/stories.py overlay_image_* alanları). caption/poll
+    // pozisyon deseniyle AYNI (varsayılan merkez, 0.5/0.5, scale 1.0).
+    private val _overlayImageUrl = MutableStateFlow<String?>(null)
+    val overlayImageUrl: StateFlow<String?> = _overlayImageUrl.asStateFlow()
+
+    private val _overlayImagePositionX = MutableStateFlow(0.5f)
+    val overlayImagePositionX: StateFlow<Float> = _overlayImagePositionX.asStateFlow()
+
+    private val _overlayImagePositionY = MutableStateFlow(0.5f)
+    val overlayImagePositionY: StateFlow<Float> = _overlayImagePositionY.asStateFlow()
+
+    private val _overlayImageScale = MutableStateFlow(1f)
+    val overlayImageScale: StateFlow<Float> = _overlayImageScale.asStateFlow()
+
     // Anket seçenekleri — 0-4 arası, backend poll_option_1..4 form alanlarına
     // eşlenir (bkz. StoriesRepository.createStory). Boş satırlar YOK SAYILIR.
     private val _pollOptions = MutableStateFlow<List<String>>(emptyList())
@@ -87,6 +126,45 @@ class StoryCreateViewModel : ViewModel() {
 
     fun onBackgroundColorChange(hex: String?) {
         _backgroundColor.value = hex
+    }
+
+    /** Canvas'taki caption önizlemesi sürüklenince (0..1 aralığına kırpılmış) çağrılır. */
+    fun onCaptionPositionChange(x: Float, y: Float) {
+        _captionPositionX.value = x.coerceIn(0f, 1f)
+        _captionPositionY.value = y.coerceIn(0f, 1f)
+    }
+
+    /** Canvas'taki anket widget'ı sürüklenince/pinch ile ölçeklenince çağrılır. */
+    fun onPollPositionChange(x: Float, y: Float) {
+        _pollPositionX.value = x.coerceIn(0f, 1f)
+        _pollPositionY.value = y.coerceIn(0f, 1f)
+    }
+
+    fun onPollScaleChange(scale: Float) {
+        // Backend poll_scale sınırıyla AYNI (0.3..3) — bkz. app/api_v1/stories.py.
+        _pollScale.value = scale.coerceIn(0.3f, 3f)
+    }
+
+    /** MediaPickerSheet'ten GIF (URL) veya sticker (StickerDto.imageUrl) seçilince
+     * çağrılır — ikisi de sadece bir görsel URL'i, canvas'ta AYNI şekilde davranır. */
+    fun onOverlayImageSelected(url: String) {
+        _overlayImageUrl.value = url
+        _overlayImagePositionX.value = 0.5f
+        _overlayImagePositionY.value = 0.5f
+        _overlayImageScale.value = 1f
+    }
+
+    fun onOverlayImageRemoved() {
+        _overlayImageUrl.value = null
+    }
+
+    fun onOverlayImagePositionChange(x: Float, y: Float) {
+        _overlayImagePositionX.value = x.coerceIn(0f, 1f)
+        _overlayImagePositionY.value = y.coerceIn(0f, 1f)
+    }
+
+    fun onOverlayImageScaleChange(scale: Float) {
+        _overlayImageScale.value = scale.coerceIn(0.3f, 3f)
     }
 
     fun onImageSelected(uri: Uri?) {
@@ -201,12 +279,20 @@ class StoryCreateViewModel : ViewModel() {
                     // varsa yok sayıyor (bkz. app/api_v1/stories.py), burada
                     // ekstra bir istemci-taraf kontrolüne gerek yok.
                     backgroundColor = if (imageUri == null && videoUri == null) _backgroundColor.value else null,
-                    captionPositionX = null,
-                    captionPositionY = null,
+                    // SADECE caption doluysa göndermenin bir anlamı var —
+                    // boş caption'da backend zaten metni render etmiyor,
+                    // ama pozisyonu yine de göndermek zararsız (backend
+                    // caption boşsa hiç kullanmıyor).
+                    captionPositionX = if (text.isNotEmpty()) _captionPositionX.value else null,
+                    captionPositionY = if (text.isNotEmpty()) _captionPositionY.value else null,
                     pollOptions = filledOptions,
-                    pollPositionX = null,
-                    pollPositionY = null,
-                    pollScale = null,
+                    pollPositionX = if (hasPoll) _pollPositionX.value else null,
+                    pollPositionY = if (hasPoll) _pollPositionY.value else null,
+                    pollScale = if (hasPoll) _pollScale.value else null,
+                    overlayImageUrl = _overlayImageUrl.value,
+                    overlayImagePositionX = if (_overlayImageUrl.value != null) _overlayImagePositionX.value else null,
+                    overlayImagePositionY = if (_overlayImageUrl.value != null) _overlayImagePositionY.value else null,
+                    overlayImageScale = if (_overlayImageUrl.value != null) _overlayImageScale.value else null,
                 )
             ) {
                 is CreateStoryResult.Success -> _events.emit(StoryCreateEvent.Success(result.pollError))

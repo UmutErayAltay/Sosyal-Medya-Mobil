@@ -18,6 +18,16 @@ data class Poll(
     val totalVotes: Int,
     /** Kullanıcının oy verdiği seçenek id'si; oy yoksa null (3-yönlü toggle). */
     val myVote: String?,
+    // 2026-08-09 (kullanıcı isteği: "instagram'a benzer hikaye editörü, anket
+    // sürüklenebilir olsun") — SADECE hikaye anketinde dolu (attach_story_poll()
+    // web'in stories.js'deki sürüklenebilir/ölçeklenebilir widget'ıyla AYNI
+    // position_x/position_y/scale'i döndürüyor); post anketinde HER ZAMAN null
+    // (post'ların poll'u sabit konumda render edilir, sürüklenebilir DEĞİL) —
+    // Poll AYNI tip iki bağlamda da (bkz. yukarıdaki dosya yorumu), bu yüzden
+    // alanlar nullable ve varsayılan null.
+    val positionX: Double? = null,
+    val positionY: Double? = null,
+    val scale: Double? = null,
 )
 
 /** RepostOfDto'nun sadeleştirilmiş domain karşılığı — Faz 5 sonrası eksik

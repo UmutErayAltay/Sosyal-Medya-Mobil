@@ -25,16 +25,22 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -45,6 +51,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.FlipCameraAndroid
+import androidx.compose.material.icons.filled.Gif
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.PhotoCamera
@@ -65,6 +72,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -73,6 +81,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -80,10 +89,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
@@ -91,6 +102,9 @@ import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
+import com.umuterayaltay.sosyal.nativeapp.repository.Poll
+import com.umuterayaltay.sosyal.nativeapp.repository.PollOption
+import com.umuterayaltay.sosyal.nativeapp.ui.components.MediaPickerSheet
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.StoryCreateEvent
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.StoryCreateViewModel
 import kotlinx.coroutines.coroutineScope
@@ -145,7 +159,17 @@ fun StoryCreateScreen(
     val visibility by viewModel.visibility.collectAsState()
     val selectedImageUri by viewModel.selectedImageUri.collectAsState()
     val selectedVideoUri by viewModel.selectedVideoUri.collectAsState()
+    val backgroundColor by viewModel.backgroundColor.collectAsState()
     val pollOptions by viewModel.pollOptions.collectAsState()
+    val captionPositionX by viewModel.captionPositionX.collectAsState()
+    val captionPositionY by viewModel.captionPositionY.collectAsState()
+    val pollPositionX by viewModel.pollPositionX.collectAsState()
+    val pollPositionY by viewModel.pollPositionY.collectAsState()
+    val pollScale by viewModel.pollScale.collectAsState()
+    val overlayImageUrl by viewModel.overlayImageUrl.collectAsState()
+    val overlayImagePositionX by viewModel.overlayImagePositionX.collectAsState()
+    val overlayImagePositionY by viewModel.overlayImagePositionY.collectAsState()
+    val overlayImageScale by viewModel.overlayImageScale.collectAsState()
     val submitting by viewModel.submitting.collectAsState()
     val error by viewModel.error.collectAsState()
 
@@ -205,6 +229,11 @@ fun StoryCreateScreen(
     // yönlendirmesi, backend/submit mantığını etkilemiyor).
     var showTextOnlyForm by remember { mutableStateOf(false) }
 
+    // GIF/sticker seçici — CreatePostScreen.kt'deki AYNI desen (MediaPickerSheet
+    // paylaşılan bileşen, kendi state'ini tutuyor).
+    var showMediaPicker by remember { mutableStateOf(false) }
+    val mediaPickerSheetState = rememberModalBottomSheetState()
+
     val hasSelectedMedia = selectedImageUri != null || selectedVideoUri != null
     val showForm = hasSelectedMedia || showTextOnlyForm
 
@@ -218,12 +247,30 @@ fun StoryCreateScreen(
             visibility = visibility,
             selectedImageUri = selectedImageUri,
             selectedVideoUri = selectedVideoUri,
+            backgroundColor = backgroundColor,
             pollOptions = pollOptions,
+            captionPositionX = captionPositionX,
+            captionPositionY = captionPositionY,
+            pollPositionX = pollPositionX,
+            pollPositionY = pollPositionY,
+            pollScale = pollScale,
+            overlayImageUrl = overlayImageUrl,
+            overlayImagePositionX = overlayImagePositionX,
+            overlayImagePositionY = overlayImagePositionY,
+            overlayImageScale = overlayImageScale,
             submitting = submitting,
             error = error,
             canSubmit = canSubmit,
             onCaptionChange = viewModel::onCaptionChange,
             onVisibilityChange = viewModel::onVisibilityChange,
+            onBackgroundColorChange = viewModel::onBackgroundColorChange,
+            onCaptionPositionChange = viewModel::onCaptionPositionChange,
+            onPollPositionChange = viewModel::onPollPositionChange,
+            onPollScaleChange = viewModel::onPollScaleChange,
+            onAddOverlayClick = { showMediaPicker = true },
+            onRemoveOverlayImage = viewModel::onOverlayImageRemoved,
+            onOverlayImagePositionChange = viewModel::onOverlayImagePositionChange,
+            onOverlayImageScaleChange = viewModel::onOverlayImageScaleChange,
             onRemoveImage = {
                 viewModel.onImageSelected(null)
                 showTextOnlyForm = false
@@ -261,6 +308,21 @@ fun StoryCreateScreen(
             },
             onClose = onNavigateBack,
             onSwitchToTextOnly = { showTextOnlyForm = true },
+        )
+    }
+
+    if (showMediaPicker) {
+        MediaPickerSheet(
+            sheetState = mediaPickerSheetState,
+            onDismiss = { showMediaPicker = false },
+            onGifSelected = { url ->
+                showMediaPicker = false
+                viewModel.onOverlayImageSelected(url)
+            },
+            onStickerSelected = { sticker ->
+                showMediaPicker = false
+                viewModel.onOverlayImageSelected(sticker.imageUrl)
+            },
         )
     }
 }
@@ -630,6 +692,33 @@ private fun uriForStoryFile(context: Context, file: File): Uri =
  * KALDIRILDI — bu rol artık StoryCameraStep'e ait, form adımına SADECE
  * medya seçildikten (kamera/galeri) veya "Yazıyla Paylaş" sonrası girilir.
  */
+// Web'in feed.html'deki story-bg-swatch paletiyle BİREBİR AYNI 6 renk
+// (bkz. app/templates/feed.html satır 302-307) — platform tutarlılığı.
+private val STORY_BACKGROUND_SWATCHES = listOf(
+    "#7c5cbf", "#e74c3c", "#27ae60", "#2980b9", "#f39c12", "#1a1a2e",
+)
+
+/**
+ * Form adımı — Instagram tarzı canvas editörüne dönüştürüldü (kullanıcı
+ * isteği: "story düzenleme kısmını instagrama benzer yapabilir miyiz,
+ * yazıyı/anketi çekerek istediğimiz yere koyabilelim"). BÜYÜK KEŞİF: backend
+ * (app/api_v1/stories.py) VE web (app/static/js/stories.js) bu sürükle-bırak
+ * editörünü ÇOKTAN destekliyordu (caption_position_x/y, poll_position_x/y,
+ * poll_scale, background_color) — sadece native'in KENDİSİ hiç UI'sını
+ * kurmamıştı (submit() bu alanları HER ZAMAN null gönderiyordu). Bu yüzden
+ * SIFIRDAN bir canvas motoru İCAT EDİLMEDİ, web'in stories.js'deki
+ * pointerdown/pointermove/pointerup deseni Compose'un detectTransformGestures'ı
+ * (pan+zoom TEK gesture detector'da, FullscreenImageViewer.kt'deki AYNI
+ * kurulan desen) ile mirror'landı.
+ *
+ * Canvas 9:16 (Instagram hikaye oranı) sabit — DraggableStoryElement (bu
+ * dosyanın altında) caption/anket önizlemesini o alan içinde normalize
+ * (0..1) konum + (SADECE anket için) ölçek ile konumlandırır. Metnin
+ * GERÇEK İÇERİĞİ hâlâ canvas'IN ALTINDAKİ normal bir TextField'da yazılır
+ * (web'in `<textarea>` + AYRI bir sürüklenebilir önizleme div'i deseniyle
+ * AYNI — Instagram'daki "canvas üzerinde direkt yaz" YERİNE, mevcut backend
+ * sözleşmesiyle TAM uyumlu, daha az riskli bir yaklaşım).
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun StoryFormStep(
@@ -637,12 +726,30 @@ private fun StoryFormStep(
     visibility: String,
     selectedImageUri: Uri?,
     selectedVideoUri: Uri?,
+    backgroundColor: String?,
     pollOptions: List<String>,
+    captionPositionX: Float,
+    captionPositionY: Float,
+    pollPositionX: Float,
+    pollPositionY: Float,
+    pollScale: Float,
+    overlayImageUrl: String?,
+    overlayImagePositionX: Float,
+    overlayImagePositionY: Float,
+    overlayImageScale: Float,
     submitting: Boolean,
     error: String?,
     canSubmit: Boolean,
     onCaptionChange: (String) -> Unit,
     onVisibilityChange: (String) -> Unit,
+    onBackgroundColorChange: (String?) -> Unit,
+    onCaptionPositionChange: (Float, Float) -> Unit,
+    onPollPositionChange: (Float, Float) -> Unit,
+    onPollScaleChange: (Float) -> Unit,
+    onAddOverlayClick: () -> Unit,
+    onRemoveOverlayImage: () -> Unit,
+    onOverlayImagePositionChange: (Float, Float) -> Unit,
+    onOverlayImageScaleChange: (Float) -> Unit,
     onRemoveImage: () -> Unit,
     onRemoveVideo: () -> Unit,
     onAddPollOption: () -> Unit,
@@ -651,6 +758,9 @@ private fun StoryFormStep(
     onBackToCamera: () -> Unit,
     onSubmit: () -> Unit,
 ) {
+    val hasMedia = selectedImageUri != null || selectedVideoUri != null
+    val hasPoll = pollOptions.count { it.isNotBlank() } >= 2
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -694,6 +804,172 @@ private fun StoryFormStep(
                 StoryVisibilityFilterRow(selected = visibility, onSelect = onVisibilityChange)
             }
 
+            // ---- Canvas: arka plan (görsel/video/renk) + sürüklenebilir
+            // caption/anket önizlemesi ----
+            BoxWithConstraints(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(9f / 16f)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(parseHexColor(backgroundColor) ?: MaterialTheme.colorScheme.surfaceVariant),
+            ) {
+                val density = LocalDensity.current
+                val canvasWidthPx = with(density) { maxWidth.toPx() }
+                val canvasHeightPx = with(density) { maxHeight.toPx() }
+
+                if (selectedImageUri != null) {
+                    AsyncImage(
+                        model = selectedImageUri,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                } else if (selectedVideoUri != null) {
+                    // Canlı video önizlemesi İCAT EDİLMEDİ (görev tanımı
+                    // gereği gerekmiyor, eski davranışla AYNI basit yer
+                    // tutucu) — SADECE metin/anket'in konumunu seçmek için
+                    // yeterli bir zemin.
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.Black.copy(alpha = 0.85f)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Movie,
+                            contentDescription = null,
+                            tint = Color.White.copy(alpha = 0.6f),
+                            modifier = Modifier.size(48.dp),
+                        )
+                    }
+                }
+
+                if (hasMedia) {
+                    IconButton(
+                        onClick = if (selectedImageUri != null) onRemoveImage else onRemoveVideo,
+                        enabled = !submitting,
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(8.dp)
+                            .size(32.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f)),
+                    ) {
+                        Icon(Icons.Filled.Close, contentDescription = "Medyayı kaldır")
+                    }
+                }
+
+                if (caption.isNotBlank()) {
+                    DraggableStoryElement(
+                        positionX = captionPositionX,
+                        positionY = captionPositionY,
+                        scale = 1f,
+                        scalable = false,
+                        canvasWidthPx = canvasWidthPx,
+                        canvasHeightPx = canvasHeightPx,
+                        onPositionChange = onCaptionPositionChange,
+                        onScaleChange = {},
+                    ) {
+                        Text(
+                            text = caption,
+                            color = Color.White,
+                            style = MaterialTheme.typography.bodyLarge,
+                            modifier = Modifier.padding(horizontal = 20.dp),
+                        )
+                    }
+                }
+
+                if (hasPoll) {
+                    // Gerçek paylaşılacak görünümle AYNI önizleme — StoryViewerScreen'in
+                    // KULLANDIĞI PollWidget REUSE edilir, sahte bir kutu İCAT EDİLMEDİ
+                    // (web'in stories.js'deki updateStoryPollPreview()'un AYNI
+                    // gerekçesi: "orada tam paylaşılacak hali gözüksün").
+                    val previewPoll = remember(pollOptions) {
+                        Poll(
+                            id = "preview",
+                            options = pollOptions.filter { it.isNotBlank() }.mapIndexed { i, text ->
+                                PollOption(id = "opt$i", text = text, votes = 0, pct = 0)
+                            },
+                            totalVotes = 0,
+                            myVote = null,
+                        )
+                    }
+                    DraggableStoryElement(
+                        positionX = pollPositionX,
+                        positionY = pollPositionY,
+                        scale = pollScale,
+                        scalable = true,
+                        canvasWidthPx = canvasWidthPx,
+                        canvasHeightPx = canvasHeightPx,
+                        onPositionChange = onPollPositionChange,
+                        onScaleChange = onPollScaleChange,
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .width(220.dp)
+                                .background(MaterialTheme.colorScheme.surface, MaterialTheme.shapes.medium)
+                                .padding(12.dp),
+                        ) {
+                            PollWidget(poll = previewPoll, onVote = {})
+                        }
+                    }
+                }
+
+                if (!overlayImageUrl.isNullOrBlank()) {
+                    DraggableStoryElement(
+                        positionX = overlayImagePositionX,
+                        positionY = overlayImagePositionY,
+                        scale = overlayImageScale,
+                        scalable = true,
+                        canvasWidthPx = canvasWidthPx,
+                        canvasHeightPx = canvasHeightPx,
+                        onPositionChange = onOverlayImagePositionChange,
+                        onScaleChange = onOverlayImageScaleChange,
+                    ) {
+                        Box {
+                            AsyncImage(
+                                model = overlayImageUrl,
+                                contentDescription = null,
+                                modifier = Modifier.size(120.dp),
+                            )
+                            IconButton(
+                                onClick = onRemoveOverlayImage,
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .size(24.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f)),
+                            ) {
+                                Icon(
+                                    Icons.Filled.Close,
+                                    contentDescription = "GIF/Sticker'ı kaldır",
+                                    modifier = Modifier.size(14.dp),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            Text(
+                text = "Yazı, anket ve GIF/sticker'ı canvas üzerinde sürükleyerek" +
+                    " konumlandırabilir, iki parmakla büyütüp küçültebilirsin.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+
+            OutlinedButton(
+                onClick = onAddOverlayClick,
+                enabled = !submitting,
+                shape = MaterialTheme.shapes.medium,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Icon(Icons.Filled.Gif, contentDescription = null)
+                Text(
+                    text = if (overlayImageUrl.isNullOrBlank()) "GIF/Sticker Ekle" else "GIF/Sticker'ı değiştir",
+                    modifier = Modifier.padding(start = 8.dp),
+                )
+            }
+
             OutlinedTextField(
                 value = caption,
                 onValueChange = onCaptionChange,
@@ -704,51 +980,33 @@ private fun StoryFormStep(
                 shape = MaterialTheme.shapes.medium,
             )
 
-            if (selectedImageUri != null) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(280.dp)
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant),
-                ) {
-                    AsyncImage(
-                        model = selectedImageUri,
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize(),
-                    )
-                    IconButton(
-                        onClick = onRemoveImage,
-                        enabled = !submitting,
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(8.dp)
-                            .size(32.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f)),
-                    ) {
-                        Icon(Icons.Filled.Close, contentDescription = "Görseli kaldır")
-                    }
-                }
-            } else if (selectedVideoUri != null) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant)
-                        .padding(12.dp),
-                ) {
-                    Icon(Icons.Filled.Movie, contentDescription = null)
+            // Arka plan rengi — SADECE medya yokken anlamlı (backend zaten
+            // medya varsa yok sayıyor, bkz. app/api_v1/stories.py).
+            if (!hasMedia) {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(
-                        text = "Video seçildi",
-                        modifier = Modifier
-                            .padding(start = 8.dp)
-                            .weight(1f),
+                        text = "Arka plan rengi (opsiyonel)",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    IconButton(onClick = onRemoveVideo, enabled = !submitting) {
-                        Icon(Icons.Filled.Close, contentDescription = "Videoyu kaldır")
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        STORY_BACKGROUND_SWATCHES.forEach { hex ->
+                            val isSelected = backgroundColor == hex
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(parseHexColor(hex) ?: Color.Gray)
+                                    .border(
+                                        width = if (isSelected) 3.dp else 0.dp,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        shape = CircleShape,
+                                    )
+                                    .clickable(enabled = !submitting) {
+                                        onBackgroundColorChange(if (isSelected) null else hex)
+                                    },
+                            )
+                        }
                     }
                 }
             }
@@ -806,6 +1064,58 @@ private fun StoryFormStep(
                 }
             }
         }
+    }
+}
+
+/**
+ * Canvas üzerinde sürüklenebilir (ve opsiyonel olarak pinch ile
+ * ölçeklenebilir) bir öğe — caption VE anket önizlemesi TARAFINDAN
+ * paylaşılan TEK bir uygulama (web'in storyPollDragState/storyCaptionDragState
+ * İKİ AYRI ama BİREBİR AYNI kod bloğu olmasının AKSİNE, burada TEK yer).
+ * `detectTransformGestures` TEK bir dokunuşta hem pan (sürükleme) hem zoom
+ * (pinch) raporlar — FullscreenImageViewer.kt'deki AYNI kurulmuş desen.
+ * `rememberUpdatedState` ZORUNLU: `pointerInput` anahtarları (canvasWidthPx/
+ * canvasHeightPx/scalable) DEĞİŞMEDİĞİ sürece jest algılama coroutine'i
+ * YENİDEN BAŞLAMAZ, yani positionX/positionY/scale'i DOĞRUDAN yakalayan bir
+ * closure sürüklemenin ORTASINDA hep İLK değerlerde donmuş kalırdı.
+ */
+@Composable
+private fun DraggableStoryElement(
+    positionX: Float,
+    positionY: Float,
+    scale: Float,
+    scalable: Boolean,
+    canvasWidthPx: Float,
+    canvasHeightPx: Float,
+    onPositionChange: (Float, Float) -> Unit,
+    onScaleChange: (Float) -> Unit,
+    content: @Composable () -> Unit,
+) {
+    val positionXState = rememberUpdatedState(positionX)
+    val positionYState = rememberUpdatedState(positionY)
+    val scaleState = rememberUpdatedState(scale)
+
+    Box(
+        modifier = Modifier
+            .graphicsLayer {
+                translationX = positionX * canvasWidthPx - size.width / 2f
+                translationY = positionY * canvasHeightPx - size.height / 2f
+                scaleX = scale
+                scaleY = scale
+            }
+            .pointerInput(canvasWidthPx, canvasHeightPx, scalable) {
+                if (canvasWidthPx <= 0f || canvasHeightPx <= 0f) return@pointerInput
+                detectTransformGestures { _, pan, zoom, _ ->
+                    val newX = (positionXState.value + pan.x / canvasWidthPx).coerceIn(0f, 1f)
+                    val newY = (positionYState.value + pan.y / canvasHeightPx).coerceIn(0f, 1f)
+                    onPositionChange(newX, newY)
+                    if (scalable) {
+                        onScaleChange(scaleState.value * zoom)
+                    }
+                }
+            },
+    ) {
+        content()
     }
 }
 

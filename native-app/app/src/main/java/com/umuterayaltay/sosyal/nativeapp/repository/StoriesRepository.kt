@@ -44,6 +44,11 @@ data class Story(
     val captionPositionX: Double,
     val captionPositionY: Double,
     val poll: Poll?,
+    // 2026-08-09 — GIF/sticker overlay (bkz. ApiModels.kt StoryDto yorumu).
+    val overlayImageUrl: String?,
+    val overlayImagePositionX: Double,
+    val overlayImagePositionY: Double,
+    val overlayImageScale: Double,
 )
 
 data class UserStories(
@@ -92,6 +97,10 @@ private fun StoryDto.toDomain() = Story(
     backgroundColor = backgroundColor,
     captionPositionX = captionPositionX ?: 0.5,
     captionPositionY = captionPositionY ?: 0.75,
+    overlayImageUrl = overlayImageUrl,
+    overlayImagePositionX = overlayImagePositionX ?: 0.5,
+    overlayImagePositionY = overlayImagePositionY ?: 0.5,
+    overlayImageScale = overlayImageScale ?: 1.0,
     poll = poll?.let { p ->
         Poll(
             id = p.id,
@@ -100,6 +109,9 @@ private fun StoryDto.toDomain() = Story(
             },
             totalVotes = p.totalVotes,
             myVote = p.myVote,
+            positionX = p.positionX,
+            positionY = p.positionY,
+            scale = p.scale,
         )
     },
 )
@@ -255,6 +267,10 @@ class StoriesRepository(
         pollPositionX: Float?,
         pollPositionY: Float?,
         pollScale: Float?,
+        overlayImageUrl: String? = null,
+        overlayImagePositionX: Float? = null,
+        overlayImagePositionY: Float? = null,
+        overlayImageScale: Float? = null,
     ): CreateStoryResult = withContext(Dispatchers.IO) {
         try {
             fun text(value: String): RequestBody = value.toRequestBody("text/plain".toMediaTypeOrNull())
@@ -285,6 +301,10 @@ class StoriesRepository(
                 pollPositionX = textOrNull(pollPositionX?.toString()),
                 pollPositionY = textOrNull(pollPositionY?.toString()),
                 pollScale = textOrNull(pollScale?.toString()),
+                overlayImageUrl = textOrNull(overlayImageUrl),
+                overlayImagePositionX = textOrNull(overlayImagePositionX?.toString()),
+                overlayImagePositionY = textOrNull(overlayImagePositionY?.toString()),
+                overlayImageScale = textOrNull(overlayImageScale?.toString()),
             )
             val body: CreateStoryResponse? = response.body()
             if (response.isSuccessful && body != null && body.error == null && body.ok) {

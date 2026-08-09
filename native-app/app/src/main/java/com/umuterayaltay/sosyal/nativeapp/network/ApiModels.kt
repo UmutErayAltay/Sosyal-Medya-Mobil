@@ -934,6 +934,12 @@ data class PollDto(
     val options: List<PollOptionDto>? = null,
     @SerializedName("total_votes") val totalVotes: Int = 0,
     @SerializedName("my_vote") val myVote: String? = null,
+    // SADECE attach_story_poll()'un ürettiği hikaye anketinde dolu (bkz.
+    // repository/Post.kt Poll yorumu) — post anketinde backend bu alanları
+    // hiç göndermez, Gson null bırakır.
+    @SerializedName("position_x") val positionX: Double? = null,
+    @SerializedName("position_y") val positionY: Double? = null,
+    val scale: Double? = null,
 )
 
 /** POST /polls/{id}/vote yanıtı — `poll` sarmalayıcısı YOK, alanlar düz gelir
@@ -1178,6 +1184,13 @@ data class StoryDto(
     @SerializedName("caption_position_x") val captionPositionX: Double? = null,
     @SerializedName("caption_position_y") val captionPositionY: Double? = null,
     val poll: PollDto? = null,
+    // 2026-08-09 (kullanıcı isteği: "gifi/stickerı çekerek istediğimiz yere
+    // koyabilelim") — caption_position ile AYNI desen, yeni (native-only,
+    // web'de bunu ayarlayan UI yok) sürüklenebilir GIF/sticker overlay'i.
+    @SerializedName("overlay_image_url") val overlayImageUrl: String? = null,
+    @SerializedName("overlay_image_position_x") val overlayImagePositionX: Double? = null,
+    @SerializedName("overlay_image_position_y") val overlayImagePositionY: Double? = null,
+    @SerializedName("overlay_image_scale") val overlayImageScale: Double? = null,
 )
 
 data class UserStoriesResponse(

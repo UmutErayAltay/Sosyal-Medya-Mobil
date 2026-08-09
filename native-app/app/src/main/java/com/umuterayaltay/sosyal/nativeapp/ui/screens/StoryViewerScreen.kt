@@ -10,6 +10,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -50,9 +51,11 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
@@ -212,13 +215,39 @@ fun StoryViewerScreen(
                         onClose = { onNavigateBack(highlightChanged) },
                         onDelete = { viewModel.deleteCurrentStory() },
                     )
+                }
+
+                // 2026-08-09 (kullanıcı isteği: "instagram'a benzer hikaye
+                // editörü, anketi/yazıyı çekerek istediğimiz yere koyabilelim")
+                // — poll/caption artık SABİT bir Column akışında DEĞİL, web'in
+                // stories.js'deki sürüklenebilir widget'larıyla AYNI normalize
+                // (0..1) position_x/position_y (+ poll için scale) üzerinden
+                // TAM EKRANA göre konumlanıyor (StoryCreateScreen'deki editör
+                // BUNU zaten üretiyor). BoxWithConstraints ile ekranın piksel
+                // boyutu okunuyor, her öğe KENDİ ölçülmüş boyutunun yarısı
+                // kadar geri kaydırılıyor (CSS'in translate(-50%,-50%) ile
+                // AYNI merkezleme fikri — graphicsLayer lambda'sı DRAW anında
+                // çalıştığı için `size` orada döngüsel ölçüm sorunu YARATMADAN
+                // kullanılabiliyor).
+                BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                    val density = LocalDensity.current
+                    val canvasWidthPx = with(density) { maxWidth.toPx() }
+                    val canvasHeightPx = with(density) { maxHeight.toPx() }
 
                     if (story.poll != null) {
+                        val posX = (story.poll.positionX ?: 0.5).toFloat()
+                        val posY = (story.poll.positionY ?: 0.75).toFloat()
+                        val scale = (story.poll.scale ?: 1.0).toFloat()
                         Box(
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 24.dp)
-                                .padding(top = 12.dp),
+                                .align(Alignment.TopStart)
+                                .graphicsLayer {
+                                    translationX = posX * canvasWidthPx - size.width / 2f
+                                    translationY = posY * canvasHeightPx - size.height / 2f
+                                    scaleX = scale
+                                    scaleY = scale
+                                }
+                                .padding(horizontal = 24.dp),
                         ) {
                             PollWidget(
                                 poll = story.poll,
@@ -228,13 +257,41 @@ fun StoryViewerScreen(
                     }
 
                     if (!story.caption.isNullOrBlank()) {
+                        val posX = story.captionPositionX.toFloat()
+                        val posY = story.captionPositionY.toFloat()
                         Text(
                             text = story.caption,
                             color = Color.White,
                             style = MaterialTheme.typography.bodyLarge,
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 24.dp, vertical = 12.dp),
+                                .align(Alignment.TopStart)
+                                .graphicsLayer {
+                                    translationX = posX * canvasWidthPx - size.width / 2f
+                                    translationY = posY * canvasHeightPx - size.height / 2f
+                                }
+                                .padding(horizontal = 24.dp),
+                        )
+                    }
+
+                    // 2026-08-09 — GIF/sticker overlay, caption/poll ile AYNI
+                    // normalize konum + ölçek deseni (bkz. ApiModels.kt
+                    // StoryDto yorumu, GENUINELY YENİ — web'de karşılığı yok).
+                    if (!story.overlayImageUrl.isNullOrBlank()) {
+                        val posX = story.overlayImagePositionX.toFloat()
+                        val posY = story.overlayImagePositionY.toFloat()
+                        val scale = story.overlayImageScale.toFloat()
+                        AsyncImage(
+                            model = story.overlayImageUrl,
+                            contentDescription = null,
+                            modifier = Modifier
+                                .align(Alignment.TopStart)
+                                .size(120.dp)
+                                .graphicsLayer {
+                                    translationX = posX * canvasWidthPx - size.width / 2f
+                                    translationY = posY * canvasHeightPx - size.height / 2f
+                                    scaleX = scale
+                                    scaleY = scale
+                                },
                         )
                     }
                 }
@@ -602,7 +659,11 @@ private fun SaveHighlightBar(
     }
 }
 
-private fun parseHexColor(hex: String?): Color? {
+// StoryCreateScreen.kt'nin de (AYNI paket) kullanabilmesi için internal —
+// Kotlin'de top-level `private` fonksiyonlar dosya sınırını aşamaz
+// (bkz. FeedScreen.kt'deki PostFeedStaggerReveal yorumu, AYNI gerekçe),
+// bu yüzden KOPYALANMADI.
+internal fun parseHexColor(hex: String?): Color? {
     if (hex.isNullOrBlank()) return null
     return try {
         Color(android.graphics.Color.parseColor(hex))
