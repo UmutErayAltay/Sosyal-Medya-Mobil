@@ -14,12 +14,15 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.ClickableText
 import androidx.compose.material.icons.Icons
@@ -28,6 +31,7 @@ import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Repeat
@@ -67,7 +71,6 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
-import com.umuterayaltay.sosyal.nativeapp.ui.components.FullscreenImageViewer
 import com.umuterayaltay.sosyal.nativeapp.ui.components.FullscreenVideoViewer
 import com.umuterayaltay.sosyal.nativeapp.repository.Post
 import com.umuterayaltay.sosyal.nativeapp.repository.RepostEmbed
@@ -161,10 +164,10 @@ fun PostCard(
     // callback'lerle AYNI gerekçe.
     onUsernameClick: (String) -> Unit = {},
 ) {
-    // 2026-08-09 (kullanıcı isteği: "fotoğraflara/videolara tıklayınca
-    // büyüsün") — bkz. ui/components/FullscreenImageViewer.kt/
-    // FullscreenVideoViewer.kt yorumu.
-    var showFullscreenImage by remember { mutableStateOf(false) }
+    // 2026-08-09: video tam ekranı SADECE PostVideoPlayer'ın yanındaki küçük
+    // ikonla açılır (bkz. aşağıdaki video bloğu yorumu) — fotoğraflarda artık
+    // tam ekran YOK (bkz. görsel carousel bloğu yorumu), bu yüzden
+    // showFullscreenImage/FullscreenImageViewer BİLİNÇLİ KALDIRILDI.
     var showFullscreenVideo by remember { mutableStateOf(false) }
     var showActionsSheet by remember { mutableStateOf(false) }
     // "Düzenle" PostActionsSheet'te tıklanınca açılır — showActionsSheet'in
@@ -332,28 +335,69 @@ fun PostCard(
                 )
             }
 
-            if (!post.imageUrl.isNullOrBlank()) {
-                // Madde 4 (kullanıcı raporu: post resmi kırpılmış, tam gözükmüyor)
-                // — sabit 4:3 aspectRatio + Crop KALDIRILDI (görselin GERÇEK
-                // oranıyla uyuşmadığında kenarlarından kırpıyordu). ContentScale.Fit
-                // + heightIn(max) ile görsel KENDİ oranında, en fazla 400dp
-                // yükseklikte TAM gösterilir (Instagram'ın "tam görsel" davranışı).
-                // 2026-08-09 (kullanıcı isteği: "fotoğraflara tıklayınca büyüsün")
-                // — `.clickable` DIŞ Card'ın `onCommentClick`'inden ÖNCE tüketir
-                // (bkz. Card'ın kendi yorumu: "İçteki tüketir, çift tetiklenme
-                // olmaz"), yani buraya tıklamak artık post detayına DEĞİL tam
-                // ekran görüntüleyiciye gider.
-                AsyncImage(
-                    model = post.imageUrl,
-                    contentDescription = null,
-                    contentScale = ContentScale.Fit,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 400.dp)
-                        .padding(top = 12.dp)
-                        .clip(MaterialTheme.shapes.medium)
-                        .clickable(onClick = { showFullscreenImage = true }),
-                )
+            val images = post.imageUrls?.filter { it.isNotBlank() }?.takeIf { it.isNotEmpty() }
+                ?: post.imageUrl?.takeIf { it.isNotBlank() }?.let { listOf(it) }
+                ?: emptyList()
+            if (images.isNotEmpty()) {
+                // 2026-08-09 (kullanıcı isteği: "1'den fazla görsel ekleme
+                // olsun postlarda, instadaki gibi kaydırmalı olabilir" + "
+                // fotoğraflarda direkt tam ekran yapma olmasın") — Madde 4'teki
+                // ContentScale.Fit/400dp üst-sınır kararı KORUNDU, ama artık
+                // `heightIn(max=)` yerine KESİN `height(400.dp)` kullanılıyor
+                // (bkz. "devam 22" regresyon dersi: HorizontalPager'ın SAYFALARI
+                // matchParentSize/fillMaxSize ile Pager'ın kendisine bağımlı,
+                // Pager'ın da BELİRLİ bir yüksekliği olması ZORUNLU, yoksa
+                // 0dp'ye çöker). ÖNCEKİ "tıklayınca tam ekran büyüsün" davranışı
+                // BİLİNÇLİ olarak KALDIRILDI — artık fotoğraflarda hiçbir
+                // `.clickable` yok, Card'ın kendi `onCommentClick`'i (post
+                // detayına git) tekrar geçerli. `showFullscreenImage`/
+                // `FullscreenImageViewer` BURADA artık hiç tetiklenmiyor
+                // (ConversationScreen.kt'deki sohbet görseli AYRI bir akış,
+                // ORADA tap-to-fullscreen KORUNDU — bu karar SADECE post
+                // kartları için).
+                Column(modifier = Modifier.padding(top = 12.dp)) {
+                    val pagerState = rememberPagerState(pageCount = { images.size })
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(400.dp)
+                            .clip(MaterialTheme.shapes.medium),
+                    ) {
+                        HorizontalPager(
+                            state = pagerState,
+                            modifier = Modifier.matchParentSize(),
+                        ) { page ->
+                            AsyncImage(
+                                model = images[page],
+                                contentDescription = null,
+                                contentScale = ContentScale.Fit,
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        }
+                    }
+                    if (images.size > 1) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 6.dp),
+                            horizontalArrangement = Arrangement.Center,
+                        ) {
+                            repeat(images.size) { i ->
+                                val active = pagerState.currentPage == i
+                                Box(
+                                    modifier = Modifier
+                                        .padding(horizontal = 3.dp)
+                                        .size(if (active) 7.dp else 6.dp)
+                                        .clip(CircleShape)
+                                        .background(
+                                            if (active) MaterialTheme.colorScheme.primary
+                                            else MaterialTheme.colorScheme.outlineVariant,
+                                        ),
+                                )
+                            }
+                        }
+                    }
+                }
             } else if (!post.videoUrl.isNullOrBlank()) {
                 // 2026-08-09 (kullanıcı raporu: "video paylaşınca post akışta
                 // boş gözüküyor") — PostCard'da video render eden HİÇBİR dal
@@ -364,18 +408,22 @@ fun PostCard(
                 // MessageVideoPlayer ile AYNI desen (RESIZE_MODE_FIT, dispose
                 // olunca release()).
                 //
-                // 2026-08-09 (kullanıcı isteği: "videolar içinde geçerli aynı
-                // şey büyüsün") — PostVideoPlayer'ın KENDİ `useController=true`
-                // PlayerView'ı bir AndroidView olduğu için ÜSTÜNE eklenen bir
-                // Compose `clickable` dokunuşu ALAMAZDI (View tabanlı dokunma
-                // işleme kendi sınırları içinde Compose'un pointerInput'undan
-                // ÖNCELİKLİ) — bu yüzden şeffaf bir overlay Box (matchParentSize
-                // + clickable, PostVideoPlayer'ın ÜSTÜNE/SONRASINA yerleştirildi,
-                // Compose'da SONRAKİ kardeş ÜSTTE çizilir) tüm dokunuşları
-                // YAKALAYIP tam ekran görüntüleyiciyi açıyor; inline oynatıcının
-                // kendi kontrol çubuğu artık kullanılamıyor (Instagram/Twitter/
-                // WhatsApp'ın AYNI davranışı — küçük önizlemede scrub YOK,
-                // tıklayınca GERÇEK kontrollü tam ekran açılıyor).
+                // 2026-08-09 (kullanıcı isteği: "videoyu başlatmak için
+                // tıklayınca tam ekran almasın, tam ekran için simgesi olsun")
+                // — ÖNCEKİ turda eklenen tüm-yüzey şeffaf overlay Box
+                // (matchParentSize + clickable, tüm dokunuşları yakalayıp
+                // DOĞRUDAN tam ekran açıyordu) BİLİNÇLİ olarak KALDIRILDI:
+                // kullanıcı artık videoyu KÜÇÜK haldeyken oynat/duraklatmak
+                // istiyor. Overlay kaldırılınca PlayerView (bir AndroidView,
+                // useController=true) kendi dokunuşlarını DOĞRUDAN alır (View
+                // tabanlı dokunma işleme Compose'un üstüne binen bir modifier
+                // OLMADIĞI sürece kendi sınırları içinde çalışır) — tıklama
+                // artık ExoPlayer'ın KENDİ oynat/duraklat kontrolünü açıp
+                // kapatıyor. Tam ekran artık SADECE sağ-üstteki küçük ikonla
+                // (aşağıda) tetikleniyor; ikon Compose'da PlayerView'dan
+                // SONRAKİ kardeş olarak çizildiği için SADECE kendi küçük
+                // alanında dokunuşu yakalıyor, geri kalan video yüzeyi
+                // PlayerView'a bırakılıyor.
                 // KULLANICI RAPORU (2026-08-09, "akışta videolar gözükmüyor",
                 // yukarıdaki overlay değişikliğinden HEMEN SONRA): kök neden
                 // `heightIn(max = 400.dp)` (KESİN bir yükseklik DEĞİL, sadece
@@ -399,11 +447,22 @@ fun PostCard(
                         .clip(MaterialTheme.shapes.medium),
                 ) {
                     PostVideoPlayer(videoUrl = post.videoUrl, modifier = Modifier.matchParentSize())
-                    Box(
+                    IconButton(
+                        onClick = { showFullscreenVideo = true },
                         modifier = Modifier
-                            .matchParentSize()
-                            .clickable(onClick = { showFullscreenVideo = true }),
-                    )
+                            .align(Alignment.TopEnd)
+                            .padding(8.dp)
+                            .size(32.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.75f)),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Fullscreen,
+                            contentDescription = "Tam ekran",
+                            tint = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
                 }
             }
 
@@ -638,9 +697,6 @@ fun PostCard(
         )
     }
 
-    if (showFullscreenImage && !post.imageUrl.isNullOrBlank()) {
-        FullscreenImageViewer(imageUrl = post.imageUrl, onDismiss = { showFullscreenImage = false })
-    }
     if (showFullscreenVideo && !post.videoUrl.isNullOrBlank()) {
         FullscreenVideoViewer(videoUrl = post.videoUrl, onDismiss = { showFullscreenVideo = false })
     }

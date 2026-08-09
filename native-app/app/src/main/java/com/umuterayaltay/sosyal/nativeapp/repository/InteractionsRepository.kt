@@ -37,6 +37,11 @@ sealed class CreatePostResult {
     data class Error(val code: String?) : CreatePostResult()
 }
 
+/** Çoklu görsel yükleme (en fazla 4) — CreatePostViewModel'in ContentResolver'dan
+ * okuduğu ham byte'lar + MIME tipi, dosya adı YOK (backend içeriği magic-byte
+ * ile doğruluyor, görsel için sabit isim yeterli — bkz. createPost() yorumu). */
+data class ImageUpload(val bytes: ByteArray, val mimeType: String?)
+
 // Post yönetimi (düzenle/sil/arşivle/sabitle) — app/api_v1/posts.py'nin
 // birebir mirror'ı, ownership ihlalinde backend HER ZAMAN "not_found" (404)
 // döner (enumeration koruması), ayrı bir "forbidden" varyantı YOK.
@@ -160,10 +165,13 @@ class InteractionsRepository(
 
     /**
      * Yeni post oluşturur — app/api_v1.py api_create_post() ile AYNI kısıt:
-     * content VE imageBytes/videoBytes ikisi de boşsa backend zaten "empty"
+     * content VE images/videoBytes ikisi de boşsa backend zaten "empty"
      * döner, burada ayrıca bir ön-kontrol YAPILMIYOR (tek doğruluk kaynağı
      * backend olsun diye — CreatePostViewModel.submit() UI tarafında aynı
-     * kontrolü zaten yapıyor). `videoFileName` GERÇEK içerik tipiyle eşleşen
+     * kontrolü zaten yapıyor). 2026-08-09 (kullanıcı isteği: "1'den fazla
+     * görsel ekleme olsun") — `images` en fazla 4 eleman taşıyabilir (backend
+     * `upload_images(..., max_count=4)` ile AYNI sınır, fazlası backend'de
+     * sessizce atlanır — burada AYRICA bir ön-kontrol YAPILMIYOR). `videoFileName` GERÇEK içerik tipiyle eşleşen
      * bir uzantı taşımalı (ör. "upload.mp4") — backend hem uzantı HEM
      * sniff edilmiş MIME'ı doğruluyor (storage_helper.py upload_video),
      * görsel deseninin AKSİNE burada sabit bir dosya adı YETERSİZ. `gifUrl`
@@ -179,9 +187,7 @@ class InteractionsRepository(
     suspend fun createPost(
         content: String,
         visibility: String,
-        imageBytes: ByteArray?,
-        imageMimeType: String?,
-        imageFileName: String?,
+        images: List<ImageUpload> = emptyList(),
         videoBytes: ByteArray? = null,
         videoMimeType: String? = null,
         videoFileName: String? = null,
@@ -194,9 +200,14 @@ class InteractionsRepository(
             val visibilityBody: RequestBody = visibility.toRequestBody("text/plain".toMediaTypeOrNull())
             val isReelBody: RequestBody = (if (isReel) "true" else "false")
                 .toRequestBody("text/plain".toMediaTypeOrNull())
-            val imagePart: MultipartBody.Part? = imageBytes?.let { bytes ->
-                val imageBody = bytes.toRequestBody(imageMimeType?.toMediaTypeOrNull())
-                MultipartBody.Part.createFormData("image", imageFileName ?: "image.jpg", imageBody)
+            // Backend request.files.getlist("images") AYNI form alan adını
+            // PAYLAŞAN birden fazla parça bekliyor — MultipartBody.Part listesi
+            // bunu doğal olarak sağlar (her Part KENDİ createFormData("images", ...)
+            // çağrısıyla üretiliyor, isim çakışması SORUN DEĞİL, backend'in
+            // beklediği TAM olarak bu).
+            val imageParts: List<MultipartBody.Part> = images.mapIndexed { index, image ->
+                val imageBody = image.bytes.toRequestBody(image.mimeType?.toMediaTypeOrNull())
+                MultipartBody.Part.createFormData("images", "image$index.jpg", imageBody)
             }
             val videoPart: MultipartBody.Part? = videoBytes?.let { bytes ->
                 val videoBody = bytes.toRequestBody(videoMimeType?.toMediaTypeOrNull())
@@ -215,7 +226,7 @@ class InteractionsRepository(
                 ?.toRequestBody("text/plain".toMediaTypeOrNull())
 
             val response = interactionsApi.createPost(
-                contentBody, visibilityBody, imagePart, videoPart, isReelBody, gifUrlBody,
+                contentBody, visibilityBody, imageParts, videoPart, isReelBody, gifUrlBody,
                 pollOption1Body, pollOption2Body, pollOption3Body, pollOption4Body,
             )
             val body = response.body()

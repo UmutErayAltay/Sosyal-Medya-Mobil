@@ -41,6 +41,15 @@ data class Post(
     val userId: String,
     val content: String?,
     val imageUrl: String?,
+    // 2026-08-09 (kullanıcı isteği: "1'den fazla görsel ekleme olsun,
+    // instadaki gibi kaydırmalı olabilir") — PostDto zaten `image_urls`
+    // taşıyordu (backend web tarafında ÇOKTAN vardı), sadece domain modele
+    // hiç taşınmıyordu. Room cache'e (PostEntity) BİLİNÇLİ YAZILMAZ — poll ile
+    // AYNI gerekçe (bkz. yukarıdaki Poll alan yorumu): offline post'larda
+    // sadece ilk görsel (imageUrl) gösterilir, bu kabul edilebilir bir
+    // degradasyon (görsel URL'leri değişmez ama offline carousel İCAT
+    // EDİLMEDİ, tek doğruluk kaynağı ağdan gelen post).
+    val imageUrls: List<String>? = null,
     val videoUrl: String?,
     val username: String?,
     val avatarUrl: String?,
@@ -71,6 +80,7 @@ fun PostDto.toDomain(): Post = Post(
     userId = userId,
     content = content,
     imageUrl = imageUrl,
+    imageUrls = imageUrls,
     videoUrl = videoUrl,
     username = profiles?.username,
     avatarUrl = profiles?.avatarUrl,

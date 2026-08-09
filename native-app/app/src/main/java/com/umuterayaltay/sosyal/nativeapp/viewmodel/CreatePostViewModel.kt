@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.umuterayaltay.sosyal.nativeapp.ServiceLocator
 import com.umuterayaltay.sosyal.nativeapp.repository.CreatePostResult
+import com.umuterayaltay.sosyal.nativeapp.repository.ImageUpload
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -23,8 +24,9 @@ sealed class CreatePostEvent {
 /**
  * "Yeni Gönderi" ekranı için ViewModel — app/api_v1.py api_create_post()
  * sözleşmesiyle (bkz. InteractionsRepository.createPost) AYNI BİLİNÇLİ SINIR:
- * metin + TEK opsiyonel görsel VEYA TEK opsiyonel video/reel + görünürlük
- * (public/followers/close_friends). Diğer ViewModel'lerdeki AYNI 401 deseni
+ * metin + EN FAZLA 4 opsiyonel görsel (2026-08-09'dan beri çoklu, bkz. MAX_IMAGES)
+ * VEYA TEK opsiyonel video/reel + görünürlük (public/followers/close_friends).
+ * Diğer ViewModel'lerdeki AYNI 401 deseni
  * (PostDetailViewModel/NewMessageViewModel): proaktif doğrulama yok, ilk
  * "unauthorized" gelince token temizlenip SessionExpired event'i yayınlanır.
  *
@@ -36,6 +38,10 @@ sealed class CreatePostEvent {
 class CreatePostViewModel : ViewModel() {
 
     companion object {
+        // web'in upload_images(..., max_count=4) ile AYNI sınır (2026-08-09,
+        // kullanıcı isteği: "1'den fazla görsel ekleme olsun").
+        private const val MAX_IMAGES = 4
+
         // Backend storage_helper.py MAX_VIDEO_SIZE ile AYNI limit — istemci
         // tarafında ön-kontrol yaparak 25MB'ı aşan bir video hiç gönderilmez
         // (yükleme bandwidth'i + backend'in reddetme gecikmesi boşa gitmesin).
@@ -66,8 +72,8 @@ class CreatePostViewModel : ViewModel() {
     private val _visibility = MutableStateFlow("followers")
     val visibility: StateFlow<String> = _visibility.asStateFlow()
 
-    private val _selectedImageUri = MutableStateFlow<Uri?>(null)
-    val selectedImageUri: StateFlow<Uri?> = _selectedImageUri.asStateFlow()
+    private val _selectedImageUris = MutableStateFlow<List<Uri>>(emptyList())
+    val selectedImageUris: StateFlow<List<Uri>> = _selectedImageUris.asStateFlow()
 
     private val _selectedVideoUri = MutableStateFlow<Uri?>(null)
     val selectedVideoUri: StateFlow<Uri?> = _selectedVideoUri.asStateFlow()
@@ -111,22 +117,33 @@ class CreatePostViewModel : ViewModel() {
         _visibility.value = value
     }
 
-    fun onImageSelected(uri: Uri?) {
-        _selectedImageUri.value = uri
+    /** PickMultipleVisualMedia sonucu — MAX_IMAGES'ı aşan seçim SESSİZCE
+     * kırpılır (Android Photo Picker'ın kendisi maxItems ile ZATEN sınırlıyor,
+     * bu sadece bir güvenlik ağı). Boş liste geçmek "seçimi temizle" anlamına
+     * gelir (tek görselin AKSİNE `null` yerine `emptyList()` kullanılıyor). */
+    fun onImagesSelected(uris: List<Uri>) {
+        _selectedImageUris.value = uris.take(MAX_IMAGES)
         // Görsel VE video mutually-exclusive (UI'da) — biri seçilince öteki
         // temizlenir, backend ikisini de kabul etse de karışık bir post İCAT
         // EDİLMEDİ (bkz. görev tanımı).
-        if (uri != null) {
+        if (uris.isNotEmpty()) {
             _selectedVideoUri.value = null
             _isReel.value = false
             _selectedGifUrl.value = null
         }
     }
 
+    /** Önizleme şeridindeki X butonu — tek bir görseli listeden çıkarır. */
+    fun onImageRemovedAt(index: Int) {
+        _selectedImageUris.value = _selectedImageUris.value.toMutableList().also {
+            if (index in it.indices) it.removeAt(index)
+        }
+    }
+
     fun onVideoSelected(uri: Uri?) {
         _selectedVideoUri.value = uri
         if (uri != null) {
-            _selectedImageUri.value = null
+            _selectedImageUris.value = emptyList()
             _selectedGifUrl.value = null
         } else {
             _isReel.value = false
@@ -141,7 +158,7 @@ class CreatePostViewModel : ViewModel() {
      * kuralıyla (bkz. InteractionsRepository.createPost yorumu) AYNI. */
     fun onGifSelected(url: String) {
         _selectedGifUrl.value = url
-        _selectedImageUri.value = null
+        _selectedImageUris.value = emptyList()
         _selectedVideoUri.value = null
         _isReel.value = false
     }
@@ -188,7 +205,7 @@ class CreatePostViewModel : ViewModel() {
     fun submit(context: Context) {
         if (_submitting.value) return
         val text = _content.value.trim()
-        val imageUri = _selectedImageUri.value
+        val imageUris = _selectedImageUris.value
         val videoUri = _selectedVideoUri.value
         val gifUrl = _selectedGifUrl.value
         // En az 2 dolu seçenek varsa "anket var" sayılır — backend
@@ -199,7 +216,7 @@ class CreatePostViewModel : ViewModel() {
             emptyList()
         }
         val hasPoll = filledPollOptions.size >= 2
-        if (text.isEmpty() && imageUri == null && videoUri == null && gifUrl.isNullOrBlank() && !hasPoll) {
+        if (text.isEmpty() && imageUris.isEmpty() && videoUri == null && gifUrl.isNullOrBlank() && !hasPoll) {
             _error.value = "Bir şeyler yaz, bir görsel veya video seç"
             return
         }
@@ -215,14 +232,15 @@ class CreatePostViewModel : ViewModel() {
             _submitting.value = true
             _error.value = null
 
-            var imageBytes: ByteArray? = null
-            var imageMimeType: String? = null
-            if (imageUri != null) {
+            val images = mutableListOf<ImageUpload>()
+            for (uri in imageUris) {
                 try {
-                    withContext(Dispatchers.IO) {
-                        imageBytes = context.contentResolver.openInputStream(imageUri)?.use { it.readBytes() }
+                    val bytes = withContext(Dispatchers.IO) {
+                        context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
                     }
-                    imageMimeType = context.contentResolver.getType(imageUri)
+                    if (bytes != null) {
+                        images += ImageUpload(bytes, context.contentResolver.getType(uri))
+                    }
                 } catch (e: Exception) {
                     _error.value = "Görsel okunamadı, lütfen tekrar deneyin"
                     _submitting.value = false
@@ -276,11 +294,7 @@ class CreatePostViewModel : ViewModel() {
                 val result = interactionsRepository.createPost(
                     content = text,
                     visibility = _visibility.value,
-                    imageBytes = imageBytes,
-                    imageMimeType = imageMimeType,
-                    // Gerçek uzantı önemli değil — backend içeriği magic-byte ile
-                    // doğruluyor (bkz. storage_helper.py deseni), sabit isim yeterli.
-                    imageFileName = if (imageBytes != null) "upload.jpg" else null,
+                    images = images,
                     videoBytes = videoBytes,
                     videoMimeType = videoMimeType,
                     // Video için AKSİNE gerçek uzantı ÖNEMLİ (yukarıdaki

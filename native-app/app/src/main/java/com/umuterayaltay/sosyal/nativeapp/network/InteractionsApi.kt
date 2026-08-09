@@ -39,10 +39,16 @@ interface InteractionsApi {
 
     // multipart/form-data — JSON DEĞİL, çünkü opsiyonel bir görsel/video
     // dosyası içerebiliyor (backend api_create_post() ile AYNI kodlama).
-    // `image`/`video` null geçilirse Retrofit bu parçayı isteğe hiç eklemez
-    // (backend'de request.files.get(...) None döner, has_image/has_video
-    // False olur) — eski (sadece görsel) çağrı yerleri BOZULMAZ. `gif_url`
-    // (Faz 5 Dalga 3B) SADECE görsel/video YOKSA backend'de kullanılır.
+    // 2026-08-09 (kullanıcı isteği: "1'den fazla görsel ekleme olsun, instadaki
+    // gibi kaydırmalı olabilir") — `image` (tekil) `images` (çoklu, en fazla 4)
+    // ile DEĞİŞTİRİLDİ: backend artık HEM yeni `images` alanını (öncelikli)
+    // HEM eski tekil `image` alanını (geriye dönük uyumluluk) kabul ediyor
+    // (bkz. api_v1/interactions.py::api_create_post()), ama BU istemci ARTIK
+    // SADECE `images`'i kullanıyor — eski tekil alan sadece henüz güncellenmemiş
+    // KURULU uygulamalar için backend'de yaşıyor, burada tekrar İCAT EDİLMEDİ.
+    // Boş liste geçilirse Retrofit hiçbir "images" parçası eklemez (backend'de
+    // getlist("images") boş döner) — aynı `video` null-atlama deseniyle TUTARLI.
+    // `gif_url` (Faz 5 Dalga 3B) SADECE görsel/video YOKSA backend'de kullanılır.
     // `poll_option_1..4` (Faz 5 Dalga 4C) — web'in routes/posts.py
     // create_post()'undaki AYNI sözleşme: request.form.get(f"poll_option_{i}")
     // ile birebir isim eşleşmesi, en az 2 dolu seçenek "anket var" sayılır,
@@ -52,7 +58,7 @@ interface InteractionsApi {
     suspend fun createPost(
         @Part("content") content: RequestBody,
         @Part("visibility") visibility: RequestBody,
-        @Part image: MultipartBody.Part?,
+        @Part images: List<MultipartBody.Part>,
         @Part video: MultipartBody.Part?,
         @Part("is_reel") isReel: RequestBody,
         @Part("gif_url") gifUrl: RequestBody?,

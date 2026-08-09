@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -81,10 +82,12 @@ private val VISIBILITY_OPTIONS = listOf(
 
 /**
  * "Yeni Gönderi" ekranı — app/api_v1.py api_create_post() sözleşmesiyle
- * (bkz. CreatePostViewModel) AYNI BİLİNÇLİ SINIR: metin + (TEK opsiyonel
- * görsel VEYA TEK opsiyonel video/reel, ikisi birden UI'da mutually
- * exclusive) + görünürlük (galeriden, Android Photo Picker ile). Görsel/video
- * seçildiğinde diğeri otomatik temizlenir (bkz. ViewModel onImageSelected/
+ * (bkz. CreatePostViewModel) AYNI BİLİNÇLİ SINIR: metin + (EN FAZLA 4 opsiyonel
+ * görsel VEYA TEK opsiyonel video/reel, ikisi birden UI'da mutually exclusive)
+ * + görünürlük (galeriden, Android Photo Picker'ın PickMultipleVisualMedia'sı
+ * ile — 2026-08-09, kullanıcı isteği: "instadaki gibi kaydırmalı olabilir",
+ * bkz. PostCard.kt'deki HorizontalPager carousel). Görsel/video seçildiğinde
+ * diğeri otomatik temizlenir (bkz. ViewModel onImagesSelected/
  * onVideoSelected). Video seçiliyken "Reel olarak paylaş" Switch'i görünür —
  * reels.py'nin is_reel=True + video_url IS NOT NULL filtresi ZATEN doğru
  * postları buluyor, burada SADECE bayrak taşınıyor. Görünürlük seçimi
@@ -104,7 +107,7 @@ fun CreatePostScreen(
     val context = LocalContext.current
     val content by viewModel.content.collectAsState()
     val visibility by viewModel.visibility.collectAsState()
-    val selectedImageUri by viewModel.selectedImageUri.collectAsState()
+    val selectedImageUris by viewModel.selectedImageUris.collectAsState()
     val selectedVideoUri by viewModel.selectedVideoUri.collectAsState()
     val isReel by viewModel.isReel.collectAsState()
     val selectedGifUrl by viewModel.selectedGifUrl.collectAsState()
@@ -130,9 +133,12 @@ fun CreatePostScreen(
         }
     }
 
+    // 2026-08-09 (kullanıcı isteği: "1'den fazla görsel ekleme olsun") —
+    // PickVisualMedia (tekil) yerine PickMultipleVisualMedia(maxItems=4),
+    // backend'in upload_images(..., max_count=4) sınırıyla AYNI üst sınır.
     val imagePickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickVisualMedia(),
-    ) { uri -> viewModel.onImageSelected(uri) }
+        contract = ActivityResultContracts.PickMultipleVisualMedia(maxItems = 4),
+    ) { uris -> viewModel.onImagesSelected(uris) }
 
     val videoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia(),
@@ -142,7 +148,7 @@ fun CreatePostScreen(
     // ViewModel.submit()'teki AYNI eşik (backend api_create_post() ile AYNI).
     val hasPoll = showPollEditor && pollOptions.count { it.isNotBlank() } >= 2
     val canSubmit = (
-        content.isNotBlank() || selectedImageUri != null || selectedVideoUri != null ||
+        content.isNotBlank() || selectedImageUris.isNotEmpty() || selectedVideoUri != null ||
             !selectedGifUrl.isNullOrBlank() || hasPoll
         ) && !submitting
 
@@ -211,36 +217,66 @@ fun CreatePostScreen(
                 shape = MaterialTheme.shapes.medium,
             )
 
-            if (selectedImageUri != null) {
+            if (selectedImageUris.isNotEmpty()) {
+                // 2026-08-09 (kullanıcı isteği: "1'den fazla görsel ekleme
+                // olsun") — Android Photo Picker'ın PickMultipleVisualMedia'sı
+                // HER launch'ta TAM bir seçim döndürür (önceki seçime EKLEME
+                // yapmaz, YERİNE geçer) — bu yüzden "daha fazla ekle" tuşu YOK,
+                // sadece tekil kaldırma (X) + tüm seçimi YENİDEN yapan
+                // "Görselleri değiştir" butonu var, PostCard'daki carousel'in
+                // AYNI sırasıyla önizleniyor (LazyRow, dot-indicator YOK —
+                // burada zaten hepsi aynı anda yan yana görünür).
                 AnimatedVisibility(
                     visible = true,
                     enter = fadeIn(tween(200)) + scaleIn(tween(200), initialScale = 0.85f),
                     exit = fadeOut(tween(150)) + scaleOut(tween(150), targetScale = 0.85f),
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(220.dp)
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(MaterialTheme.colorScheme.surfaceVariant),
-                    ) {
-                        AsyncImage(
-                            model = selectedImageUri,
-                            contentDescription = null,
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize(),
-                        )
-                        IconButton(
-                            onClick = { viewModel.onImageSelected(null) },
-                            enabled = !submitting,
-                            modifier = Modifier
-                                .align(Alignment.TopEnd)
-                                .padding(8.dp)
-                                .size(32.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f)),
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth(),
                         ) {
-                            Icon(Icons.Filled.Close, contentDescription = "Görseli kaldır")
+                            itemsIndexed(selectedImageUris) { index, uri ->
+                                Box(
+                                    modifier = Modifier
+                                        .size(140.dp)
+                                        .clip(RoundedCornerShape(16.dp))
+                                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                                ) {
+                                    AsyncImage(
+                                        model = uri,
+                                        contentDescription = null,
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize(),
+                                    )
+                                    IconButton(
+                                        onClick = { viewModel.onImageRemovedAt(index) },
+                                        enabled = !submitting,
+                                        modifier = Modifier
+                                            .align(Alignment.TopEnd)
+                                            .padding(6.dp)
+                                            .size(28.dp)
+                                            .clip(CircleShape)
+                                            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f)),
+                                    ) {
+                                        Icon(
+                                            Icons.Filled.Close,
+                                            contentDescription = "Görseli kaldır",
+                                            modifier = Modifier.size(16.dp),
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        TextButton(
+                            onClick = {
+                                imagePickerLauncher.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                                )
+                            },
+                            enabled = !submitting,
+                        ) {
+                            Text("Görselleri değiştir (${selectedImageUris.size}/4)")
                         }
                     }
                 }
@@ -261,10 +297,10 @@ fun CreatePostScreen(
             }
 
             // GIF önizleme/seçim (Faz 5 Dalga 3B) — görsel/video ile mutually
-            // exclusive (ViewModel.onGifSelected/onImageSelected/onVideoSelected
+            // exclusive (ViewModel.onGifSelected/onImagesSelected/onVideoSelected
             // zaten diğerlerini temizliyor, backend api_create_post()'daki
             // AYNI kural).
-            if (selectedImageUri == null && selectedVideoUri == null) {
+            if (selectedImageUris.isEmpty() && selectedVideoUri == null) {
                 if (!selectedGifUrl.isNullOrBlank()) {
                     AnimatedVisibility(
                         visible = true,
@@ -312,11 +348,11 @@ fun CreatePostScreen(
             }
 
             // Video seçimi — görsel ile mutually exclusive (yukarıdaki
-            // ViewModel.onImageSelected/onVideoSelected zaten diğerini
+            // ViewModel.onImagesSelected/onVideoSelected zaten diğerini
             // temizliyor). Tam video player İCAT EDİLMEDİ (görev tanımı
             // gereği gerekmiyor) — sadece dosya seçildiğini gösteren basit
             // bir ikon+etiket + kaldır butonu yeterli.
-            if (selectedImageUri == null) {
+            if (selectedImageUris.isEmpty()) {
                 if (selectedVideoUri != null) {
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         AnimatedVisibility(
