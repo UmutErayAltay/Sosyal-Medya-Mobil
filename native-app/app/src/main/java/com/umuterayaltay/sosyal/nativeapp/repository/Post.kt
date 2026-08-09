@@ -124,6 +124,11 @@ fun PostDto.toDomain(): Post = Post(
     },
 )
 
+// Room List<String> DOĞRUDAN saklayamadığı için (bkz. PostEntity.kt imageUrls
+// yorumu) URL'ler "|||" ayracıyla TEK bir metin kolonunda birleştirilir —
+// karşı yön (split) PostEntity.toDomain()'de.
+private const val IMAGE_URLS_DELIMITER = "|||"
+
 fun PostDto.toEntity(cachedAt: Long): PostEntity = PostEntity(
     id = id,
     userId = userId,
@@ -138,6 +143,9 @@ fun PostDto.toEntity(cachedAt: Long): PostEntity = PostEntity(
     createdAt = createdAt,
     mutedByMe = mutedByMe,
     bookmarkedByMe = bookmarkedByMe,
+    imageUrls = imageUrls?.filter { it.isNotBlank() }
+        ?.takeIf { it.isNotEmpty() }
+        ?.joinToString(IMAGE_URLS_DELIMITER),
     cachedAt = cachedAt,
 )
 
@@ -146,6 +154,7 @@ fun PostEntity.toDomain(): Post = Post(
     userId = userId,
     content = content,
     imageUrl = imageUrl,
+    imageUrls = imageUrls?.split(IMAGE_URLS_DELIMITER)?.filter { it.isNotBlank() }?.takeIf { it.isNotEmpty() },
     videoUrl = videoUrl,
     username = username,
     avatarUrl = avatarUrl,

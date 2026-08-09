@@ -13,12 +13,14 @@ import androidx.room.RoomDatabase
 // post sessize alma, bkz. repository/Post.kt PostEntity.toDomain() yorumu).
 // version 4 -> 5: PostEntity'ye bookmarkedByMe kolonu eklendi (Faz 5 Dalga 3A
 // — kaydetme, mutedByMe ile AYNI gerekçe).
+// version 5 -> 6: PostEntity'ye imageUrls kolonu eklendi (kullanıcı raporu:
+// "çoklu görseller ana sayfada tek görsel gözüküyor" — bkz. PostEntity.kt yorumu).
 // Bu tablo SADECE bir cache (FeedRepository'nin "önce cache göster, sonra
 // ağdan tazele" deseni) - gerçek kullanıcı verisi değil, bu yüzden migration
 // yazmak yerine fallbackToDestructiveMigration() tercih edildi: şema
 // uyuşmazlığında tablo silinip network'ten yeniden doldurulur, kalıcı veri
 // kaybı riski yok.
-@Database(entities = [PostEntity::class], version = 5, exportSchema = false)
+@Database(entities = [PostEntity::class], version = 6, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun postDao(): PostDao
 
