@@ -1,7 +1,10 @@
 package com.umuterayaltay.sosyal.nativeapp.ui.screens
 
 import android.Manifest
+import android.app.Activity
+import android.content.ContextWrapper
 import android.content.pm.PackageManager
+import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -41,6 +44,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -99,6 +103,17 @@ fun CallScreen(
     ),
 ) {
     val context = LocalContext.current
+    // 2026-08-09 (kullanıcı raporu: "görüntülü aramadayken telefon kendini
+    // uyku moduna alıyordu") — OneOnOneCallScreen.kt'deki AYNI gerekçe/desen
+    // (findActivity() extension'ı da AYNI dosyada KOPYALANDI, bkz. o
+    // dosyadaki yorum).
+    DisposableEffect(Unit) {
+        val activity = context.findActivity()
+        activity?.window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        onDispose {
+            activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+    }
     val uiState by viewModel.uiState.collectAsState()
     val isMicEnabled by viewModel.isMicEnabled.collectAsState()
     val isCameraEnabled by viewModel.isCameraEnabled.collectAsState()
@@ -461,4 +476,14 @@ private fun RowScope.CallControlButton(
     ) {
         Icon(icon, contentDescription = contentDescription)
     }
+}
+
+/** OneOnOneCallScreen.kt'deki AYNI helper (bkz. o dosyadaki yorum) —
+ * `LocalContext.current` genelde bir `ContextWrapper` katmanına sarılı
+ * gelir, `Window`'a erişmek (ekranı-açık-tut bayrağı için) gerçek
+ * Activity'ye inmeyi gerektiriyor. */
+private tailrec fun android.content.Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
 }

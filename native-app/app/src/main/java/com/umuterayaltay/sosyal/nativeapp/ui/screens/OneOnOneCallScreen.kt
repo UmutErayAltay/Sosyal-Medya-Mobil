@@ -1,7 +1,10 @@
 package com.umuterayaltay.sosyal.nativeapp.ui.screens
 
 import android.Manifest
+import android.app.Activity
+import android.content.ContextWrapper
 import android.content.pm.PackageManager
+import android.view.WindowManager
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -47,6 +50,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -115,6 +119,20 @@ fun OneOnOneCallScreen(
     viewModel: OneOnOneCallViewModel = viewModel(factory = OneOnOneCallViewModelFactory()),
 ) {
     val context = LocalContext.current
+    // 2026-08-09 (kullanıcı raporu: "görüntülü aramadayken telefon kendini
+    // uyku moduna alıyordu") — bu ekran açıkken (çalıyor/aktif/kapanış
+    // hepsi dahil) FLAG_KEEP_SCREEN_ON, ekran kapanıp aramayı KESİNTİYE
+    // uğratmasın diye. Ekran kapanınca (onNavigateBack ile composable
+    // dispose olunca) bayrak TEMİZLENİR — aksi halde bu ekrandan çıktıktan
+    // SONRA da telefon uyumaz kalırdı (global bir yan etki, sadece bu
+    // ekranın kendi Window'una uygulanıyor).
+    DisposableEffect(Unit) {
+        val activity = context.findActivity()
+        activity?.window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        onDispose {
+            activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+    }
     val phase by viewModel.phase.collectAsState()
     val localVideoTrack by viewModel.localVideoTrack.collectAsState()
     val remoteVideoTrack by viewModel.remoteVideoTrack.collectAsState()
@@ -675,4 +693,17 @@ private fun RowScope.CallControlButton(
     ) {
         Icon(icon, contentDescription = contentDescription)
     }
+}
+
+/** Compose'un `LocalContext.current`'ı Activity'nin KENDİSİ olabilir AMA
+ * genelde bir `ContextWrapper` katmanı (Theme/ContextThemeWrapper) İÇİNE
+ * SARILMIŞ gelir — `Window`'a erişmek (ekranı-açık-tut bayrağı için)
+ * gerçek Activity'ye inmeyi gerektiriyor. `CallScreen.kt`'de (grup araması)
+ * AYNI ihtiyaç için KOPYALANDI — ortak bir Ext dosyasına taşımak bu
+ * turun kapsamı DIŞI (projede henüz böyle bir dosya yok).
+ */
+private tailrec fun android.content.Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
 }
