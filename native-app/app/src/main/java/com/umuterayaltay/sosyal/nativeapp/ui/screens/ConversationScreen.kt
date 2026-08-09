@@ -978,6 +978,7 @@ private fun MessageBubble(
                         }
                         SharedPostCard(
                             imageUrl = imageUrl,
+                            videoUrl = message.videoUrl,
                             excerpt = sharedPostInfo.excerpt,
                             author = sharedPostInfo.author,
                             contentColor = contentColor,
@@ -1166,6 +1167,13 @@ private fun MessageBubble(
 @Composable
 private fun SharedPostCard(
     imageUrl: String?,
+    // 2026-08-09 (kullanıcı raporu: "video postları mesajlarda gözükmüyor")
+    // — kök neden bu composable'ın videoUrl'i HİÇ bilmemesiydi (backend de
+    // ayrıca video_url'i share_post()'ta hiç taşımıyordu, o AYRI bir backend
+    // düzeltmesiyle giderildi). imageUrl ile AYNI "varsa göster" deseni,
+    // ikisi TEORİK olarak birlikte gelebilir ama pratikte bir post ya
+    // görsel ya video taşır (bkz. Post.kt).
+    videoUrl: String?,
     excerpt: String?,
     author: String?,
     contentColor: androidx.compose.ui.graphics.Color,
@@ -1186,6 +1194,18 @@ private fun SharedPostCard(
                     .fillMaxWidth()
                     .height(160.dp),
             )
+        } else if (!videoUrl.isNullOrBlank()) {
+            // Tam ekran/oynat-duraklat tıklaması BİLEREK YOK — MessageBubble'ın
+            // KENDİ combinedClickable'ı (dış balon) zaten bu kartın TAMAMINI
+            // post detayına götürüyor (bkz. composable'ın üstteki dosya
+            // yorumu), ayrı bir video oynatma etkileşimi burada İSTENMEDİ.
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(160.dp),
+            ) {
+                MessageVideoPlayer(videoUrl = videoUrl, modifier = Modifier.matchParentSize())
+            }
         }
         if (!author.isNullOrBlank() || !excerpt.isNullOrBlank()) {
             Column(modifier = Modifier.padding(10.dp)) {
