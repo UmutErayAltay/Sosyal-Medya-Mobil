@@ -21,6 +21,7 @@ import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
 import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
+import org.webrtc.PeerConnection
 import java.io.IOException
 
 sealed class ConversationsResult {
@@ -614,6 +615,30 @@ class MessagingRepository(
             } catch (e: Exception) {
                 // best-effort — arama zaten Realtime broadcast ile devam ediyor.
             }
+        }
+    }
+
+    /** WebRTC TURN/STUN sunucu listesini backend'den ANLIK çeker (2026-08-09)
+     * — eski SABİT/paylaşımlı openrelayproject kimlik bilgisi yerine, backend'in
+     * kendi metered.ca API key'iyle ürettiği kısa-ömürlü liste (bkz. IceServerDto
+     * yorumu, web'in call.js#getIceServers() ile AYNI mantık). Ağ hatası/boş
+     * yanıtta SADECE Google'ın herkese açık STUN sunucusunu içeren bir fallback
+     * döner — TAMAMEN başarısız OLMAZ, aynı ağdaki aramalar yine çalışabilir. */
+    suspend fun getIceServers(): List<PeerConnection.IceServer> = withContext(Dispatchers.IO) {
+        val fallback = listOf(PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer())
+        try {
+            val resp = messagingApi.getTurnCredentials()
+            val servers = if (resp.isSuccessful) resp.body() else null
+            if (servers.isNullOrEmpty()) return@withContext fallback
+            servers.mapNotNull { dto ->
+                val urls = dto.urls ?: return@mapNotNull null
+                val builder = PeerConnection.IceServer.builder(urls)
+                if (dto.username != null) builder.setUsername(dto.username)
+                if (dto.credential != null) builder.setPassword(dto.credential)
+                builder.createIceServer()
+            }.ifEmpty { fallback }
+        } catch (e: Exception) {
+            fallback
         }
     }
 }

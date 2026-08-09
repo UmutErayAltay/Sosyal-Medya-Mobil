@@ -30,23 +30,6 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
 /**
- * Web'in call.js#getIceServers() ile BİREBİR AYNI (görev spesifikasyonu) —
- * ücretsiz, kayıt gerektirmeyen STUN + metered.ca TURN relay listesi.
- */
-private object WebRtcIceServers {
-    fun list(): List<PeerConnection.IceServer> = listOf(
-        PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer(),
-        PeerConnection.IceServer.builder("stun:stun.relay.metered.ca:80").createIceServer(),
-        PeerConnection.IceServer.builder("turn:standard.relay.metered.ca:80")
-            .setUsername("openrelayproject").setPassword("openrelayproject").createIceServer(),
-        PeerConnection.IceServer.builder("turn:standard.relay.metered.ca:443")
-            .setUsername("openrelayproject").setPassword("openrelayproject").createIceServer(),
-        PeerConnection.IceServer.builder("turns:standard.relay.metered.ca:443?transport=tcp")
-            .setUsername("openrelayproject").setPassword("openrelayproject").createIceServer(),
-    )
-}
-
-/**
  * Tek bir 1:1 aramanın WebRTC katmanı — PeerConnectionFactory/EglBase
  * PAHALI (bir kez oluşturulup app ömrü boyunca paylaşılması gerekir, bkz.
  * companion object), ama PeerConnection'ın KENDİSİ her arama için YENİDEN
@@ -72,6 +55,7 @@ private object WebRtcIceServers {
 class WebRtcCallManager(
     context: Context,
     private val enableVideo: Boolean,
+    private val iceServers: List<PeerConnection.IceServer>,
     private val onIceCandidate: (IceCandidate) -> Unit,
     private val onRemoteVideoTrack: (VideoTrack?) -> Unit,
     private val onConnectionFailed: () -> Unit,
@@ -155,7 +139,7 @@ class WebRtcCallManager(
     }
 
     private fun buildPeerConnection(): PeerConnection {
-        val rtcConfig = PeerConnection.RTCConfiguration(WebRtcIceServers.list()).apply {
+        val rtcConfig = PeerConnection.RTCConfiguration(iceServers).apply {
             sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
         }
         val observer = object : PeerConnection.Observer {

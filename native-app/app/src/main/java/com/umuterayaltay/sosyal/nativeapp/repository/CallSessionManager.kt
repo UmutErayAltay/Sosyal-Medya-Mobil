@@ -307,9 +307,11 @@ class CallSessionManager(
         scope.launch {
             try {
                 val myTopic = signaling.myTopic ?: ""
+                val iceServers = messagingRepository.getIceServers()
                 val rtc = WebRtcCallManager(
                     context = context,
                     enableVideo = isVideo,
+                    iceServers = iceServers,
                     onIceCandidate = { candidate ->
                         scope.launch {
                             signaling.sendSignal(
@@ -392,9 +394,11 @@ class CallSessionManager(
         scope.launch {
             try {
                 val myTopic = signaling.myTopic ?: ""
+                val iceServers = messagingRepository.getIceServers()
                 val rtc = WebRtcCallManager(
                     context = context,
                     enableVideo = incoming.isVideo,
+                    iceServers = iceServers,
                     onIceCandidate = { candidate ->
                         scope.launch {
                             signaling.sendSignal(

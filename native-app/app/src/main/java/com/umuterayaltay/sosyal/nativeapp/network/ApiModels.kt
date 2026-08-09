@@ -1061,6 +1061,16 @@ data class RingCallRequest(
     @SerializedName("target_user_id") val targetUserId: String,
 )
 
+/** GET /calls/turn-credentials yanıtı — RTCPeerConnection.IceServer'a BİREBİR
+ * eşleşen şekil (2026-08-09, bkz. WebRtcCallManager.kt WebRtcIceServers ve
+ * web'in call.js#getIceServers() — backend metered.ca'dan ANLIK/kısa-ömürlü
+ * kimlik bilgisi çekip aynı şekilde proxy'liyor, API key SADECE backend'de). */
+data class IceServerDto(
+    val urls: String? = null,
+    val username: String? = null,
+    val credential: String? = null,
+)
+
 // ---- FAZ5: Şifre sıfırlama + Sticker backend/API (Dalga 1C) ----
 
 /** POST /auth/forgot-password gövdesi — yanıt HER ZAMAN {"ok":true}

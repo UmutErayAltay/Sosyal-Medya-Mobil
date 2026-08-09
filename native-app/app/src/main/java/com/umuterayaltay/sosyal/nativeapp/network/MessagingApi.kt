@@ -151,4 +151,10 @@ interface MessagingApi {
     // ---- 1:1 arama FCM uyandırma (2026-08-08) — bkz. RingCallRequest yorumu.
     @POST("calls/ring")
     suspend fun ringCall(@Body request: RingCallRequest): Response<SimpleOkResponse>
+
+    // ---- WebRTC TURN/STUN kimlik bilgileri (2026-08-09) — backend'in
+    // metered.ca API key'ini kullanarak ANLIK ürettiği liste, bkz.
+    // IceServerDto yorumu. web'in call.js#getIceServers() ile AYNI endpoint.
+    @GET("calls/turn-credentials")
+    suspend fun getTurnCredentials(): Response<List<IceServerDto>>
 }
