@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -375,10 +376,25 @@ fun PostCard(
                 // kendi kontrol çubuğu artık kullanılamıyor (Instagram/Twitter/
                 // WhatsApp'ın AYNI davranışı — küçük önizlemede scrub YOK,
                 // tıklayınca GERÇEK kontrollü tam ekran açılıyor).
+                // KULLANICI RAPORU (2026-08-09, "akışta videolar gözükmüyor",
+                // yukarıdaki overlay değişikliğinden HEMEN SONRA): kök neden
+                // `heightIn(max = 400.dp)` (KESİN bir yükseklik DEĞİL, sadece
+                // ÜST SINIR) + İKİ çocuğun da `matchParentSize()` kullanması —
+                // matchParentSize() BİLEREK ebeveynin boyutuna KATKI SAĞLAMAZ
+                // (döngüsel ölçüm önlemek için), yani bu Box'ın boyutunu
+                // belirleyecek HİÇBİR şey kalmıyordu -> Compose'un wrap-content
+                // varsayılanıyla 0dp yüksekliğe ÇÖKÜYORDU (video teknik olarak
+                // ORADAydı ama 0 piksel boyutunda, yani GÖRÜNMEZ). Eskiden
+                // (overlay'siz halde) bu boyutlandırmayı PlayerView'ın KENDİSİ
+                // (bir Android View, AT_MOST ölçü spec'inde "mevcut alanı
+                // doldur" varsayılanıyla) sağlıyordu — Compose'un KENDİ Box'ı
+                // AYNI varsayılanı YAPMAZ. Düzeltme: `heightIn(max=)` yerine
+                // KESİN `height(400.dp)` — artık matchParentSize() çocuklarının
+                // eşleşeceği gerçek bir boyut var.
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(max = 400.dp)
+                        .height(400.dp)
                         .padding(top = 12.dp)
                         .clip(MaterialTheme.shapes.medium),
                 ) {
