@@ -100,10 +100,29 @@ internal fun PostFeedStaggerReveal(
         return
     }
     var visible by remember { mutableStateOf(false) }
+    // 2026-08-09 (kullanıcı raporu: "posta girince kaydırma var fakat akışta
+    // gezerken görsel kaydırma özelliği yok" — PostCard'daki HorizontalPager
+    // carousel post detayında çalışıyor ama feed'de çalışmıyordu): kök neden
+    // AnimatedVisibility'nin visible=true olduktan SONRA da SONSUZA KADAR
+    // mount'lu kalması (exit dalı hiç tetiklenmiyor, çünkü `visible` bir daha
+    // false'a dönmüyor) — yani her post'un HorizontalPager'ı ile LazyColumn
+    // arasında KALICI bir AnimatedVisibility katmanı vardı. PostDetailScreen
+    // bu wrapper'ı HİÇ kullanmıyor, bu yüzden orada carousel'in yatay
+    // sürüklemesi LazyColumn'un dikey sürüklemesiyle çakışmadan çalışıyordu.
+    // Giriş animasyonu bittikten SONRA `content()` DOĞRUDAN çağrılıyor,
+    // AnimatedVisibility SÖKÜLÜYOR — `isNew == false` erken-dönüşüyle AYNI
+    // mantık, sadece animasyon bir kere oynadıktan SONRA gerçekleşiyor.
+    var animationDone by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         val delayMs = index.coerceIn(0, 8) * 60L
         if (delayMs > 0) delay(delayMs)
         visible = true
+        delay(220L)
+        animationDone = true
+    }
+    if (animationDone) {
+        content()
+        return
     }
     AnimatedVisibility(
         visible = visible,
