@@ -100,6 +100,13 @@ class CallSessionManager(
     // zaten Idle/Ended olan phase yanlışlıkla Active'e geri döndürülebilirdi.
     private var generation = 0
 
+    /** webRtc HENÜZ kurulmadan (aranan tarafta "Kabul et"e basılmadan) gelen
+     * ICE adaylarının kuyruğu — web'in `state.iceCandidateQueue`'sunun BİREBİR
+     * karşılığı (bkz. handleSignal'ın Ice dalındaki uzun yorum). Buradan
+     * [flushPendingRemoteIce] ile WebRtcCallManager'a aktarılır; o da remote
+     * description set edilene kadar KENDİ içinde ikinci bir kez kuyruklar. */
+    private val pendingRemoteIce = mutableListOf<CallSignal.Ice>()
+
     private val _phase = MutableStateFlow<CallPhase>(CallPhase.Idle)
     val phase: StateFlow<CallPhase> = _phase.asStateFlow()
 
@@ -188,7 +195,33 @@ class CallSessionManager(
         when (signal) {
             is CallSignal.Offer -> handleOffer(signal)
             is CallSignal.Answer -> handleAnswer(signal)
-            is CallSignal.Ice -> webRtc?.addRemoteIceCandidate(signal.candidate, signal.sdpMLineIndex, signal.sdpMid)
+            // 2026-08-09 (kullanıcı raporu, 2 gerçek cihaz FARKLI ağlarda:
+            // "kabul ediyoruz ama karşı tarafın görüntüsü/sesi gelmiyor") —
+            // ÖNCEDEN burası `webRtc?.addRemoteIceCandidate(...)` idi ve `?.`
+            // yüzünden webRtc NULL'ken gelen HER aday SESSİZCE ÇÖPE gidiyordu.
+            // webRtc, aranan tarafta "Kabul et"e basılana KADAR YOK — yani
+            // telefon çalarken (5-15sn) arayanın gönderdiği adayların TAMAMI
+            // kayboluyordu, ki arayan ICE toplamayı offer'dan ~1-2sn sonra
+            // ZATEN BİTİRİYOR. WebRtcCallManager'ın KENDİ `pendingRemoteIce`
+            // kuyruğu bu boşluğu kapatMIYOR: o kuyruk nesnenin İÇİNDE, nesne
+            // ise henüz yok. Web'de (call.js) kuyruk DOĞRU yerde — oturum
+            // seviyesinde `state.iceCandidateQueue`, pc HİÇ YOKKEN bile
+            // kuyruklar (bkz. call.js handleIceCandidate: `!state.peerConnection
+            // || !state.peerConnection.remoteDescription`). Native'deki
+            // "web'in iceCandidateQueue'suyla AYNI mantık" yorumu bu yüzden
+            // GERÇEĞİ YANSITMIYORDU. Kolay NAT'ta (aynı ağ / web-mobil /
+            // emülatör-telefon) ICE peer-reflexive keşifle yine de
+            // kurulabildiği için sorun GİZLİ KALMIŞTI; iki mobil operatör
+            // ağı arasında (simetrik NAT) karşı tarafın relay adayı ŞART
+            // olduğu için orada bağlantı HİÇ kurulamıyordu.
+            is CallSignal.Ice -> {
+                val rtc = webRtc
+                if (rtc != null) {
+                    rtc.addRemoteIceCandidate(signal.candidate, signal.sdpMLineIndex, signal.sdpMid)
+                } else {
+                    pendingRemoteIce.add(signal)
+                }
+            }
             is CallSignal.Hangup -> {
                 if (_phase.value !is CallPhase.Idle && _phase.value !is CallPhase.Ended) {
                     cleanupAndEnd(CallEndReason.REMOTE_HANGUP)
@@ -203,6 +236,17 @@ class CallSessionManager(
                 }
             }
         }
+    }
+
+    /** Kuyruğa alınmış adayları yeni kurulan WebRtcCallManager'a aktarır —
+     * web'in acceptCall()/handleAnswer() sonundaki `state.iceCandidateQueue.
+     * forEach(...)` + `= []` bloğunun BİREBİR karşılığı. */
+    private fun flushPendingRemoteIce(rtc: WebRtcCallManager) {
+        if (pendingRemoteIce.isEmpty()) return
+        val buffered = pendingRemoteIce.toList()
+        pendingRemoteIce.clear()
+        Log.d(TAG, "flushPendingRemoteIce: kuyruktaki ${buffered.size} aday WebRTC'ye aktarılıyor")
+        buffered.forEach { rtc.addRemoteIceCandidate(it.candidate, it.sdpMLineIndex, it.sdpMid) }
     }
 
     private fun handleOffer(signal: CallSignal.Offer) {
@@ -244,6 +288,10 @@ class CallSessionManager(
             return
         }
         Log.d(TAG, "handleOffer: IncomingRinging'e geçiliyor, from=${signal.from}")
+        // Önceki aramadan kalan bayat adaylar bu aramaya karışmasın — bu
+        // offer'ın adayları bundan SONRA gelip kuyruğa eklenecek (web'in
+        // call.js handleSignal 'offer' dalındaki AYNI temizlik).
+        pendingRemoteIce.clear()
         pendingOfferSdp = signal.sdp
         _phase.value = CallPhase.IncomingRinging(
             conversationId = signal.conversationId,
@@ -278,7 +326,16 @@ class CallSessionManager(
                 )
             } catch (e: Exception) {
                 Log.e(TAG, "handleAnswer: setRemoteAnswer istisna fırlattı", e)
-                cleanupAndEnd(CallEndReason.ERROR)
+                // 2026-08-09: offer-resend mekanizması + ağ sıralaması yüzünden
+                // GEÇ/ÇİFT bir Answer gelebiliyor; zaten `stable` duruma geçmiş
+                // bir PeerConnection'a ikinci kez setRemoteDescription(ANSWER)
+                // denenince WebRTC hata fırlatır. Arama O AN ZATEN KURULMUŞSA
+                // bunu "Arama başlatılamadı" (CallEndReason.ERROR) ile ÖLDÜRMEK
+                // YANLIŞ — kullanıcı raporundaki belirti tam da buydu. Sadece
+                // arama gerçekten hiç kurulamadıysa sonlandır.
+                if (_phase.value !is CallPhase.Active) {
+                    cleanupAndEnd(CallEndReason.ERROR)
+                }
             }
         }
     }
@@ -303,6 +360,7 @@ class CallSessionManager(
             return
         }
         _phase.value = CallPhase.OutgoingRinging(conversationId, otherUserId, otherCallTopic, otherName, otherAvatar, isVideo)
+        pendingRemoteIce.clear() // önceki aramadan kalan bayat adaylar karışmasın
         val myGeneration = ++generation
         scope.launch {
             try {
@@ -332,6 +390,7 @@ class CallSessionManager(
                     return@launch
                 }
                 webRtc = rtc
+                flushPendingRemoteIce(rtc)
                 rtc.availableAudioDevices.onEach { _availableAudioDevices.value = it }.launchIn(scope)
                 rtc.selectedAudioDevice.onEach { _selectedAudioDevice.value = it }.launchIn(scope)
                 _localVideoTrack.value = rtc.localVideoTrack
@@ -420,6 +479,7 @@ class CallSessionManager(
                     return@launch
                 }
                 webRtc = rtc
+                flushPendingRemoteIce(rtc)
                 rtc.availableAudioDevices.onEach { _availableAudioDevices.value = it }.launchIn(scope)
                 rtc.selectedAudioDevice.onEach { _selectedAudioDevice.value = it }.launchIn(scope)
                 _localVideoTrack.value = rtc.localVideoTrack
@@ -468,6 +528,7 @@ class CallSessionManager(
         val myTopic = signaling.myTopic ?: ""
         generation++
         pendingOfferSdp = null
+        pendingRemoteIce.clear()
         scope.launch { signaling.sendSignal(incoming.otherCallTopic, CallSignal.Reject(me, myTopic, incoming.conversationId)) }
         _phase.value = CallPhase.Idle
     }
@@ -515,6 +576,7 @@ class CallSessionManager(
         webRtc?.dispose()
         webRtc = null
         pendingOfferSdp = null
+        pendingRemoteIce.clear()
         _localVideoTrack.value = null
         _remoteVideoTrack.value = null
         _availableAudioDevices.value = emptyList()
