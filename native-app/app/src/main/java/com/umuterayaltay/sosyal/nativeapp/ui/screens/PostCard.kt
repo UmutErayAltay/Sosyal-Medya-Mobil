@@ -42,6 +42,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -53,11 +54,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.media3.common.MediaItem
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.AspectRatioFrameLayout
+import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
 import com.umuterayaltay.sosyal.nativeapp.repository.Post
 import com.umuterayaltay.sosyal.nativeapp.repository.RepostEmbed
@@ -317,6 +324,23 @@ fun PostCard(
                         .padding(top = 12.dp)
                         .clip(MaterialTheme.shapes.medium),
                 )
+            } else if (!post.videoUrl.isNullOrBlank()) {
+                // 2026-08-09 (kullanıcı raporu: "video paylaşınca post akışta
+                // boş gözüküyor") — PostCard'da video render eden HİÇBİR dal
+                // YOKTU, sadece post.imageUrl kontrol ediliyordu. Video-yalnız
+                // bir post (her reel BUNDAN ibaret — video zorunlu, görsel
+                // yasak) gövdesi tamamen boş görünüyordu. Görsel bloğuyla AYNI
+                // boyut/konum, ExoPlayer kurulumu ConversationScreen.kt'deki
+                // MessageVideoPlayer ile AYNI desen (RESIZE_MODE_FIT, dispose
+                // olunca release()).
+                PostVideoPlayer(
+                    videoUrl = post.videoUrl,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 400.dp)
+                        .padding(top = 12.dp)
+                        .clip(MaterialTheme.shapes.medium),
+                )
             }
 
             HorizontalDivider(modifier = Modifier.padding(top = 12.dp))
@@ -549,6 +573,42 @@ fun PostCard(
             onBookmarked = { bookmarkedOverride = it },
         )
     }
+}
+
+/**
+ * Feed'deki video-yalnız postlar (özellikle reels) için oynatıcı — ConversationScreen.kt'deki
+ * `MessageVideoPlayer` ile AYNI desen (ayrı dosyada `private` olduğu için buraya
+ * KOPYALANDI, ortak bir bileşene taşımak bu turun kapsamı DIŞI): kontrol
+ * çubuğuyla (`useController = true`) oynatılıp duraklatılır, tam ekran/
+ * otomatik-oynatma/loop YOK (reels için ayrı bir tam ekran akış zaten
+ * ReelsScreen.kt'de var). Composable disposed olunca `release()` — LazyColumn
+ * scroll'da item'lar disposed/recompose edildiği için bu ŞART, yoksa arka
+ * planda çalan/bellek sızdıran ExoPlayer instance'ları birikir.
+ */
+@Composable
+private fun PostVideoPlayer(videoUrl: String, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    val exoPlayer = remember(videoUrl) {
+        ExoPlayer.Builder(context).build().apply {
+            setMediaItem(MediaItem.fromUri(videoUrl))
+            playWhenReady = false
+            prepare()
+        }
+    }
+    DisposableEffect(videoUrl) {
+        onDispose { exoPlayer.release() }
+    }
+    AndroidView(
+        factory = { ctx ->
+            PlayerView(ctx).apply {
+                useController = true
+                player = exoPlayer
+                resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+            }
+        },
+        update = { it.player = exoPlayer },
+        modifier = modifier,
+    )
 }
 
 /**

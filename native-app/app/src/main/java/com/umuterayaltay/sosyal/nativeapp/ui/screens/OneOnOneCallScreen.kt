@@ -440,10 +440,23 @@ private fun ActiveCallContent(
                         .clip(RoundedCornerShape(12.dp))
                         .background(Color(0xFF1C1C1E)),
                 ) {
+                    // 2026-08-09 (kullanıcı kararı: "gerçek aynadaki gibi") —
+                    // stream-webrtc-android'in Camera2Session'ı ön kamerada
+                    // OS'nin normalde uyguladığı doğal ayna etkisini KENDİSİ
+                    // GERİ ALIYOR ("Undo the mirror that the OS helps us
+                    // with", bkz. Camera2Session.java) — yani hiçbir renderer
+                    // mirror ayarı yapılmazsa (varsayılan `false`) hem yerel
+                    // önizleme hem KARŞI TARAFA giden görüntü GERÇEK yönde
+                    // olur (Instagram/WhatsApp'ın alışılmış "ayna gibi" yerel
+                    // önizlemesinin TERSİ). setMirror BURADA, SADECE bu yerel
+                    // PiP kutusunun render'ında çağrılır — karşı tarafa giden
+                    // akışı (kaynak VideoFrame) ETKİLEMEZ, sadece bu View'ın
+                    // EKRANDA nasıl çizildiğini değiştirir.
                     VideoRenderer(
                         videoTrack = localVideoTrack,
                         eglBaseContext = eglBaseContext,
                         rendererEvents = noopRendererEvents,
+                        onTextureViewCreated = { it.setMirror(true) },
                         modifier = Modifier.fillMaxSize(),
                     )
                 }
