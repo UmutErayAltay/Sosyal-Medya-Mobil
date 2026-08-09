@@ -3,6 +3,9 @@ package com.umuterayaltay.sosyal.nativeapp
 import android.content.Context
 import com.umuterayaltay.sosyal.nativeapp.data.ThemePreferenceStore
 import com.umuterayaltay.sosyal.nativeapp.data.TokenStore
+import com.umuterayaltay.sosyal.nativeapp.data.UpdatePreferenceStore
+import com.umuterayaltay.sosyal.nativeapp.network.GithubApi
+import com.umuterayaltay.sosyal.nativeapp.repository.UpdateRepository
 import com.umuterayaltay.sosyal.nativeapp.data.local.AppDatabase
 import com.umuterayaltay.sosyal.nativeapp.network.AuthApi
 import com.umuterayaltay.sosyal.nativeapp.network.DiscoverApi
@@ -115,6 +118,11 @@ object ServiceLocator {
         private set
     lateinit var callSessionManager: CallSessionManager
         private set
+    // 2026-08-09: uygulama içi güncelleme (Ayarlar > Uygulama Güncellemeleri) —
+    // bkz. UpdateRepository.kt yorumu, backend'in bearer token'lı Retrofit
+    // istemcisinden BİLİNÇLİ olarak AYRI (RetrofitClient.createGithub()).
+    lateinit var updateRepository: UpdateRepository
+        private set
     // FAZ5_LATEINIT_MARKER — her ajan kendi `lateinit var xxxRepository`'sini
     // bu satırın HEMEN ÜSTÜNE ekler.
 
@@ -190,6 +198,13 @@ object ServiceLocator {
         // gerekçe (/realtime-token onun üzerinden çağrılıyor).
         callSignalingManager = CallSignalingManager(authRepository)
         callSessionManager = CallSessionManager(callSignalingManager, authRepository, messagingRepository)
+
+        // 2026-08-09: uygulama içi güncelleme — backend'in bearer token'lı
+        // `retrofit` değişkenini DEĞİL, AYRI/token'sız RetrofitClient.
+        // createGithub()'ı kullanır (bkz. UpdateRepository.kt yorumu).
+        val githubApi = RetrofitClient.createGithub().create(GithubApi::class.java)
+        val updatePreferenceStore = UpdatePreferenceStore(appContext)
+        updateRepository = UpdateRepository(githubApi, updatePreferenceStore)
 
         // FAZ5_INIT_MARKER — her ajan kendi `val xxxApi = retrofit.create(...)`
         // + `xxxRepository = XxxRepository(xxxApi)` satırlarını bu satırın

@@ -10,4 +10,8 @@
 -->
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
     <cache-path name="story_media" path="story_media/" />
+    <!-- 2026-08-09: uygulama içi güncelleme — indirilen APK context.cacheDir/
+         updates/ altına kaydediliyor (bkz. UpdateRepository.kt), install
+         Intent'i AYNI FileProvider'la content:// Uri'sine çevriliyor. -->
+    <cache-path name="updates" path="updates/" />
 </paths>

@@ -1,5 +1,7 @@
 package com.umuterayaltay.sosyal.nativeapp.ui.screens
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
@@ -34,6 +36,7 @@ import androidx.compose.material.icons.filled.PersonOff
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Smartphone
 import androidx.compose.material.icons.filled.Stars
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
@@ -60,6 +63,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -69,6 +73,8 @@ import com.umuterayaltay.sosyal.nativeapp.ServiceLocator
 import com.umuterayaltay.sosyal.nativeapp.data.ThemeMode
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.SettingsEvent
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.SettingsViewModel
+import com.umuterayaltay.sosyal.nativeapp.viewmodel.UpdateUiState
+import com.umuterayaltay.sosyal.nativeapp.viewmodel.UpdateViewModel
 
 /**
  * "Ayarlar" menü ekranı — üç basit navigasyon satırı (Profili Düzenle/Bildirim
@@ -104,6 +110,13 @@ fun SettingsScreen(
     var password by remember { mutableStateOf("") }
     var showThemeDialog by remember { mutableStateOf(false) }
     val themeMode by ServiceLocator.themePreferenceStore.themeMode.collectAsState()
+
+    // 2026-08-09: uygulama içi güncelleme (kullanıcı isteği: "her seferinde
+    // elle indirip kurmak yerine uygulama içinden güncelleme") — kendi
+    // ViewModel'i, SettingsViewModel'in (deaktivasyon/çıkış) sorumluluğuna
+    // KARIŞTIRILMADI.
+    var showUpdateDialog by remember { mutableStateOf(false) }
+    val updateViewModel: UpdateViewModel = viewModel()
 
     LaunchedEffect(Unit) {
         viewModel.events.collect { event ->
@@ -161,6 +174,16 @@ fun SettingsScreen(
                 icon = Icons.Filled.DarkMode,
                 label = "Tema: ${themeModeLabel(themeMode)}",
                 onClick = { showThemeDialog = true },
+            )
+
+            SettingsSectionHeader("Uygulama")
+            SettingsRow(
+                icon = Icons.Filled.SystemUpdate,
+                label = "Uygulama Güncellemeleri",
+                onClick = {
+                    updateViewModel.resetToIdle()
+                    showUpdateDialog = true
+                },
             )
 
             SettingsSectionHeader("Gizlilik ve Güvenlik")
@@ -310,6 +333,150 @@ fun SettingsScreen(
             },
         )
     }
+
+    if (showUpdateDialog) {
+        UpdateDialog(
+            viewModel = updateViewModel,
+            onDismiss = { showUpdateDialog = false },
+        )
+    }
+}
+
+/**
+ * Ayarlar > Uygulama Güncellemeleri diyalogu (2026-08-09) — GitHub Release'i
+ * kontrol edip yeni bir APK varsa indirip kurulum akışını başlatır.
+ * [UpdateUiState]'in HER dalı (Idle/Checking/UpToDate/Available/Downloading/
+ * ReadyToInstall/Error) burada AYRI bir içerik gösterir — CallScreen.kt'deki
+ * CallUiState switch'iyle AYNI desen.
+ */
+@Composable
+private fun UpdateDialog(viewModel: UpdateViewModel, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    val state by viewModel.uiState.collectAsState()
+
+    // Kurulum izni (API 26+ "Bilinmeyen kaynaklardan yükle") ayar
+    // ekranından DÖNÜNCE — kullanıcı izni verdiyse kurulum Intent'ini
+    // OTOMATİK ateşle, tekrar "Kur"a basmasına GEREK KALMASIN.
+    val installPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult(),
+    ) {
+        val ready = state as? UpdateUiState.ReadyToInstall ?: return@rememberLauncherForActivityResult
+        if (viewModel.hasInstallPermission(context)) {
+            context.startActivity(viewModel.buildInstallIntent(context, ready.file))
+        }
+    }
+
+    fun installOrRequestPermission(file: java.io.File) {
+        if (viewModel.hasInstallPermission(context)) {
+            context.startActivity(viewModel.buildInstallIntent(context, file))
+        } else {
+            installPermissionLauncher.launch(viewModel.buildInstallPermissionSettingsIntent(context))
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Filled.SystemUpdate, contentDescription = null) },
+        title = { Text("Uygulama Güncellemeleri") },
+        text = {
+            Column {
+                Text(
+                    "Mevcut sürüm: ${viewModel.currentVersionName}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                when (val s = state) {
+                    is UpdateUiState.Idle -> {
+                        Text(
+                            "Yeni bir sürüm olup olmadığını kontrol edebilirsin.",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                    is UpdateUiState.Checking -> {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                            Text(
+                                "Kontrol ediliyor...",
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.padding(start = 12.dp),
+                            )
+                        }
+                    }
+                    is UpdateUiState.UpToDate -> {
+                        Text(
+                            "Uygulaman güncel.",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                    is UpdateUiState.Available -> {
+                        val sizeMb = s.info.sizeBytes / (1024 * 1024)
+                        Text(
+                            "Yeni bir sürüm mevcut (${sizeMb}MB). İndirip kurabilirsin.",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                    is UpdateUiState.Downloading -> {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                            Text(
+                                "İndiriliyor...",
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.padding(start = 12.dp),
+                            )
+                        }
+                    }
+                    is UpdateUiState.ReadyToInstall -> {
+                        Text(
+                            "İndirme tamamlandı. Kuruluma başlamak için \"Kur\"a bas — " +
+                                "sistem izin isterse (\"Bilinmeyen kaynaklardan yükle\") ayarı " +
+                                "açıp geri dön, kurulum otomatik devam eder.",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                    is UpdateUiState.Error -> {
+                        Text(
+                            s.message,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            when (val s = state) {
+                is UpdateUiState.Idle, is UpdateUiState.Error -> {
+                    TextButton(onClick = { viewModel.checkForUpdate() }) {
+                        Text("Kontrol Et")
+                    }
+                }
+                is UpdateUiState.UpToDate -> {
+                    TextButton(onClick = { viewModel.checkForUpdate() }) {
+                        Text("Tekrar Kontrol Et")
+                    }
+                }
+                is UpdateUiState.Available -> {
+                    TextButton(onClick = { viewModel.downloadUpdate(context) }) {
+                        Text("İndir")
+                    }
+                }
+                is UpdateUiState.ReadyToInstall -> {
+                    TextButton(onClick = { installOrRequestPermission(s.file) }) {
+                        Text("Kur")
+                    }
+                }
+                is UpdateUiState.Checking, is UpdateUiState.Downloading -> {
+                    // Butonsuz — işlem sürerken kullanıcı tekrar TETİKLEMESİN.
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(if (state is UpdateUiState.ReadyToInstall) "Sonra" else "Kapat")
+            }
+        },
+    )
 }
 
 /** Ayarlar satırında gösterilen kısa tema etiketi. */
