@@ -522,6 +522,7 @@ fun AppNavHost() {
                 postId = postId,
                 onNavigateBack = { navController.navigateUp() },
                 onNavigateToHashtag = { tag -> navController.navigate("hashtag/$tag") },
+                onNavigateToProfile = { username -> navController.navigate("profile/$username") },
                 onSessionExpired = {
                     navController.navigate(ROUTE_LOGIN) {
                         popUpTo(ROUTE_MAIN) { inclusive = true }
@@ -532,7 +533,16 @@ fun AppNavHost() {
         composable("createPost") {
             CreatePostScreen(
                 onNavigateBack = { navController.navigateUp() },
-                onPostCreated = { navController.navigateUp() },
+                // 2026-08-09 (kullanıcı isteği: "post paylaşınca sayfayı
+                // yenilememe gerek kalmadan ana sayfada da görmek istiyorum")
+                // — "storyCreate"in AYNI savedStateHandle deseni (bkz. onStoryCreated
+                // yorumu): "createPost" SADECE MainScaffold'un Feed sekmesinden
+                // (onNewPostClick) erişildiği için previousBackStackEntry HER
+                // ZAMAN ROUTE_MAIN'in kendisi.
+                onPostCreated = {
+                    navController.previousBackStackEntry?.savedStateHandle?.set("post_created", true)
+                    navController.navigateUp()
+                },
                 onSessionExpired = {
                     navController.navigate(ROUTE_LOGIN) {
                         popUpTo(ROUTE_MAIN) { inclusive = true }
@@ -644,6 +654,7 @@ fun AppNavHost() {
                 tag = tag,
                 onNavigateBack = { navController.navigateUp() },
                 onNavigateToPostDetail = { postId -> navController.navigate("postDetail/$postId") },
+                onNavigateToProfile = { username -> navController.navigate("profile/$username") },
                 onSessionExpired = {
                     navController.navigate(ROUTE_LOGIN) {
                         popUpTo(ROUTE_MAIN) { inclusive = true }
@@ -697,7 +708,19 @@ fun AppNavHost() {
             val userId = backStackEntry.arguments?.getString("userId") ?: return@composable
             StoryViewerScreen(
                 userId = userId,
-                onNavigateBack = { navController.navigateUp() },
+                // 2026-08-09 (kullanıcı raporu: "öne çıkarılanlara ekleyince
+                // uygulamayı aç kapa yapmak zorunda kalıyorum") — storyCreated/
+                // postCreated ile AYNI savedStateHandle deseni: highlight
+                // kaydedilmişse previousBackStackEntry'ye (storyViewer HER ZAMAN
+                // Feed'in hikaye çubuğundan, yani ROUTE_MAIN'den açılır) bir
+                // bayrak bırakılır, MainScaffold'daki Profil sekmesi bunu okuyup
+                // highlight listesini yeniden yükler.
+                onNavigateBack = { highlightChanged ->
+                    if (highlightChanged) {
+                        navController.previousBackStackEntry?.savedStateHandle?.set("highlight_changed", true)
+                    }
+                    navController.navigateUp()
+                },
                 onSessionExpired = {
                     navController.navigate(ROUTE_LOGIN) {
                         popUpTo(ROUTE_MAIN) { inclusive = true }

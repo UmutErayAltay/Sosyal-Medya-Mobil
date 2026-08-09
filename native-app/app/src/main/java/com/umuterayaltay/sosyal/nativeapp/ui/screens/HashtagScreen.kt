@@ -57,6 +57,10 @@ fun HashtagScreen(
     onNavigateBack: () -> Unit,
     onNavigateToPostDetail: (String) -> Unit,
     onSessionExpired: () -> Unit,
+    // 2026-08-09 (kullanıcı isteği: "kullanıcı isimlerine tıklayınca
+    // profillere yönlendirsin") — VARSAYILAN DEĞERLİ, diğer PostCard
+    // çağrı yerleriyle AYNI gerekçe.
+    onNavigateToProfile: (String) -> Unit = {},
     viewModel: HashtagViewModel = viewModel(factory = HashtagViewModelFactory(tag)),
 ) {
     val posts by viewModel.posts.collectAsState()
@@ -182,6 +186,7 @@ fun HashtagScreen(
                         onDeletePost = { postId -> viewModel.deletePost(postId) },
                         onArchivePost = { postId -> viewModel.toggleArchive(postId) },
                         onPinPost = { postId -> viewModel.togglePin(postId) },
+                        onUsernameClick = onNavigateToProfile,
                     )
                     }
                 }

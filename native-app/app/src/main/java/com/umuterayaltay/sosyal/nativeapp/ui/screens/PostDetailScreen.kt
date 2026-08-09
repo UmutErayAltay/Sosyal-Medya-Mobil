@@ -93,6 +93,10 @@ fun PostDetailScreen(
     onNavigateBack: () -> Unit,
     onNavigateToHashtag: (String) -> Unit,
     onSessionExpired: () -> Unit,
+    // 2026-08-09 (kullanıcı isteği: "kullanıcı isimlerine tıklayınca
+    // profillere yönlendirsin") — hem post yazarı hem yorumcular için
+    // kullanılır (bkz. CommentRow).
+    onNavigateToProfile: (String) -> Unit = {},
     viewModel: PostDetailViewModel = viewModel(factory = PostDetailViewModelFactory(postId)),
 ) {
     val post by viewModel.post.collectAsState()
@@ -198,6 +202,7 @@ fun PostDetailScreen(
                         onDeletePost = { viewModel.deletePost() },
                         onArchivePost = { viewModel.toggleArchive() },
                         onPinPost = { viewModel.togglePin() },
+                        onUsernameClick = onNavigateToProfile,
                     )
                 }
 
@@ -256,6 +261,7 @@ fun PostDetailScreen(
                                 onLikeClick = { viewModel.toggleCommentLike(comment.id) },
                                 onReactionSelected = { emoji -> viewModel.reactToComment(comment.id, emoji) },
                                 onDeleteClick = { viewModel.deleteComment(comment.id) },
+                                onUsernameClick = onNavigateToProfile,
                             )
                             comment.replies?.forEach { reply ->
                                 CommentRow(
@@ -268,6 +274,7 @@ fun PostDetailScreen(
                                     onLikeClick = { viewModel.toggleCommentLike(reply.id) },
                                     onReactionSelected = { emoji -> viewModel.reactToComment(reply.id, emoji) },
                                     onDeleteClick = { viewModel.deleteComment(reply.id) },
+                                    onUsernameClick = onNavigateToProfile,
                                 )
                             }
                             HorizontalDivider(
@@ -299,10 +306,23 @@ private fun CommentRow(
     onLikeClick: () -> Unit = {},
     onReactionSelected: (String) -> Unit = {},
     onDeleteClick: () -> Unit = {},
+    // 2026-08-09 (kullanıcı isteği: "kullanıcı isimlerine tıklayınca
+    // profillere yönlendirsin") — VARSAYILAN DEĞERLİ, diğer callback'lerle
+    // AYNI gerekçe.
+    onUsernameClick: (String) -> Unit = {},
 ) {
     val avatarSize = if (isReply) 26.dp else 32.dp
     var showActionsMenu by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
+    // Avatar + kullanıcı adı SATIR'ın geri kalanından (yorum metni/uzun-basma
+    // menüsü) AYRI bir tıklama hedefi — AYNI `combinedClickable` (onLongClick
+    // dahil, dış Row'la AYNI showActionsMenu tetikleyicisi) kullanılır ki
+    // düz bir `clickable` DIŞ Row'un uzun-basma algılamasını BOZMASIN
+    // (bkz. PostCard.kt'deki AYNI iç-içe jest çakışması gerekçesi).
+    val usernameClickModifier = Modifier.combinedClickable(
+        onClick = { onUsernameClick(comment.profiles?.username ?: "") },
+        onLongClick = { showActionsMenu = true },
+    )
 
     Box {
     Row(
@@ -341,14 +361,16 @@ private fun CommentRow(
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
                     .size(avatarSize)
-                    .clip(CircleShape),
+                    .clip(CircleShape)
+                    .then(usernameClickModifier),
             )
         } else {
             Box(
                 modifier = Modifier
                     .size(avatarSize)
                     .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .then(usernameClickModifier),
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
@@ -363,6 +385,7 @@ private fun CommentRow(
             Text(
                 text = comment.profiles?.username ?: "Bilinmeyen kullanıcı",
                 style = MaterialTheme.typography.labelLarge,
+                modifier = usernameClickModifier,
             )
             if (!comment.content.isNullOrBlank()) {
                 Text(

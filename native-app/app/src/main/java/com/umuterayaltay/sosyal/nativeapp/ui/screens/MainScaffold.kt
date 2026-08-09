@@ -79,6 +79,25 @@ fun MainScaffold(navController: NavHostController, onSessionExpired: () -> Unit)
             ?: MutableStateFlow(false)
     }.collectAsState()
 
+    // 2026-08-09 (kullanıcı isteği: "post paylaşınca sayfayı yenilememe
+    // gerek kalmadan ana sayfada da görmek istiyorum") — storyCreated ile
+    // BİREBİR AYNI desen (bkz. AppNavHost.kt "createPost" route'undaki
+    // onPostCreated yorumu).
+    val postCreated by remember(currentBackStackEntry) {
+        currentBackStackEntry?.savedStateHandle?.getStateFlow("post_created", false)
+            ?: MutableStateFlow(false)
+    }.collectAsState()
+
+    // 2026-08-09 (kullanıcı raporu: "öne çıkarılanlara ekleyince uygulamayı
+    // aç kapa yapmak zorunda kalıyorum") — storyCreated/postCreated ile AYNI
+    // desen. storyViewer HER ZAMAN Feed'in hikaye çubuğundan (yani bu "main"
+    // route'undan) açıldığı için previousBackStackEntry HER ZAMAN buradaki
+    // currentBackStackEntry'dir (bkz. AppNavHost.kt storyViewer composable'ı).
+    val highlightsChanged by remember(currentBackStackEntry) {
+        currentBackStackEntry?.savedStateHandle?.getStateFlow("highlight_changed", false)
+            ?: MutableStateFlow(false)
+    }.collectAsState()
+
     Scaffold(
         bottomBar = {
             // Görsel cila: seçili sekmenin ikon/etiket rengi + arka plan
@@ -158,6 +177,7 @@ fun MainScaffold(navController: NavHostController, onSessionExpired: () -> Unit)
                     onNotificationsClick = { navController.navigate("notifications") },
                     onTrendingClick = { navController.navigate("trending") },
                     onNavigateToHashtag = { tag -> navController.navigate("hashtag/$tag") },
+                    onNavigateToProfile = { username -> navController.navigate("profile/$username") },
                     // Faz 5 Dalga 2C: hikaye çubuğu — "+"tan oluşturma ekranına,
                     // bir halkaya tıklanınca o kullanıcının viewer'ına gider.
                     onNavigateToStoryViewer = { userId -> navController.navigate("storyViewer/$userId") },
@@ -168,6 +188,10 @@ fun MainScaffold(navController: NavHostController, onSessionExpired: () -> Unit)
                         // halde her tab değişiminde/recomposition'da yeniden
                         // loadBar() çağrılırdı).
                         currentBackStackEntry?.savedStateHandle?.set("story_created", false)
+                    },
+                    postCreated = postCreated,
+                    onPostCreatedRefreshHandled = {
+                        currentBackStackEntry?.savedStateHandle?.set("post_created", false)
                     },
                 )
                 MainTab.Discover -> DiscoverScreen(
@@ -201,6 +225,10 @@ fun MainScaffold(navController: NavHostController, onSessionExpired: () -> Unit)
                     // route'unda bu parametre zaten doğru bağlıydı, burada UNUTULMUŞTU
                     // (ProfileScreen'in varsayılan {} no-op'una düşüyordu).
                     onNavigateToHighlights = { userId -> navController.navigate("highlights/$userId") },
+                    highlightsChanged = highlightsChanged,
+                    onHighlightsRefreshHandled = {
+                        currentBackStackEntry?.savedStateHandle?.set("highlight_changed", false)
+                    },
                     onSessionExpired = onSessionExpired,
                     // onNavigateBack YOK: bu, alt navigasyondaki KOK "Profil" sekmesi
                     // - geri tusu YOK (push edilmis bir route degil).

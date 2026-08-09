@@ -315,6 +315,16 @@ class ProfileViewModel(private val requestedUsername: String?) : ViewModel() {
         }
     }
 
+    /** 2026-08-09 (kullanıcı raporu: "öne çıkarılanlara ekleyince uygulamayı
+     * aç kapa yapmak zorunda kalıyorum") — StoryViewerScreen'den bir
+     * highlight kaydedildikten sonra ProfileScreen tarafından çağrılır
+     * (bkz. AppNavHost.kt/MainScaffold.kt "highlight_changed" savedStateHandle
+     * deseni). Profil henüz yüklenmediyse ([_profile] null) no-op — bu
+     * durumda zaten loadProfile() en güncel highlight'ları getirecek. */
+    fun refreshHighlights() {
+        _profile.value?.id?.let { loadHighlights(it) }
+    }
+
     /** "Kaydedilenler" sekmesi için koleksiyon listesi — loadProfile() isSelf ise
      * otomatik çeker, koleksiyon oluşturma/silmeden sonra da manuel çağrılabilir. */
     fun loadCollections() {

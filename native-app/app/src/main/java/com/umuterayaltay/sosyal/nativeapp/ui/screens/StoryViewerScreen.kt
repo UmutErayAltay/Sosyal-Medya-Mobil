@@ -1,5 +1,6 @@
 package com.umuterayaltay.sosyal.nativeapp.ui.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloatAsState
@@ -85,7 +86,14 @@ private val REACTION_EMOJIS = listOf("❤️", "😂", "😮", "😢", "🔥", "
 @Composable
 fun StoryViewerScreen(
     userId: String,
-    onNavigateBack: () -> Unit,
+    // 2026-08-09 (kullanıcı raporu: "öne çıkarılanlara ekleyince uygulamayı
+    // aç kapa yapmak zorunda kalıyorum") — bu ekran highlight kaydedince
+    // KAPANMAZ (kullanıcı hikayeleri izlemeye devam edebilir), bu yüzden
+    // "değişiklik oldu mu" bilgisi burada TUTULUP ekran GERÇEKTEN kapanırken
+    // (onNavigateBack çağrılırken) taşınıyor — AppNavHost bunu
+    // previousBackStackEntry'ye (ProfileScreen'in okuduğu "highlight_changed"
+    // bayrağı) yazıyor, storyCreated/postCreated ile AYNI desen.
+    onNavigateBack: (highlightChanged: Boolean) -> Unit,
     onSessionExpired: () -> Unit,
     viewModel: StoryViewerViewModel = viewModel(factory = StoryViewerViewModelFactory(userId)),
 ) {
@@ -102,16 +110,25 @@ fun StoryViewerScreen(
     var replyText by remember { mutableStateOf("") }
     var showSaveHighlightDialog by remember { mutableStateOf(false) }
     var highlightTitle by remember { mutableStateOf("") }
+    var highlightChanged by remember { mutableStateOf(false) }
+
+    // Sistem geri tuşu, ekrandaki "X"/TapZone çağrılarının AKSİNE varsayılan
+    // olarak NavController'ın kendi navigateUp()'ına gider — bizim
+    // onNavigateBack(highlightChanged) callback'imizden GEÇMEZ, bu yüzden
+    // highlightChanged bayrağı KAYBOLURDU. BackHandler AÇIKÇA bunu ele alıp
+    // AYNI callback'e yönlendiriyor.
+    BackHandler(onBack = { onNavigateBack(highlightChanged) })
 
     LaunchedEffect(Unit) {
         viewModel.events.collect { event ->
             when (event) {
                 is StoryViewerEvent.SessionExpired -> onSessionExpired()
-                is StoryViewerEvent.StoryDeleted -> onNavigateBack()
+                is StoryViewerEvent.StoryDeleted -> onNavigateBack(highlightChanged)
                 is StoryViewerEvent.MessageSent -> Unit // conversation_id bu turda otomatik navigasyon TETİKLEMİYOR
                 is StoryViewerEvent.HighlightSaved -> {
                     showSaveHighlightDialog = false
                     highlightTitle = ""
+                    highlightChanged = true
                 }
             }
         }
@@ -133,7 +150,7 @@ fun StoryViewerScreen(
                         color = Color.White,
                         style = MaterialTheme.typography.bodyLarge,
                     )
-                    TextButton(onClick = onNavigateBack) {
+                    TextButton(onClick = { onNavigateBack(highlightChanged) }) {
                         Text("Geri Dön", color = Color.White)
                     }
                 }
@@ -160,7 +177,7 @@ fun StoryViewerScreen(
                         story = story,
                         paused = paused,
                         onAdvance = {
-                            if (!viewModel.goNext()) onNavigateBack()
+                            if (!viewModel.goNext()) onNavigateBack(highlightChanged)
                         },
                     )
                 }
@@ -175,7 +192,7 @@ fun StoryViewerScreen(
                     )
                     TapZone(
                         modifier = Modifier.weight(1f),
-                        onTap = { if (!viewModel.goNext()) onNavigateBack() },
+                        onTap = { if (!viewModel.goNext()) onNavigateBack(highlightChanged) },
                         onPausedChange = { paused = it },
                     )
                 }
@@ -192,7 +209,7 @@ fun StoryViewerScreen(
                         username = username,
                         avatarUrl = avatarUrl,
                         isMine = isMine,
-                        onClose = onNavigateBack,
+                        onClose = { onNavigateBack(highlightChanged) },
                         onDelete = { viewModel.deleteCurrentStory() },
                     )
 

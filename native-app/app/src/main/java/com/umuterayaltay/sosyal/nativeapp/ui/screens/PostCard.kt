@@ -66,6 +66,8 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
+import com.umuterayaltay.sosyal.nativeapp.ui.components.FullscreenImageViewer
+import com.umuterayaltay.sosyal.nativeapp.ui.components.FullscreenVideoViewer
 import com.umuterayaltay.sosyal.nativeapp.repository.Post
 import com.umuterayaltay.sosyal.nativeapp.repository.RepostEmbed
 import kotlinx.coroutines.launch
@@ -153,7 +155,16 @@ fun PostCard(
     onDeletePost: (postId: String) -> Unit = {},
     onArchivePost: (postId: String) -> Unit = {},
     onPinPost: (postId: String) -> Unit = {},
+    // 2026-08-09 (kullanıcı isteği: "kullanıcı isimlerine tıklayınca
+    // profillere yönlendirsin") — VARSAYILAN DEĞERLİ, diğer opsiyonel
+    // callback'lerle AYNI gerekçe.
+    onUsernameClick: (String) -> Unit = {},
 ) {
+    // 2026-08-09 (kullanıcı isteği: "fotoğraflara/videolara tıklayınca
+    // büyüsün") — bkz. ui/components/FullscreenImageViewer.kt/
+    // FullscreenVideoViewer.kt yorumu.
+    var showFullscreenImage by remember { mutableStateOf(false) }
+    var showFullscreenVideo by remember { mutableStateOf(false) }
     var showActionsSheet by remember { mutableStateOf(false) }
     // "Düzenle" PostActionsSheet'te tıklanınca açılır — showActionsSheet'in
     // AYNI yerel-state deseni, TextField içeriği post'un GÜNCEL content'iyle
@@ -217,50 +228,62 @@ fun PostCard(
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                if (!post.avatarUrl.isNullOrBlank()) {
-                    AsyncImage(
-                        model = post.avatarUrl,
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier
-                            .size(40.dp)
-                            .clip(CircleShape),
-                    )
-                } else {
-                    // Avatarsız kullanıcılar için de dolgusuz çıplak ikon yerine
-                    // dairesel bir zemin — böylece boş alan bir "boşluk" gibi
-                    // değil, bilinçli bir yer tutucu gibi görünür.
-                    Box(
-                        modifier = Modifier
-                            .size(40.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.surfaceVariant),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.Person,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(22.dp),
-                        )
-                    }
-                }
-                Column(
+                // 2026-08-09 (kullanıcı isteği: "kullanıcı isimlerine tıklayınca
+                // profillere yönlendirsin") — avatar+ad+zaman BİRLİKTE tıklanabilir
+                // (Instagram'ın AYNI davranışı), MoreVert butonu (aşağıda, bu
+                // Row'un DIŞINDA) etkilenmez.
+                Row(
                     modifier = Modifier
-                        .padding(start = 10.dp)
-                        .weight(1f),
+                        .weight(1f)
+                        .clickable(onClick = { onUsernameClick(post.username ?: "") }),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(
-                        text = post.username ?: "Bilinmeyen kullanıcı",
-                        style = MaterialTheme.typography.titleMedium,
-                    )
-                    val timeLabel = formatClockTime(post.createdAt)
-                    if (timeLabel.isNotBlank()) {
-                        Text(
-                            text = timeLabel,
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    if (!post.avatarUrl.isNullOrBlank()) {
+                        AsyncImage(
+                            model = post.avatarUrl,
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape),
                         )
+                    } else {
+                        // Avatarsız kullanıcılar için de dolgusuz çıplak ikon
+                        // yerine dairesel bir zemin — böylece boş alan bir
+                        // "boşluk" gibi değil, bilinçli bir yer tutucu gibi
+                        // görünür.
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.surfaceVariant),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Person,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(22.dp),
+                            )
+                        }
+                    }
+                    Column(
+                        modifier = Modifier
+                            .padding(start = 10.dp)
+                            .weight(1f),
+                    ) {
+                        Text(
+                            text = post.username ?: "Bilinmeyen kullanıcı",
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                        val timeLabel = formatClockTime(post.createdAt)
+                        if (timeLabel.isNotBlank()) {
+                            Text(
+                                text = timeLabel,
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     }
                 }
                 IconButton(onClick = { showActionsSheet = true }) {
@@ -314,6 +337,11 @@ fun PostCard(
                 // oranıyla uyuşmadığında kenarlarından kırpıyordu). ContentScale.Fit
                 // + heightIn(max) ile görsel KENDİ oranında, en fazla 400dp
                 // yükseklikte TAM gösterilir (Instagram'ın "tam görsel" davranışı).
+                // 2026-08-09 (kullanıcı isteği: "fotoğraflara tıklayınca büyüsün")
+                // — `.clickable` DIŞ Card'ın `onCommentClick`'inden ÖNCE tüketir
+                // (bkz. Card'ın kendi yorumu: "İçteki tüketir, çift tetiklenme
+                // olmaz"), yani buraya tıklamak artık post detayına DEĞİL tam
+                // ekran görüntüleyiciye gider.
                 AsyncImage(
                     model = post.imageUrl,
                     contentDescription = null,
@@ -322,7 +350,8 @@ fun PostCard(
                         .fillMaxWidth()
                         .heightIn(max = 400.dp)
                         .padding(top = 12.dp)
-                        .clip(MaterialTheme.shapes.medium),
+                        .clip(MaterialTheme.shapes.medium)
+                        .clickable(onClick = { showFullscreenImage = true }),
                 )
             } else if (!post.videoUrl.isNullOrBlank()) {
                 // 2026-08-09 (kullanıcı raporu: "video paylaşınca post akışta
@@ -333,14 +362,33 @@ fun PostCard(
                 // boyut/konum, ExoPlayer kurulumu ConversationScreen.kt'deki
                 // MessageVideoPlayer ile AYNI desen (RESIZE_MODE_FIT, dispose
                 // olunca release()).
-                PostVideoPlayer(
-                    videoUrl = post.videoUrl,
+                //
+                // 2026-08-09 (kullanıcı isteği: "videolar içinde geçerli aynı
+                // şey büyüsün") — PostVideoPlayer'ın KENDİ `useController=true`
+                // PlayerView'ı bir AndroidView olduğu için ÜSTÜNE eklenen bir
+                // Compose `clickable` dokunuşu ALAMAZDI (View tabanlı dokunma
+                // işleme kendi sınırları içinde Compose'un pointerInput'undan
+                // ÖNCELİKLİ) — bu yüzden şeffaf bir overlay Box (matchParentSize
+                // + clickable, PostVideoPlayer'ın ÜSTÜNE/SONRASINA yerleştirildi,
+                // Compose'da SONRAKİ kardeş ÜSTTE çizilir) tüm dokunuşları
+                // YAKALAYIP tam ekran görüntüleyiciyi açıyor; inline oynatıcının
+                // kendi kontrol çubuğu artık kullanılamıyor (Instagram/Twitter/
+                // WhatsApp'ın AYNI davranışı — küçük önizlemede scrub YOK,
+                // tıklayınca GERÇEK kontrollü tam ekran açılıyor).
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(max = 400.dp)
                         .padding(top = 12.dp)
                         .clip(MaterialTheme.shapes.medium),
-                )
+                ) {
+                    PostVideoPlayer(videoUrl = post.videoUrl, modifier = Modifier.matchParentSize())
+                    Box(
+                        modifier = Modifier
+                            .matchParentSize()
+                            .clickable(onClick = { showFullscreenVideo = true }),
+                    )
+                }
             }
 
             HorizontalDivider(modifier = Modifier.padding(top = 12.dp))
@@ -572,6 +620,13 @@ fun PostCard(
             onSessionExpired = onSessionExpired,
             onBookmarked = { bookmarkedOverride = it },
         )
+    }
+
+    if (showFullscreenImage && !post.imageUrl.isNullOrBlank()) {
+        FullscreenImageViewer(imageUrl = post.imageUrl, onDismiss = { showFullscreenImage = false })
+    }
+    if (showFullscreenVideo && !post.videoUrl.isNullOrBlank()) {
+        FullscreenVideoViewer(videoUrl = post.videoUrl, onDismiss = { showFullscreenVideo = false })
     }
 }
 

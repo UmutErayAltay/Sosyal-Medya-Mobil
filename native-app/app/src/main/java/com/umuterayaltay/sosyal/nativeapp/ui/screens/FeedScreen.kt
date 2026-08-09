@@ -126,6 +126,10 @@ fun FeedScreen(
     onNotificationsClick: () -> Unit,
     onTrendingClick: () -> Unit,
     onNavigateToHashtag: (String) -> Unit,
+    // 2026-08-09 (kullanıcı isteği: "kullanıcı isimlerine tıklayınca
+    // profillere yönlendirsin") — VARSAYILAN DEĞERLİ, DiscoverScreen'in
+    // onUserClick'iyle AYNI amaç.
+    onNavigateToProfile: (String) -> Unit = {},
     // Faz 5 Dalga 2C: hikaye çubuğu — StoryBarViewModel FeedViewModel'e
     // KARIŞTIRILMADI (görev tanımı), ayrı `viewModel()` instance'ı.
     onNavigateToStoryViewer: (String) -> Unit = {},
@@ -138,6 +142,12 @@ fun FeedScreen(
     // döndürülür (bkz. MainScaffold.kt).
     storyCreated: Boolean = false,
     onStoryBarRefreshHandled: () -> Unit = {},
+    // 2026-08-09 (kullanıcı isteği: "post paylaşınca sayfayı yenilememe
+    // gerek kalmadan ana sayfada da görmek istiyorum") — storyCreated ile
+    // BİREBİR AYNI desen (savedStateHandle üzerinden AppNavHost.kt'nin
+    // "createPost" route'undan gelir, bkz. MainScaffold.kt).
+    postCreated: Boolean = false,
+    onPostCreatedRefreshHandled: () -> Unit = {},
     viewModel: FeedViewModel = viewModel(),
     storyBarViewModel: StoryBarViewModel = viewModel(),
 ) {
@@ -180,6 +190,15 @@ fun FeedScreen(
         if (storyCreated) {
             storyBarViewModel.loadBar()
             onStoryBarRefreshHandled()
+        }
+    }
+
+    // postCreated ile AYNI desen — feed'i yeniden yükle, sonra bayrağı
+    // MainScaffold'da false'a döndür.
+    LaunchedEffect(postCreated) {
+        if (postCreated) {
+            viewModel.refresh()
+            onPostCreatedRefreshHandled()
         }
     }
 
@@ -324,6 +343,7 @@ fun FeedScreen(
                                 onDeletePost = { postId -> viewModel.deletePost(postId) },
                                 onArchivePost = { postId -> viewModel.toggleArchive(postId) },
                                 onPinPost = { postId -> viewModel.togglePin(postId) },
+                                onUsernameClick = onNavigateToProfile,
                             )
                             if (index == 4 && suggestedUsers.isNotEmpty()) {
                                 SuggestedUsersRow(

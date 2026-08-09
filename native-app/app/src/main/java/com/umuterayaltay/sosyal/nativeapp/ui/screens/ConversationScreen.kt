@@ -105,6 +105,8 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
+import com.umuterayaltay.sosyal.nativeapp.ui.components.FullscreenImageViewer
+import com.umuterayaltay.sosyal.nativeapp.ui.components.FullscreenVideoViewer
 import com.umuterayaltay.sosyal.nativeapp.ui.components.MediaPickerSheet
 import com.umuterayaltay.sosyal.nativeapp.network.MessageDto
 import com.umuterayaltay.sosyal.nativeapp.network.MessageReactionDto
@@ -886,6 +888,12 @@ private fun MessageBubble(
     val isSending = message.id.startsWith("local-")
     val bubbleAlpha = if (isSending) 0.6f else 1f
 
+    // 2026-08-09 (kullanıcı isteği: "sohbetteki videoya/görsele tıklayınca
+    // büyüsün") — bkz. ui/components/FullscreenImageViewer.kt/
+    // FullscreenVideoViewer.kt yorumu.
+    var showFullscreenImage by remember { mutableStateOf(false) }
+    var showFullscreenVideo by remember { mutableStateOf(false) }
+
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = if (isMine) Arrangement.End else Arrangement.Start,
@@ -979,6 +987,12 @@ private fun MessageBubble(
                         )
                     } else {
                         if (!imageUrl.isNullOrBlank()) {
+                            // 2026-08-09 (kullanıcı isteği: "büyüsün") — `combinedClickable`
+                            // (düz `clickable` DEĞİL) kullanıldı ki uzun-basma
+                            // (mesaj aksiyon menüsü) dış balonun `onLongPress`'iyle
+                            // AYNI şekilde görsele basılınca da ÇALIŞSIN — nested
+                            // bir `clickable` bunu SESSİZCE kırardı (bkz. PostCard.kt'
+                            // deki AYNI gerekçe).
                             AsyncImage(
                                 model = imageUrl,
                                 contentDescription = null,
@@ -986,7 +1000,11 @@ private fun MessageBubble(
                                 modifier = Modifier
                                     .padding(top = if (replyTo != null) 6.dp else 0.dp)
                                     .size(200.dp)
-                                    .clip(MaterialTheme.shapes.medium),
+                                    .clip(MaterialTheme.shapes.medium)
+                                    .combinedClickable(
+                                        onClick = { showFullscreenImage = true },
+                                        onLongClick = onLongPress,
+                                    ),
                             )
                         }
                         // 2026-08-08: video mesajı — image_url ile AYNI desen/konum,
@@ -1006,13 +1024,29 @@ private fun MessageBubble(
                             // FIT'e geçildi (videonun TAMAMI görünür, gerekirse üst/alt
                             // boşluk bırakılır — kırpma YOK) + kutu daha dikey bir orana
                             // (200x260) çekildi, telefon videolarıyla daha az boşluk kalsın.
-                            MessageVideoPlayer(
-                                videoUrl = videoUrl,
+                            // 2026-08-09 (kullanıcı isteği: "büyüsün") — MessageVideoPlayer'ın
+                            // KENDİ `useController=true` PlayerView'ı bir AndroidView
+                            // olduğu için üstüne Compose clickable DOKUNAMAZ (bkz.
+                            // PostCard.kt'deki AYNI gerekçe) — şeffaf bir overlay Box
+                            // (matchParentSize + combinedClickable, PostCard'ın AYNI
+                            // deseni) tüm dokunuşları yakalayıp tam ekran açıyor,
+                            // uzun-basma dış balonun `onLongPress`'iyle AYNI.
+                            Box(
                                 modifier = Modifier
                                     .padding(top = if (replyTo != null || !imageUrl.isNullOrBlank()) 6.dp else 0.dp)
                                     .size(width = 200.dp, height = 260.dp)
                                     .clip(MaterialTheme.shapes.medium),
-                            )
+                            ) {
+                                MessageVideoPlayer(videoUrl = videoUrl, modifier = Modifier.matchParentSize())
+                                Box(
+                                    modifier = Modifier
+                                        .matchParentSize()
+                                        .combinedClickable(
+                                            onClick = { showFullscreenVideo = true },
+                                            onLongClick = onLongPress,
+                                        ),
+                                )
+                            }
                         }
                         // Sesli mesaj (2026-08-09) — image_url/video_url ile AYNI
                         // desen/konum, AYRI bir kolon (audio_url).
@@ -1108,6 +1142,13 @@ private fun MessageBubble(
                 }
             }
         }
+    }
+
+    if (showFullscreenImage && !message.imageUrl.isNullOrBlank()) {
+        FullscreenImageViewer(imageUrl = message.imageUrl, onDismiss = { showFullscreenImage = false })
+    }
+    if (showFullscreenVideo && !message.videoUrl.isNullOrBlank()) {
+        FullscreenVideoViewer(videoUrl = message.videoUrl, onDismiss = { showFullscreenVideo = false })
     }
 }
 

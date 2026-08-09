@@ -154,6 +154,11 @@ fun ProfileScreen(
     // bağlanmıyordu (bkz. AppNavHost.kt eski yorumu). Varsayılan {} ile mevcut
     // çağrı yerleri (ör. testler) kırılmadan derlenmeye devam eder.
     onNavigateToHighlights: (String) -> Unit = {},
+    // 2026-08-09 (kullanıcı raporu: "öne çıkarılanlara ekleyince uygulamayı
+    // aç kapa yapmak zorunda kalıyorum") — storyCreated/postCreated ile AYNI
+    // savedStateHandle deseni (bkz. FeedScreen.kt/MainScaffold.kt).
+    highlightsChanged: Boolean = false,
+    onHighlightsRefreshHandled: () -> Unit = {},
     onSessionExpired: () -> Unit,
     onNavigateBack: (() -> Unit)? = null,
     viewModel: ProfileViewModel = viewModel(factory = ProfileViewModelFactory(username)),
@@ -186,6 +191,16 @@ fun ProfileScreen(
                 is ProfileEvent.SessionExpired -> onSessionExpired()
                 is ProfileEvent.ShowToast -> Toast.makeText(context, event.message, Toast.LENGTH_SHORT).show()
             }
+        }
+    }
+
+    // FeedScreen.kt'deki storyCreated/postCreated ile AYNI desen — highlight
+    // listesini yeniden yükle, sonra bayrağı çağıran tarafta (MainScaffold/
+    // AppNavHost) false'a döndür.
+    LaunchedEffect(highlightsChanged) {
+        if (highlightsChanged) {
+            viewModel.refreshHighlights()
+            onHighlightsRefreshHandled()
         }
     }
 

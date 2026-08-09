@@ -242,6 +242,7 @@ fun DiscoverScreen(
                                         onDeletePost = { postId -> viewModel.deletePost(postId) },
                                         onArchivePost = { postId -> viewModel.toggleArchive(postId) },
                                         onPinPost = { postId -> viewModel.togglePin(postId) },
+                                        onUsernameClick = onUserClick,
                                     )
                                     }
                                 }
@@ -317,6 +318,7 @@ fun DiscoverScreen(
                                 onDeletePost = { postId -> viewModel.deletePost(postId) },
                                 onArchivePost = { postId -> viewModel.toggleArchive(postId) },
                                 onPinPost = { postId -> viewModel.togglePin(postId) },
+                                onUsernameClick = onUserClick,
                             )
                             }
                         }
