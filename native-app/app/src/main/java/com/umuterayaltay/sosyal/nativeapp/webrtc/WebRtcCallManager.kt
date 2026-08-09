@@ -224,9 +224,22 @@ class WebRtcCallManager(
         return answer.description
     }
 
-    /** Arayan taraf — karşı tarafın answer'ını remote description olarak set eder. */
+    /** Arayan taraf — karşı tarafın answer'ını remote description olarak set eder.
+     *
+     * ÇİFT/GEÇ ANSWER KORUMASI (2026-08-09, kullanıcı raporu: "arama birkaç kez
+     * çalıştı, bir süre sonra arayan tarafta 'Arama başlatılamadı'"):
+     * `setRemoteDescription(ANSWER)` WebRTC'de SADECE `HAVE_LOCAL_OFFER`
+     * durumunda geçerlidir. Arama ZATEN kurulduktan (`STABLE`) sonra ikinci/
+     * bayat bir Answer gelirse `onSetFailure` → IllegalStateException fırlıyor,
+     * bu da CallSessionManager.handleAnswer'ın catch'inde ZATEN ÇALIŞAN aramayı
+     * sonlandırıyordu. Böyle bir Answer artık sessizce YOK SAYILIYOR: dönüş
+     * değeri "bu Answer gerçekten uygulandı mı" DEĞİL, "arama sağlıklı mı"
+     * anlamına gelir — zaten STABLE olan bir bağlantı da sağlıklıdır. */
     suspend fun setRemoteAnswer(sdp: String) {
         val pc = peerConnection ?: return
+        if (pc.signalingState() != PeerConnection.SignalingState.HAVE_LOCAL_OFFER) {
+            return
+        }
         setRemoteDescription(pc, SessionDescription(SessionDescription.Type.ANSWER, sdp))
         flushPendingIce(pc)
     }

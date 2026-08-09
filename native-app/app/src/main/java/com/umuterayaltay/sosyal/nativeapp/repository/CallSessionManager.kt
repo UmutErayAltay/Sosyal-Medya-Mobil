@@ -279,7 +279,13 @@ class CallSessionManager(
             Log.d(TAG, "handleOffer: ${signal.from}'dan AYNI aramanın resend'i (phase=$currentPhase), yok sayılıyor")
             return
         }
-        if (currentPhase !is CallPhase.Idle) {
+        // `Ended` MEŞGUL DEĞİLDİR: bir önceki arama BİTMİŞ, ekranda sadece
+        // ~1.4sn "arama sona erdi" gösteriliyor (bkz. cleanupAndEnd yorumu).
+        // Bu pencerede gelen YENİ bir aramaya "meşgulüm" reddi göndermek
+        // yanlıştı — arama bitirip hemen tekrar arayan tarafa sebepsiz
+        // "Arama reddedildi" dönüyordu. Web'de de cleanup callState'i
+        // doğrudan 'idle' yapar, böyle bir ara durum YOKTUR.
+        if (currentPhase !is CallPhase.Idle && currentPhase !is CallPhase.Ended) {
             // Meşgulüm — web'in AYNI davranışı (call.js: reject SADECE ARAYANA gider).
             Log.d(TAG, "handleOffer: meşgulüm (phase=${_phase.value}), ${signal.from}'a Reject gönderiliyor")
             val me = myUserId ?: return
@@ -308,6 +314,13 @@ class CallSessionManager(
             Log.w(TAG, "handleAnswer: Answer geldi ama phase OutgoingRinging DEĞİL (${_phase.value}), YOK SAYILIYOR")
             null
         } ?: return
+        // Bayat/yanlış eşten gelen Answer koruması (2026-08-09): ARADIĞIMIZ
+        // kişiden GELMEYEN bir Answer'ı remote description olarak set etmek
+        // PeerConnection'ı bozar ve aramayı "Arama başlatılamadı" ile öldürür.
+        if (signal.from != outgoing.otherUserId) {
+            Log.w(TAG, "handleAnswer: Answer BEKLENMEYEN kişiden (${signal.from}, beklenen=${outgoing.otherUserId}), YOK SAYILIYOR")
+            return
+        }
         Log.d(TAG, "handleAnswer: Answer alındı from=${signal.from}, setRemoteAnswer çağrılıyor")
         noAnswerJob?.cancel()
         scope.launch {
