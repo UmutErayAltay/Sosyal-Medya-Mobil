@@ -240,8 +240,31 @@ fun ConversationScreen(
     // listesinden türetiliyor (backend other_user id döndürmüyor) — ama arama
     // ikonlarının gösterilip gösterilmeyeceğine artık otherCallTopic karar
     // veriyor (bkz. aşağıdaki if koşulu), bu sadece UI'da isim/görüntüleme.
-    val otherUserIdForCall = remember(messages, myUserId) {
-        messages.firstOrNull { it.senderId.isNotBlank() && it.senderId != myUserId }?.senderId
+    // 2026-08-09: ARTIK ÖNCE backend'in döndürdüğü other_user_id kullanılıyor.
+    // Eski "mesaj listesinden türet" yolu SADECE fallback olarak duruyor
+    // (backend deploy'u henüz gitmemiş olabilir): o yol, karşı taraf HENÜZ
+    // HİÇ mesaj göndermemişse null dönüyordu ve arama butonları bu yüzden
+    // görünmüyordu — kullanıcı raporu "aynı sohbette emülatörde arama butonu
+    // var, telefonumda yok" TAM OLARAK buydu (butonun görünürlüğü, karşı
+    // tarafın size mesaj atmış olmasına bağlıydı; hiç mesajlaşılmamış
+    // sohbetlerde İKİ TARAFTA DA yoktu).
+    val otherUserIdForCall = remember(messages, myUserId, conversationInfo) {
+        conversationInfo?.otherUserId?.takeIf { it.isNotBlank() }
+            ?: messages.firstOrNull { it.senderId.isNotBlank() && it.senderId != myUserId }?.senderId
+    }
+
+    // Karşı tarafın HESABI SİLİNMİŞ mi (2026-08-09, kullanıcı onayı ile
+    // eklendi). Backend 1:1 sohbette other_call_topic/other_user_id'yi SADECE
+    // karşı tarafın profili DURUYORSA doldurur: `conversation_participants.
+    // user_id -> profiles` FK'si ON DELETE CASCADE olduğu için hesap silinince
+    // hem katılımcı satırı hem o kişinin mesajları uçar, geriye tek katılımcılı
+    // bir sohbet kalır. Böyle bir sohbette arama butonları ZATEN gizleniyordu
+    // ama SEBEBİ hiç belli olmuyordu ("buton sebepsiz kayboldu" görünümü) —
+    // artık başlıkta açıkça yazıyor ve mesaj yazma alanı kapatılıyor
+    // (gönderilecek kimse yok). Mesaj GEÇMİŞİ görünmeye devam eder.
+    val otherAccountDeleted = remember(conversationInfo) {
+        val info = conversationInfo
+        info != null && !info.isGroup && info.otherCallTopic.isNullOrBlank()
     }
 
     val actionsSheetState = rememberModalBottomSheetState()
@@ -355,7 +378,8 @@ fun ConversationScreen(
                                     }
                                 }
                                 Text(
-                                    text = info?.name ?: "Konuşma",
+                                    text = info?.name
+                                        ?: if (otherAccountDeleted) "Hesap silinmiş" else "Konuşma",
                                     style = MaterialTheme.typography.titleMedium,
                                     modifier = Modifier.padding(start = 10.dp),
                                 )
@@ -486,7 +510,21 @@ fun ConversationScreen(
             }
         },
         bottomBar = {
-            if (!searchMode) {
+            if (!searchMode && otherAccountDeleted) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .padding(16.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = "Bu kullanıcının hesabı silinmiş, mesaj gönderilemez.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            } else if (!searchMode) {
                 ConversationInputBar(
                     sendText = sendText,
                     onSendTextChange = viewModel::onSendTextChange,

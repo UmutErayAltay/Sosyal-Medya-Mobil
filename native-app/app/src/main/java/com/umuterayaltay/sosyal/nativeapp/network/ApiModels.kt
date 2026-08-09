@@ -465,6 +465,12 @@ data class ConversationInfoDto(
     // dolu) — bkz. app/realtime_topics.py, web'in data-other-call-topic'iyle
     // AYNI. sendSignal() artık kullanıcı id'si değil BUNU hedef alıyor.
     @SerializedName("other_call_topic") val otherCallTopic: String? = null,
+    // Karşı tarafın kullanıcı id'si (2026-08-09) — ÖNCEDEN backend bunu
+    // döndürmediği için ConversationScreen mesaj listesinden TAHMİN ediyordu
+    // ("benden olmayan İLK mesajın göndereni"), bu yüzden karşı taraf henüz
+    // hiç mesaj göndermemişse arama butonları HİÇ çıkmıyordu. 1:1 dışında
+    // (grup) ve karşı tarafın hesabı silinmişse null.
+    @SerializedName("other_user_id") val otherUserId: String? = null,
 )
 
 data class ConversationDetailResponse(
