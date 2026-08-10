@@ -88,7 +88,12 @@ private val REACTION_EMOJIS = listOf("❤️", "😂", "😮", "😢", "🔥", "
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun StoryViewerScreen(
-    userId: String,
+    // 2026-08-10 (kullanıcı isteği: "birinin storyleri bitince sıradakine
+    // geçsin") — tek bir userId YERİNE hikaye çubuğundaki TÜM kullanıcıların
+    // sıralı listesi + tıklanan kullanıcının o listedeki index'i (bkz.
+    // StoryViewerViewModel sınıf yorumu).
+    userIds: List<String>,
+    startIndex: Int,
     // 2026-08-09 (kullanıcı raporu: "öne çıkarılanlara ekleyince uygulamayı
     // aç kapa yapmak zorunda kalıyorum") — bu ekran highlight kaydedince
     // KAPANMAZ (kullanıcı hikayeleri izlemeye devam edebilir), bu yüzden
@@ -98,7 +103,9 @@ fun StoryViewerScreen(
     // bayrağı) yazıyor, storyCreated/postCreated ile AYNI desen.
     onNavigateBack: (highlightChanged: Boolean) -> Unit,
     onSessionExpired: () -> Unit,
-    viewModel: StoryViewerViewModel = viewModel(factory = StoryViewerViewModelFactory(userId)),
+    viewModel: StoryViewerViewModel = viewModel(
+        factory = StoryViewerViewModelFactory(userIds, startIndex),
+    ),
 ) {
     val username by viewModel.username.collectAsState()
     val avatarUrl by viewModel.avatarUrl.collectAsState()

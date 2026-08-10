@@ -54,9 +54,14 @@ import com.umuterayaltay.sosyal.nativeapp.repository.StoryBarItem
 fun StoryBar(
     items: List<StoryBarItem>,
     onAddStoryClick: () -> Unit,
-    onStoryClick: (userId: String) -> Unit,
+    // 2026-08-10 (kullanıcı isteği: "birinin storyleri bitince sıradakine
+    // geçsin") — tıklanan kullanıcının id'siyle BİRLİKTE çubuktaki TÜM
+    // kullanıcıların sıralı id listesi de taşınır, viewer bu listeyi
+    // kullanarak bir sonraki kullanıcıya otomatik geçebilsin diye.
+    onStoryClick: (userId: String, allUserIds: List<String>) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val allUserIds = items.map { it.userId }
     LazyRow(
         modifier = modifier,
         contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp),
@@ -66,7 +71,7 @@ fun StoryBar(
             AddStoryItem(onClick = onAddStoryClick)
         }
         items(items, key = { it.userId }) { item ->
-            StoryBarAvatar(item = item, onClick = { onStoryClick(item.userId) })
+            StoryBarAvatar(item = item, onClick = { onStoryClick(item.userId, allUserIds) })
         }
     }
 }

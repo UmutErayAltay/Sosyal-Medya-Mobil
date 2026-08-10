@@ -32,21 +32,37 @@ sealed class StoryViewerEvent {
 }
 
 /**
- * Bir kullanıcının hikaye viewer'ı — StoryBar/FeedScreen'den `userId` ile
- * açılır (ProfileViewModel/HashtagViewModel'deki AYNI constructor-parametre +
- * Factory deseni). `loadUserStories()` SADECE init'te bir kez çağrılır (bkz.
+ * Bir kullanıcının hikaye viewer'ı — StoryBar/FeedScreen'den `userIds`
+ * (hikaye çubuğundaki TÜM kullanıcıların sıralı listesi) + tıklanan
+ * kullanıcının o listedeki `startIndex`'i ile açılır (ProfileViewModel/
+ * HashtagViewModel'deki AYNI constructor-parametre + Factory deseni).
+ * `loadUserStories()` her kullanıcı geçişinde bir kez çağrılır (bkz.
  * StoriesRepository.getUserStories() docstring'i — GET içinde story_views
  * upsert yan etkisi var, Compose recomposition'ı bunu tekrar tetiklememeli).
+ *
+ * 2026-08-10 (kullanıcı isteği: "storylere girdikten sonra birinin storyleri
+ * bitince sıradakine geçsin") — Instagram'ın AYNI davranışı: `goNext()`
+ * geçerli kullanıcının SON hikayesinden sonra viewer'ı KAPATMAK yerine
+ * (nav YAPMADAN, AYNI ekran/ViewModel instance'ında) `userIds`'teki bir
+ * SONRAKİ kullanıcının hikayelerini yükler. Hiç kullanıcı kalmayınca (son
+ * kullanıcının da son hikayesi) `false` döner, çağıran taraf (StoryViewerScreen)
+ * o zaman viewer'ı kapatır — mevcut `if (!viewModel.goNext()) onNavigateBack(...)`
+ * çağrı yerleri DEĞİŞMEDEN doğru çalışmaya devam eder.
  *
  * Anket oylaması VAR OLAN [ServiceLocator.pollsRepository]'yi kullanır —
  * PollsRepository/PollsApi'ye DOKUNULMADI, story'nin poll'u post'unkiyle
  * AYNI şekil olduğu için doğrudan reuse edilir.
  */
-class StoryViewerViewModel(private val userId: String) : ViewModel() {
+class StoryViewerViewModel(
+    private val userIds: List<String>,
+    startIndex: Int,
+) : ViewModel() {
 
     private val storiesRepository = ServiceLocator.storiesRepository
     private val pollsRepository = ServiceLocator.pollsRepository
     private val tokenStore = ServiceLocator.tokenStore
+
+    private val _userIndex = MutableStateFlow(startIndex.coerceIn(0, (userIds.size - 1).coerceAtLeast(0)))
 
     private val _username = MutableStateFlow("")
     val username: StateFlow<String> = _username.asStateFlow()
@@ -77,10 +93,18 @@ class StoryViewerViewModel(private val userId: String) : ViewModel() {
     }
 
     private fun loadUserStories() {
+        val uid = userIds.getOrNull(_userIndex.value) ?: return
         viewModelScope.launch {
             _loading.value = true
             _error.value = null
-            when (val result = storiesRepository.getUserStories(userId)) {
+            // Kullanıcı geçişinde ESKİ listeyi HEMEN temizle — aksi halde
+            // ağ isteği süresince `loading=true` AMA `stories` hâlâ ÖNCEKİ
+            // kullanıcının listesini taşırdı, "loading && stories.isEmpty()"
+            // dalı YAKALAMAZ, ekran bir an ÖNCEKİ kullanıcının son karesinde
+            // donmuş kalırdı.
+            _stories.value = emptyList()
+            _currentIndex.value = 0
+            when (val result = storiesRepository.getUserStories(uid)) {
                 is UserStoriesResult.Success -> {
                     _username.value = result.data.username
                     _avatarUrl.value = result.data.avatarUrl
@@ -94,17 +118,22 @@ class StoryViewerViewModel(private val userId: String) : ViewModel() {
         }
     }
 
-    /** Sağ yarıya tıklama / segment bitişi — sondaysa viewer'ın kendisi
-     * (Compose tarafı) kapatma kararını verir, bu ViewModel sadece index'i
-     * sınırlar. */
+    /** Sağ yarıya tıklama / segment bitişi — geçerli kullanıcının hikayeleri
+     * bitince sıradaki kullanıcıya geçer (yukarıdaki sınıf yorumuna bkz.),
+     * o da yoksa viewer'ın kendisi (Compose tarafı) kapatma kararını verir. */
     fun goNext(): Boolean {
         val next = _currentIndex.value + 1
-        return if (next < _stories.value.size) {
+        if (next < _stories.value.size) {
             _currentIndex.value = next
-            true
-        } else {
-            false
+            return true
         }
+        val nextUserIndex = _userIndex.value + 1
+        if (nextUserIndex < userIds.size) {
+            _userIndex.value = nextUserIndex
+            loadUserStories()
+            return true
+        }
+        return false
     }
 
     /** Sol yarıya tıklama — ilk segmentteyken no-op (viewer'dan çıkmaz). */
@@ -193,12 +222,15 @@ class StoryViewerViewModel(private val userId: String) : ViewModel() {
     }
 }
 
-/** StoryViewerViewModel constructor'ı userId parametresi aldığı için
- * Compose'un varsayılan factory'si yetmez — HashtagViewModelFactory ile
+/** StoryViewerViewModel constructor'ı userIds/startIndex parametresi aldığı
+ * için Compose'un varsayılan factory'si yetmez — HashtagViewModelFactory ile
  * AYNI desen. */
-class StoryViewerViewModelFactory(private val userId: String) : ViewModelProvider.Factory {
+class StoryViewerViewModelFactory(
+    private val userIds: List<String>,
+    private val startIndex: Int,
+) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
-        return StoryViewerViewModel(userId) as T
+        return StoryViewerViewModel(userIds, startIndex) as T
     }
 }

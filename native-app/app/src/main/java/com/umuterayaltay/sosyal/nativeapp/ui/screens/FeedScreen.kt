@@ -151,7 +151,9 @@ fun FeedScreen(
     onNavigateToProfile: (String) -> Unit = {},
     // Faz 5 Dalga 2C: hikaye çubuğu — StoryBarViewModel FeedViewModel'e
     // KARIŞTIRILMADI (görev tanımı), ayrı `viewModel()` instance'ı.
-    onNavigateToStoryViewer: (String) -> Unit = {},
+    // 2026-08-10: StoryBar.onStoryClick ile AYNI (userId, allUserIds) imzası
+    // — "birinin storyleri bitince sıradakine geçsin".
+    onNavigateToStoryViewer: (String, List<String>) -> Unit = { _, _ -> },
     onNavigateToStoryCreate: () -> Unit = {},
     // Kullanıcı raporu: hikaye paylaşıldıktan sonra bu çubuk yenilenmiyordu -
     // StoryBarViewModel sekme değişiminde KORUNDUĞU için sadece bir kez

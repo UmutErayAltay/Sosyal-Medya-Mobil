@@ -180,7 +180,16 @@ fun MainScaffold(navController: NavHostController, onSessionExpired: () -> Unit)
                     onNavigateToProfile = { username -> navController.navigate("profile/$username") },
                     // Faz 5 Dalga 2C: hikaye çubuğu — "+"tan oluşturma ekranına,
                     // bir halkaya tıklanınca o kullanıcının viewer'ına gider.
-                    onNavigateToStoryViewer = { userId -> navController.navigate("storyViewer/$userId") },
+                    // 2026-08-10 (kullanıcı isteği: "birinin storyleri bitince
+                    // sıradakine geçsin") — sıralı userId listesi virgülle
+                    // birleştirilip "queue" query param'ı olarak, tıklanan
+                    // kullanıcının o listedeki index'i "start" olarak taşınır
+                    // (UUID'ler virgül İÇERMEZ, ek bir encode/escape GEREKMEZ).
+                    onNavigateToStoryViewer = { userId, allUserIds ->
+                        val startIndex = allUserIds.indexOf(userId).coerceAtLeast(0)
+                        val queue = allUserIds.joinToString(",")
+                        navController.navigate("storyViewer/$userId?queue=$queue&start=$startIndex")
+                    },
                     onNavigateToStoryCreate = { navController.navigate("storyCreate") },
                     storyCreated = storyCreated,
                     onStoryBarRefreshHandled = {

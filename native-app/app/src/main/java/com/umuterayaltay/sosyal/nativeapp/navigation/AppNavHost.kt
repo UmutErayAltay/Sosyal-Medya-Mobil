@@ -702,12 +702,28 @@ fun AppNavHost() {
         // "highlightView/{highlightId}" HighlightsScreen'in KENDİ içinde
         // kullanılıyor (dıştan doğrudan navigate edilmiyor).
         composable(
-            route = "storyViewer/{userId}",
-            arguments = listOf(navArgument("userId") { type = NavType.StringType }),
+            // 2026-08-10 (kullanıcı isteği: "birinin storyleri bitince
+            // sıradakine geçsin") — "queue" (virgülle ayrılmış TÜM userId'ler)
+            // + "start" (tıklanan kullanıcının o listedeki index'i) query
+            // param'ları eklendi, StoryViewerScreen artık TEK userId değil bu
+            // sıralı listeyi alıyor (bkz. StoryViewerViewModel sınıf yorumu).
+            route = "storyViewer/{userId}?queue={queue}&start={start}",
+            arguments = listOf(
+                navArgument("userId") { type = NavType.StringType },
+                navArgument("queue") { type = NavType.StringType; defaultValue = "" },
+                navArgument("start") { type = NavType.IntType; defaultValue = 0 },
+            ),
         ) { backStackEntry ->
             val userId = backStackEntry.arguments?.getString("userId") ?: return@composable
+            val queueRaw = backStackEntry.arguments?.getString("queue").orEmpty()
+            // Boş/eksik "queue" — eski tek-userId çağrı yerleri (varsa) veya
+            // deep link gibi kenar durumlar için düşülen güvenli varsayılan:
+            // sadece TIKLANAN kullanıcı, sıradakine geçiş YOK (userIds.size==1).
+            val userIds = queueRaw.split(",").filter { it.isNotBlank() }.ifEmpty { listOf(userId) }
+            val startIndex = backStackEntry.arguments?.getInt("start") ?: 0
             StoryViewerScreen(
-                userId = userId,
+                userIds = userIds,
+                startIndex = startIndex,
                 // 2026-08-09 (kullanıcı raporu: "öne çıkarılanlara ekleyince
                 // uygulamayı aç kapa yapmak zorunda kalıyorum") — storyCreated/
                 // postCreated ile AYNI savedStateHandle deseni: highlight
