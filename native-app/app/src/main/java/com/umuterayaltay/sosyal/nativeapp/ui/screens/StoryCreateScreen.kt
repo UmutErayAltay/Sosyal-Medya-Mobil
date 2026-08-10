@@ -29,35 +29,39 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.FlipCameraAndroid
 import androidx.compose.material.icons.filled.Gif
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Movie
+import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -66,12 +70,12 @@ import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SheetState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -86,7 +90,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
@@ -95,6 +102,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
@@ -699,25 +707,31 @@ private val STORY_BACKGROUND_SWATCHES = listOf(
 )
 
 /**
- * Form adımı — Instagram tarzı canvas editörüne dönüştürüldü (kullanıcı
- * isteği: "story düzenleme kısmını instagrama benzer yapabilir miyiz,
- * yazıyı/anketi çekerek istediğimiz yere koyabilelim"). BÜYÜK KEŞİF: backend
- * (app/api_v1/stories.py) VE web (app/static/js/stories.js) bu sürükle-bırak
- * editörünü ÇOKTAN destekliyordu (caption_position_x/y, poll_position_x/y,
- * poll_scale, background_color) — sadece native'in KENDİSİ hiç UI'sını
- * kurmamıştı (submit() bu alanları HER ZAMAN null gönderiyordu). Bu yüzden
- * SIFIRDAN bir canvas motoru İCAT EDİLMEDİ, web'in stories.js'deki
- * pointerdown/pointermove/pointerup deseni Compose'un detectTransformGestures'ı
- * (pan+zoom TEK gesture detector'da, FullscreenImageViewer.kt'deki AYNI
- * kurulan desen) ile mirror'landı.
+ * Form adımı — Instagram tarzı TAM EKRAN canvas editörüne dönüştürüldü
+ * (kullanıcı isteği, 2. tur: "fotoğrafı çektik ya da galeriden seçtik,
+ * direkt sol kısımda butonlar olsun metin/gif/anket ekleme, ... tüm ekranı
+ * fotoğraf kaplasın, üstünde düzenleme yapıyormuşuz gibi" — ilk turdaki
+ * Scaffold+scroll form, canvas'ı KÜÇÜK bir 9:16 kutuya sıkıştırıp altına
+ * HER ZAMAN görünen "GIF/Sticker Ekle" butonu/caption TextField'ı/poll
+ * seçenek listesi ekliyordu, bu tur bunları TAMAMEN kaldırıp yerine
+ * dokununca açılan araç çubuğu + modal düzenleyiciler koyuyor).
  *
- * Canvas 9:16 (Instagram hikaye oranı) sabit — DraggableStoryElement (bu
- * dosyanın altında) caption/anket önizlemesini o alan içinde normalize
- * (0..1) konum + (SADECE anket için) ölçek ile konumlandırır. Metnin
- * GERÇEK İÇERİĞİ hâlâ canvas'IN ALTINDAKİ normal bir TextField'da yazılır
- * (web'in `<textarea>` + AYRI bir sürüklenebilir önizleme div'i deseniyle
- * AYNI — Instagram'daki "canvas üzerinde direkt yaz" YERİNE, mevcut backend
- * sözleşmesiyle TAM uyumlu, daha az riskli bir yaklaşım).
+ * BÜYÜK KEŞİF (ilk turdan): backend (app/api_v1/stories.py) VE web
+ * (app/static/js/stories.js) bu sürükle-bırak editörünü ÇOKTAN
+ * destekliyordu (caption_position_x/y, poll_position_x/y, poll_scale,
+ * background_color) — SIFIRDAN bir canvas motoru İCAT EDİLMEDİ, web'in
+ * stories.js'deki pointerdown/pointermove/pointerup deseni Compose'un
+ * detectTransformGestures'ı (pan+zoom TEK gesture detector'da,
+ * FullscreenImageViewer.kt'deki AYNI kurulan desen) ile mirror'landı —
+ * bu tur SADECE ÇEVRE (chrome/layout) değişti, DraggableStoryElement/
+ * pozisyon-veri modeli AYNEN korundu (canvas artık 9:16 kutu değil TÜM
+ * ekran).
+ *
+ * Metnin GERÇEK İÇERİĞİ artık her zaman görünen bir TextField'da DEĞİL,
+ * "Aa" araç butonuna dokununca açılan [StoryTextEditorOverlay]'de
+ * yazılıyor — Instagram'ın "canvas üzerinde direkt yaz" hissine daha
+ * yakın (tam ekran klavye + ortalanmış büyük yazı alanı), ama backend
+ * sözleşmesi AYNI kaldı (tek caption alanı).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -760,63 +774,27 @@ private fun StoryFormStep(
 ) {
     val hasMedia = selectedImageUri != null || selectedVideoUri != null
     val hasPoll = pollOptions.count { it.isNotBlank() } >= 2
+    var showTextEditor by remember { mutableStateOf(false) }
+    var showPollEditor by remember { mutableStateOf(false) }
+    val pollEditorSheetState = rememberModalBottomSheetState()
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Yeni Hikaye") },
-                navigationIcon = {
-                    IconButton(onClick = onBackToCamera, enabled = !submitting) {
-                        Icon(Icons.Filled.Close, contentDescription = "Kameraya dön")
-                    }
-                },
-                actions = {
-                    if (submitting) {
-                        CircularProgressIndicator(
-                            modifier = Modifier
-                                .size(24.dp)
-                                .padding(end = 16.dp),
-                            strokeWidth = 2.dp,
-                        )
-                    } else {
-                        TextButton(onClick = onSubmit, enabled = canSubmit) {
-                            Text("Paylaş")
-                        }
-                    }
-                },
-            )
-        },
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(16.dp)
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
-        ) {
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(
-                    text = "Kimler görebilir?",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                StoryVisibilityFilterRow(selected = visibility, onSelect = onVisibilityChange)
-            }
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black),
+    ) {
+        // ---- Tam ekran canvas: arka plan (görsel/video/renk) +
+        // sürüklenebilir caption/anket/overlay ----
+        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+            val density = LocalDensity.current
+            val canvasWidthPx = with(density) { maxWidth.toPx() }
+            val canvasHeightPx = with(density) { maxHeight.toPx() }
 
-            // ---- Canvas: arka plan (görsel/video/renk) + sürüklenebilir
-            // caption/anket önizlemesi ----
-            BoxWithConstraints(
+            Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(9f / 16f)
-                    .clip(RoundedCornerShape(16.dp))
+                    .fillMaxSize()
                     .background(parseHexColor(backgroundColor) ?: MaterialTheme.colorScheme.surfaceVariant),
             ) {
-                val density = LocalDensity.current
-                val canvasWidthPx = with(density) { maxWidth.toPx() }
-                val canvasHeightPx = with(density) { maxHeight.toPx() }
-
                 if (selectedImageUri != null) {
                     AsyncImage(
                         model = selectedImageUri,
@@ -843,225 +821,443 @@ private fun StoryFormStep(
                         )
                     }
                 }
+            }
 
-                if (hasMedia) {
-                    IconButton(
-                        onClick = if (selectedImageUri != null) onRemoveImage else onRemoveVideo,
-                        enabled = !submitting,
+            if (caption.isNotBlank()) {
+                DraggableStoryElement(
+                    positionX = captionPositionX,
+                    positionY = captionPositionY,
+                    scale = 1f,
+                    scalable = false,
+                    canvasWidthPx = canvasWidthPx,
+                    canvasHeightPx = canvasHeightPx,
+                    onPositionChange = onCaptionPositionChange,
+                    onScaleChange = {},
+                ) {
+                    Text(
+                        text = caption,
+                        color = Color.White,
+                        style = MaterialTheme.typography.headlineSmall,
                         modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(8.dp)
-                            .size(32.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f)),
+                            .clickable(enabled = !submitting) { showTextEditor = true }
+                            .padding(horizontal = 20.dp, vertical = 8.dp),
+                    )
+                }
+            }
+
+            if (hasPoll) {
+                // Gerçek paylaşılacak görünümle AYNI önizleme — StoryViewerScreen'in
+                // KULLANDIĞI PollWidget REUSE edilir, sahte bir kutu İCAT EDİLMEDİ
+                // (web'in stories.js'deki updateStoryPollPreview()'un AYNI
+                // gerekçesi: "orada tam paylaşılacak hali gözüksün").
+                val previewPoll = remember(pollOptions) {
+                    Poll(
+                        id = "preview",
+                        options = pollOptions.filter { it.isNotBlank() }.mapIndexed { i, text ->
+                            PollOption(id = "opt$i", text = text, votes = 0, pct = 0)
+                        },
+                        totalVotes = 0,
+                        myVote = null,
+                    )
+                }
+                DraggableStoryElement(
+                    positionX = pollPositionX,
+                    positionY = pollPositionY,
+                    scale = pollScale,
+                    scalable = true,
+                    canvasWidthPx = canvasWidthPx,
+                    canvasHeightPx = canvasHeightPx,
+                    onPositionChange = onPollPositionChange,
+                    onScaleChange = onPollScaleChange,
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .width(220.dp)
+                            .clickable(enabled = !submitting) { showPollEditor = true }
+                            .background(MaterialTheme.colorScheme.surface, MaterialTheme.shapes.medium)
+                            .padding(12.dp),
                     ) {
-                        Icon(Icons.Filled.Close, contentDescription = "Medyayı kaldır")
+                        PollWidget(poll = previewPoll, onVote = {})
                     }
                 }
+            }
 
-                if (caption.isNotBlank()) {
-                    DraggableStoryElement(
-                        positionX = captionPositionX,
-                        positionY = captionPositionY,
-                        scale = 1f,
-                        scalable = false,
-                        canvasWidthPx = canvasWidthPx,
-                        canvasHeightPx = canvasHeightPx,
-                        onPositionChange = onCaptionPositionChange,
-                        onScaleChange = {},
-                    ) {
-                        Text(
-                            text = caption,
-                            color = Color.White,
-                            style = MaterialTheme.typography.bodyLarge,
-                            modifier = Modifier.padding(horizontal = 20.dp),
+            if (!overlayImageUrl.isNullOrBlank()) {
+                DraggableStoryElement(
+                    positionX = overlayImagePositionX,
+                    positionY = overlayImagePositionY,
+                    scale = overlayImageScale,
+                    scalable = true,
+                    canvasWidthPx = canvasWidthPx,
+                    canvasHeightPx = canvasHeightPx,
+                    onPositionChange = onOverlayImagePositionChange,
+                    onScaleChange = onOverlayImageScaleChange,
+                ) {
+                    Box {
+                        AsyncImage(
+                            model = overlayImageUrl,
+                            contentDescription = null,
+                            modifier = Modifier.size(120.dp),
                         )
-                    }
-                }
-
-                if (hasPoll) {
-                    // Gerçek paylaşılacak görünümle AYNI önizleme — StoryViewerScreen'in
-                    // KULLANDIĞI PollWidget REUSE edilir, sahte bir kutu İCAT EDİLMEDİ
-                    // (web'in stories.js'deki updateStoryPollPreview()'un AYNI
-                    // gerekçesi: "orada tam paylaşılacak hali gözüksün").
-                    val previewPoll = remember(pollOptions) {
-                        Poll(
-                            id = "preview",
-                            options = pollOptions.filter { it.isNotBlank() }.mapIndexed { i, text ->
-                                PollOption(id = "opt$i", text = text, votes = 0, pct = 0)
-                            },
-                            totalVotes = 0,
-                            myVote = null,
-                        )
-                    }
-                    DraggableStoryElement(
-                        positionX = pollPositionX,
-                        positionY = pollPositionY,
-                        scale = pollScale,
-                        scalable = true,
-                        canvasWidthPx = canvasWidthPx,
-                        canvasHeightPx = canvasHeightPx,
-                        onPositionChange = onPollPositionChange,
-                        onScaleChange = onPollScaleChange,
-                    ) {
-                        Box(
+                        IconButton(
+                            onClick = onRemoveOverlayImage,
                             modifier = Modifier
-                                .width(220.dp)
-                                .background(MaterialTheme.colorScheme.surface, MaterialTheme.shapes.medium)
-                                .padding(12.dp),
+                                .align(Alignment.TopEnd)
+                                .size(24.dp)
+                                .clip(CircleShape)
+                                .background(Color.Black.copy(alpha = 0.5f)),
                         ) {
-                            PollWidget(poll = previewPoll, onVote = {})
-                        }
-                    }
-                }
-
-                if (!overlayImageUrl.isNullOrBlank()) {
-                    DraggableStoryElement(
-                        positionX = overlayImagePositionX,
-                        positionY = overlayImagePositionY,
-                        scale = overlayImageScale,
-                        scalable = true,
-                        canvasWidthPx = canvasWidthPx,
-                        canvasHeightPx = canvasHeightPx,
-                        onPositionChange = onOverlayImagePositionChange,
-                        onScaleChange = onOverlayImageScaleChange,
-                    ) {
-                        Box {
-                            AsyncImage(
-                                model = overlayImageUrl,
-                                contentDescription = null,
-                                modifier = Modifier.size(120.dp),
+                            Icon(
+                                Icons.Filled.Close,
+                                contentDescription = "GIF/Sticker'ı kaldır",
+                                tint = Color.White,
+                                modifier = Modifier.size(14.dp),
                             )
-                            IconButton(
-                                onClick = onRemoveOverlayImage,
-                                modifier = Modifier
-                                    .align(Alignment.TopEnd)
-                                    .size(24.dp)
-                                    .clip(CircleShape)
-                                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f)),
-                            ) {
-                                Icon(
-                                    Icons.Filled.Close,
-                                    contentDescription = "GIF/Sticker'ı kaldır",
-                                    modifier = Modifier.size(14.dp),
-                                )
-                            }
                         }
                     }
                 }
             }
-            Text(
-                text = "Yazı, anket ve GIF/sticker'ı canvas üzerinde sürükleyerek" +
-                    " konumlandırabilir, iki parmakla büyütüp küçültebilirsin.",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+        }
 
-            OutlinedButton(
-                onClick = onAddOverlayClick,
-                enabled = !submitting,
-                shape = MaterialTheme.shapes.medium,
-                modifier = Modifier.fillMaxWidth(),
+        // ---- Üst bar: kapat (X) + görünürlük seçimi + Paylaş ----
+        Column(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth()
+                .statusBarsPadding()
+                .padding(top = 8.dp),
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(Icons.Filled.Gif, contentDescription = null)
-                Text(
-                    text = if (overlayImageUrl.isNullOrBlank()) "GIF/Sticker Ekle" else "GIF/Sticker'ı değiştir",
-                    modifier = Modifier.padding(start = 8.dp),
-                )
+                IconButton(onClick = onBackToCamera, enabled = !submitting) {
+                    Icon(
+                        Icons.Filled.Close,
+                        contentDescription = "Kameraya dön",
+                        tint = Color.White,
+                        modifier = Modifier
+                            .clip(CircleShape)
+                            .background(Color.Black.copy(alpha = 0.4f))
+                            .padding(4.dp),
+                    )
+                }
+                if (submitting) {
+                    CircularProgressIndicator(
+                        modifier = Modifier
+                            .size(24.dp)
+                            .padding(end = 16.dp),
+                        strokeWidth = 2.dp,
+                        color = Color.White,
+                    )
+                } else {
+                    TextButton(onClick = onSubmit, enabled = canSubmit) {
+                        Text("Paylaş", color = Color.White)
+                    }
+                }
             }
-
-            OutlinedTextField(
-                value = caption,
-                onValueChange = onCaptionChange,
-                modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("Bir şeyler yaz...") },
-                minLines = 2,
-                enabled = !submitting,
-                shape = MaterialTheme.shapes.medium,
+            StoryVisibilityFilterRow(
+                selected = visibility,
+                onSelect = onVisibilityChange,
+                modifier = Modifier.padding(top = 8.dp),
             )
+        }
 
+        // ---- Sol kenar araç çubuğu: metin/GIF-sticker/anket ekle ----
+        // (kullanıcı isteği: "direkt sol kısımda butonlar olsun metin
+        // ekleme, gif ekleme, anket ekleme gibi") — HER ZAMAN görünen
+        // buton/TextField/liste yerine dokununca açılan tek-amaçlı
+        // düzenleyiciler (StoryTextEditorOverlay/ModalBottomSheet).
+        Column(
+            modifier = Modifier
+                .align(Alignment.CenterStart)
+                .padding(start = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(20.dp),
+        ) {
+            StoryToolButton(
+                icon = Icons.Filled.TextFields,
+                contentDescription = "Yazı ekle",
+                enabled = !submitting,
+                onClick = { showTextEditor = true },
+            )
+            StoryToolButton(
+                icon = Icons.Filled.Gif,
+                contentDescription = "GIF/Sticker ekle",
+                enabled = !submitting,
+                onClick = onAddOverlayClick,
+            )
+            StoryToolButton(
+                icon = Icons.Filled.BarChart,
+                contentDescription = "Anket ekle",
+                enabled = !submitting,
+                onClick = {
+                    // İlk dokunuşta 2 boş seçenek oluştur (web'in "anket
+                    // ekle" tıklayınca AYNI davranışı) — sonraki dokunuşlar
+                    // sadece var olan düzenleyiciyi tekrar açar.
+                    if (pollOptions.isEmpty()) {
+                        onAddPollOption()
+                        onAddPollOption()
+                    }
+                    showPollEditor = true
+                },
+            )
             // Arka plan rengi — SADECE medya yokken anlamlı (backend zaten
             // medya varsa yok sayıyor, bkz. app/api_v1/stories.py).
             if (!hasMedia) {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(
-                        text = "Arka plan rengi (opsiyonel)",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        STORY_BACKGROUND_SWATCHES.forEach { hex ->
-                            val isSelected = backgroundColor == hex
-                            Box(
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .clip(CircleShape)
-                                    .background(parseHexColor(hex) ?: Color.Gray)
-                                    .border(
-                                        width = if (isSelected) 3.dp else 0.dp,
-                                        color = MaterialTheme.colorScheme.primary,
-                                        shape = CircleShape,
-                                    )
-                                    .clickable(enabled = !submitting) {
-                                        onBackgroundColorChange(if (isSelected) null else hex)
-                                    },
-                            )
-                        }
-                    }
-                }
-            }
-
-            // Anket seçenekleri (0-4) — SADECE medya yokken zorunlu DEĞİL,
-            // backend medya+anket birlikte olabiliyor (bkz. create_story()).
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    text = "Anket (opsiyonel)",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                StoryBackgroundColorButton(
+                    selectedColor = backgroundColor,
+                    enabled = !submitting,
+                    onColorSelected = onBackgroundColorChange,
                 )
-                pollOptions.forEachIndexed { index, option ->
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        OutlinedTextField(
-                            value = option,
-                            onValueChange = { onPollOptionChange(index, it) },
-                            modifier = Modifier.weight(1f),
-                            placeholder = { Text("Seçenek ${index + 1}") },
-                            singleLine = true,
-                            enabled = !submitting,
+            }
+        }
+
+        if (error != null) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(16.dp)
+                    .background(MaterialTheme.colorScheme.errorContainer, MaterialTheme.shapes.small)
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.ErrorOutline,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onErrorContainer,
+                    modifier = Modifier.size(18.dp),
+                )
+                Text(
+                    text = error,
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(start = 8.dp),
+                )
+            }
+        }
+    }
+
+    if (showTextEditor) {
+        StoryTextEditorOverlay(
+            initialValue = caption,
+            onDone = { text ->
+                onCaptionChange(text.trim())
+                showTextEditor = false
+            },
+            onDismiss = { showTextEditor = false },
+        )
+    }
+
+    if (showPollEditor) {
+        StoryPollEditorSheet(
+            sheetState = pollEditorSheetState,
+            pollOptions = pollOptions,
+            submitting = submitting,
+            onAddPollOption = onAddPollOption,
+            onRemovePollOption = onRemovePollOption,
+            onPollOptionChange = onPollOptionChange,
+            onDismiss = { showPollEditor = false },
+        )
+    }
+}
+
+/** Sol kenar araç çubuğundaki tek bir ikon-buton — İKİ araç butonu VE
+ * arka-plan-rengi butonu TARAFINDAN paylaşılan tek görsel stil (yarı
+ * saydam siyah daire zemin, beyaz ikon — hangi medya/renk altta olursa
+ * olsun okunabilirlik garantisi, PostCard.kt'deki fullscreen ikonunun
+ * AYNI "scrim" mantığı). */
+@Composable
+private fun StoryToolButton(
+    icon: ImageVector,
+    contentDescription: String,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    IconButton(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = Modifier
+            .size(48.dp)
+            .clip(CircleShape)
+            .background(Color.Black.copy(alpha = 0.4f)),
+    ) {
+        Icon(icon, contentDescription = contentDescription, tint = Color.White)
+    }
+}
+
+/** Araç çubuğundaki "arka plan rengi" butonu — dokununca web'in
+ * feed.html'deki AYNI 6 swatch'lı paleti (bkz. STORY_BACKGROUND_SWATCHES)
+ * küçük bir açılır satırda gösterir. Diğer iki araç butonunun AKSİNE
+ * modal/dialog DEĞİL — palet TEK satır, ekranı kaplayacak kadar büyük
+ * değil, bu yüzden basit bir AnimatedVisibility yeterli. */
+@Composable
+private fun StoryBackgroundColorButton(
+    selectedColor: String?,
+    enabled: Boolean,
+    onColorSelected: (String?) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        StoryToolButton(
+            icon = Icons.Filled.Palette,
+            contentDescription = "Arka plan rengi",
+            enabled = enabled,
+            onClick = { expanded = !expanded },
+        )
+        if (expanded) {
+            STORY_BACKGROUND_SWATCHES.forEach { hex ->
+                val isSelected = selectedColor == hex
+                Box(
+                    modifier = Modifier
+                        .size(32.dp)
+                        .clip(CircleShape)
+                        .background(parseHexColor(hex) ?: Color.Gray)
+                        .border(
+                            width = if (isSelected) 3.dp else 1.dp,
+                            color = if (isSelected) Color.White else Color.White.copy(alpha = 0.4f),
+                            shape = CircleShape,
                         )
+                        .clickable(enabled = enabled) {
+                            onColorSelected(if (isSelected) null else hex)
+                        },
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Tam ekran metin girişi — "Aa" araç butonuna (veya canvas'taki mevcut
+ * yazıya) dokununca açılır, Instagram'ın "canvas üzerinde direkt yaz"
+ * hissine yakın (yarı saydam siyah zemin + ortalanmış büyük TextField,
+ * klavye otomatik açılır). Backend sözleşmesi TEK bir caption alanı
+ * olduğu için (web'de de aynı) burada da TEK bir metin kutusu var —
+ * Instagram'daki gibi birden çok bağımsız metin katmanı İCAT EDİLMEDİ.
+ */
+@Composable
+private fun StoryTextEditorOverlay(
+    initialValue: String,
+    onDone: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var text by remember { mutableStateOf(initialValue) }
+    val focusRequester = remember { FocusRequester() }
+    LaunchedEffect(Unit) { focusRequester.requestFocus() }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.75f))
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onDismiss,
+            ),
+    ) {
+        Row(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .statusBarsPadding()
+                .padding(16.dp),
+        ) {
+            TextButton(onClick = { onDone(text) }) {
+                Text("Tamam", color = Color.White)
+            }
+        }
+        BasicTextField(
+            value = text,
+            onValueChange = { text = it },
+            modifier = Modifier
+                .align(Alignment.Center)
+                .fillMaxWidth()
+                .padding(horizontal = 32.dp)
+                .focusRequester(focusRequester)
+                // Arka plandaki dismiss-clickable'a TIKLAMANIN sızmaması
+                // için TextField'ın kendi tıklaması (imleç konumlandırma)
+                // ayrı bir InteractionSource ile İZOLE ediliyor.
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                ) {},
+            textStyle = MaterialTheme.typography.headlineSmall.copy(color = Color.White, textAlign = TextAlign.Center),
+            cursorBrush = SolidColor(Color.White),
+            decorationBox = { innerTextField ->
+                if (text.isEmpty()) {
+                    Text(
+                        text = "Bir şeyler yaz...",
+                        style = MaterialTheme.typography.headlineSmall,
+                        color = Color.White.copy(alpha = 0.6f),
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                innerTextField()
+            },
+        )
+    }
+}
+
+/**
+ * Anket seçenekleri düzenleyicisi — eski her-zaman-görünen Column'un AYNI
+ * mantığı (0-4 seçenek, en az 2 dolu = anket aktif), sadece dokununca
+ * açılan bir ModalBottomSheet'e taşındı (MediaPickerSheet ile AYNI
+ * mekanizma). "Anket ekle" araç butonu bu sheet'i açmadan ÖNCE 2 boş
+ * seçenek oluşturuyor (bkz. StoryFormStep), bu yüzden burada pollOptions
+ * HER ZAMAN en az 2 eleman.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun StoryPollEditorSheet(
+    sheetState: SheetState,
+    pollOptions: List<String>,
+    submitting: Boolean,
+    onAddPollOption: () -> Unit,
+    onRemovePollOption: (Int) -> Unit,
+    onPollOptionChange: (Int, String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(text = "Anket", style = MaterialTheme.typography.titleMedium)
+            pollOptions.forEachIndexed { index, option ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(
+                        value = option,
+                        onValueChange = { onPollOptionChange(index, it) },
+                        modifier = Modifier.weight(1f),
+                        placeholder = { Text("Seçenek ${index + 1}") },
+                        singleLine = true,
+                        enabled = !submitting,
+                    )
+                    // İlk 2 seçenek kaldırılamaz — "en az 2 seçenek" kuralı
+                    // ViewModel.removePollOption() ile AYNI.
+                    if (index >= 2) {
                         IconButton(onClick = { onRemovePollOption(index) }, enabled = !submitting) {
                             Icon(Icons.Filled.Close, contentDescription = "Seçeneği kaldır")
                         }
                     }
                 }
-                if (pollOptions.size < 4) {
-                    TextButton(onClick = onAddPollOption, enabled = !submitting) {
-                        Text("+ Seçenek Ekle")
-                    }
+            }
+            if (pollOptions.size < 4) {
+                TextButton(onClick = onAddPollOption, enabled = !submitting) {
+                    Text("+ Seçenek Ekle")
                 }
             }
-
-            if (error != null) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(MaterialTheme.colorScheme.errorContainer, MaterialTheme.shapes.small)
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.ErrorOutline,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onErrorContainer,
-                        modifier = Modifier.size(18.dp),
-                    )
-                    Text(
-                        text = error,
-                        color = MaterialTheme.colorScheme.onErrorContainer,
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.padding(start = 8.dp),
-                    )
-                }
+            Button(
+                onClick = onDismiss,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp, bottom = 16.dp),
+            ) {
+                Text("Tamam")
             }
         }
     }
@@ -1120,9 +1316,10 @@ private fun DraggableStoryElement(
 }
 
 @Composable
-private fun StoryVisibilityFilterRow(selected: String, onSelect: (String) -> Unit) {
+private fun StoryVisibilityFilterRow(selected: String, onSelect: (String) -> Unit, modifier: Modifier = Modifier) {
     LazyRow(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(horizontal = 12.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         items(STORY_VISIBILITY_OPTIONS, key = { it.value }) { option ->
@@ -1138,7 +1335,15 @@ private fun StoryVisibilityFilterRow(selected: String, onSelect: (String) -> Uni
                         modifier = Modifier.size(18.dp),
                     )
                 },
+                // 2026-08-10: bu satır artık tam ekran fotoğraf/video/renk
+                // üzerinde YÜZÜYOR (bkz. StoryFormStep) — seçilmemiş chip'ler
+                // için de ARTIK sabit bir yarı saydam siyah zemin + beyaz
+                // metin/ikon (Material'ın varsayılan surface/outline renkleri
+                // altta parlak bir fotoğraf varken OKUNMAZ hale gelirdi).
                 colors = FilterChipDefaults.filterChipColors(
+                    containerColor = Color.Black.copy(alpha = 0.4f),
+                    labelColor = Color.White,
+                    iconColor = Color.White,
                     selectedContainerColor = MaterialTheme.colorScheme.primary,
                     selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
                     selectedLeadingIconColor = MaterialTheme.colorScheme.onPrimary,
