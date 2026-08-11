@@ -45,13 +45,16 @@ interface StoriesApi {
         @Part("poll_position_x") pollPositionX: RequestBody?,
         @Part("poll_position_y") pollPositionY: RequestBody?,
         @Part("poll_scale") pollScale: RequestBody?,
-        // 2026-08-09 — GIF/sticker overlay (bkz. ApiModels.kt StoryDto yorumu).
-        // Dosya DEĞİL, düz metin (GIF CDN URL'i veya zaten yüklenmiş sticker
-        // görselinin URL'i) — gif_url'in post paylaşımındaki AYNI muamelesi.
-        @Part("overlay_image_url") overlayImageUrl: RequestBody?,
-        @Part("overlay_image_position_x") overlayImagePositionX: RequestBody?,
-        @Part("overlay_image_position_y") overlayImagePositionY: RequestBody?,
-        @Part("overlay_image_scale") overlayImageScale: RequestBody?,
+        // 2026-08-10 (kullanıcı raporu: "2.ye tıklayınca öncekini siliyor")
+        // — İLK sürüm (2026-08-09) TEKİL overlay_image_url/position_x/
+        // position_y/scale alanlarıydı, çoklu GIF/sticker'ı DESTEKLEMİYORDU.
+        // Backend'de o alanlar için henüz gerçek veri yokken temiz
+        // değiştirme yapıldı: artık TEK bir `overlay_elements` alanı, JSON-
+        // KODLANMIŞ bir dizi string'i (her eleman {url,position_x,position_y,
+        // scale}) — dosya DEĞİL, düz metin (gif_url'in post paylaşımındaki
+        // AYNI muamelesi). Backend en fazla 3 elemanı kabul ediyor, fazlası
+        // sessizce atılıyor (upload_images max_count deseniyle AYNI).
+        @Part("overlay_elements") overlayElements: RequestBody?,
     ): Response<CreateStoryResponse>
 
     @POST("stories/{id}/react")

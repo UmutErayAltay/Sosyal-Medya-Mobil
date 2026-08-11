@@ -7,9 +7,11 @@ import com.umuterayaltay.sosyal.nativeapp.network.ReactToStoryRequest
 import com.umuterayaltay.sosyal.nativeapp.network.ReplyToStoryRequest
 import com.umuterayaltay.sosyal.nativeapp.network.RetrofitClient
 import com.umuterayaltay.sosyal.nativeapp.network.SaveHighlightRequest
+import com.google.gson.Gson
 import com.umuterayaltay.sosyal.nativeapp.network.StoriesApi
 import com.umuterayaltay.sosyal.nativeapp.network.StoryBarItemDto
 import com.umuterayaltay.sosyal.nativeapp.network.StoryDto
+import com.umuterayaltay.sosyal.nativeapp.network.StoryOverlayElementDto
 import com.umuterayaltay.sosyal.nativeapp.network.UpdateHighlightRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -44,11 +46,18 @@ data class Story(
     val captionPositionX: Double,
     val captionPositionY: Double,
     val poll: Poll?,
-    // 2026-08-09 — GIF/sticker overlay (bkz. ApiModels.kt StoryDto yorumu).
-    val overlayImageUrl: String?,
-    val overlayImagePositionX: Double,
-    val overlayImagePositionY: Double,
-    val overlayImageScale: Double,
+    // 2026-08-10 (kullanıcı raporu: "2.ye tıklayınca öncekini siliyor") —
+    // TEKİL overlayImageUrl/Position/Scale YERİNE liste (bkz. ApiModels.kt
+    // StoryOverlayElementDto yorumu), en fazla 3 eş zamanlı GIF/sticker.
+    val overlayElements: List<StoryOverlayElement>,
+)
+
+/** Hikaye üzerine sürüklenmiş TEK bir GIF/sticker. */
+data class StoryOverlayElement(
+    val url: String,
+    val positionX: Double,
+    val positionY: Double,
+    val scale: Double,
 )
 
 data class UserStories(
@@ -97,10 +106,14 @@ private fun StoryDto.toDomain() = Story(
     backgroundColor = backgroundColor,
     captionPositionX = captionPositionX ?: 0.5,
     captionPositionY = captionPositionY ?: 0.75,
-    overlayImageUrl = overlayImageUrl,
-    overlayImagePositionX = overlayImagePositionX ?: 0.5,
-    overlayImagePositionY = overlayImagePositionY ?: 0.5,
-    overlayImageScale = overlayImageScale ?: 1.0,
+    overlayElements = (overlayElements ?: emptyList()).map {
+        StoryOverlayElement(
+            url = it.url,
+            positionX = it.positionX,
+            positionY = it.positionY,
+            scale = it.scale,
+        )
+    },
     poll = poll?.let { p ->
         Poll(
             id = p.id,
@@ -267,10 +280,10 @@ class StoriesRepository(
         pollPositionX: Float?,
         pollPositionY: Float?,
         pollScale: Float?,
-        overlayImageUrl: String? = null,
-        overlayImagePositionX: Float? = null,
-        overlayImagePositionY: Float? = null,
-        overlayImageScale: Float? = null,
+        // 2026-08-10 (kullanıcı raporu: "2.ye tıklayınca öncekini siliyor")
+        // — TEKİL overlayImageUrl/Position/Scale parametreleri YERİNE liste
+        // (bkz. ApiModels.kt StoryOverlayElementDto yorumu).
+        overlayElements: List<StoryOverlayElement> = emptyList(),
     ): CreateStoryResult = withContext(Dispatchers.IO) {
         try {
             fun text(value: String): RequestBody = value.toRequestBody("text/plain".toMediaTypeOrNull())
@@ -285,6 +298,19 @@ class StoriesRepository(
                 MultipartBody.Part.createFormData("video", videoFileName ?: "upload.mp4", body)
             }
             val opt = { index: Int -> textOrNull(pollOptions.getOrNull(index)) }
+
+            // Backend en fazla 3 elemanı kabul ediyor (bkz. app/api_v1/stories.py) —
+            // fazlası zaten sessizce atılıyor, burada AYRICA bir ön-kontrol
+            // YAPILMIYOR (tek doğruluk kaynağı backend). StoryOverlayElementDto
+            // REUSE edilir (JSON key adları @SerializedName ile ZATEN backend
+            // sözleşmesiyle eşleşiyor) — hem-yazma-hem-okuma için AYRI bir
+            // "request" DTO'su İCAT EDİLMEDİ.
+            val overlayElementsJson = overlayElements.takeIf { it.isNotEmpty() }?.let { elements ->
+                val dtos = elements.map {
+                    StoryOverlayElementDto(url = it.url, positionX = it.positionX, positionY = it.positionY, scale = it.scale)
+                }
+                text(Gson().toJson(dtos))
+            }
 
             val response = storiesApi.createStory(
                 caption = text(caption),
@@ -301,10 +327,7 @@ class StoriesRepository(
                 pollPositionX = textOrNull(pollPositionX?.toString()),
                 pollPositionY = textOrNull(pollPositionY?.toString()),
                 pollScale = textOrNull(pollScale?.toString()),
-                overlayImageUrl = textOrNull(overlayImageUrl),
-                overlayImagePositionX = textOrNull(overlayImagePositionX?.toString()),
-                overlayImagePositionY = textOrNull(overlayImagePositionY?.toString()),
-                overlayImageScale = textOrNull(overlayImageScale?.toString()),
+                overlayElements = overlayElementsJson,
             )
             val body: CreateStoryResponse? = response.body()
             if (response.isSuccessful && body != null && body.error == null && body.ok) {

@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -50,6 +51,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -207,7 +209,36 @@ fun StoryViewerScreen(
                     )
                 }
 
-                Column(modifier = Modifier.fillMaxSize()) {
+                // Kullanıcı raporu (2026-08-10): "telefonun üst kısmındaki
+                // bildirim kısmı şeffaf olduğu için fotoğrafın üst kısmı
+                // taşıyormuş gibi hissettiriyor" — kök neden edge-to-edge
+                // (MainActivity.enableEdgeToEdge()) altında status bar'ın
+                // GERÇEKTEN şeffaf olması VE bu ekranın ilerleme çubuğu/
+                // header'ının statusBarsPadding() UYGULAMAMASI: hem sistem
+                // saat/pil ikonları fotoğrafın DOĞRUDAN üstüne biniyordu
+                // hem de fotoğraf hiçbir yumuşatma OLMADAN ekranın en üst
+                // pikseline kadar uzanıyordu (Instagram'ın AYNI ekranda
+                // kullandığı ince siyah gradyan YOKTU). İki parçalı düzeltme:
+                // (1) aşağıdaki gradyan scrim status bar bölgesinde fotoğrafı
+                // yumuşatıyor, (2) Column'a eklenen statusBarsPadding()
+                // ilerleme çubuğunu/header'ı sistem ikonlarının ALTINA değil
+                // ARDINA (yani onlarla ÇAKIŞMAYACAK şekilde) itiyor.
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(110.dp)
+                        .background(
+                            Brush.verticalGradient(
+                                colors = listOf(Color.Black.copy(alpha = 0.45f), Color.Transparent),
+                            ),
+                        ),
+                )
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .statusBarsPadding(),
+                ) {
                     SegmentProgressRow(
                         count = stories.size,
                         currentIndex = currentIndex,
@@ -280,15 +311,16 @@ fun StoryViewerScreen(
                         )
                     }
 
-                    // 2026-08-09 — GIF/sticker overlay, caption/poll ile AYNI
-                    // normalize konum + ölçek deseni (bkz. ApiModels.kt
-                    // StoryDto yorumu, GENUINELY YENİ — web'de karşılığı yok).
-                    if (!story.overlayImageUrl.isNullOrBlank()) {
-                        val posX = story.overlayImagePositionX.toFloat()
-                        val posY = story.overlayImagePositionY.toFloat()
-                        val scale = story.overlayImageScale.toFloat()
+                    // 2026-08-10 (kullanıcı raporu: "2.ye tıklayınca öncekini
+                    // siliyor") — TEKİL overlay yerine LİSTE (en fazla 3, bkz.
+                    // ApiModels.kt StoryOverlayElementDto yorumu), caption/
+                    // poll ile AYNI normalize konum + ölçek deseni.
+                    story.overlayElements.forEach { element ->
+                        val posX = element.positionX.toFloat()
+                        val posY = element.positionY.toFloat()
+                        val scale = element.scale.toFloat()
                         AsyncImage(
-                            model = story.overlayImageUrl,
+                            model = element.url,
                             contentDescription = null,
                             modifier = Modifier
                                 .align(Alignment.TopStart)

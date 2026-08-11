@@ -189,15 +189,26 @@ class StoryViewerViewModel(
      * durumu doğrudan geçerli hikayeye yazılır, optimistic tahmin YAPILMAZ. */
     fun votePoll(optionId: String) {
         val story = currentStory() ?: return
-        val pollId = story.poll?.id ?: return
+        val poll = story.poll ?: return
+        val pollId = poll.id
         viewModelScope.launch {
             when (val result = pollsRepository.vote(pollId, optionId)) {
                 is VotePollResult.Success -> {
+                    // Kullanıcı raporu (2026-08-10): "ankette oy kullanınca
+                    // anket bi anda yeri değişip ortaya geliyor" — kök neden
+                    // bu constructor'ın positionX/positionY/scale'i HİÇ
+                    // taşımaması (varsayılan null) idi; StoryViewerScreen
+                    // null'da 0.5/0.5/1.0'a (ekranın TAM ORTASI) düşüyordu —
+                    // yani her oy, editörde sürüklenerek seçilmiş konumu
+                    // SIFIRLIYORDU. Eski `poll`'dan AYNEN taşınıyor.
                     val updatedPoll = Poll(
                         id = pollId,
                         options = result.options,
                         totalVotes = result.totalVotes,
                         myVote = result.myVote,
+                        positionX = poll.positionX,
+                        positionY = poll.positionY,
+                        scale = poll.scale,
                     )
                     _stories.value = _stories.value.map {
                         if (it.id == story.id) it.copy(poll = updatedPoll) else it

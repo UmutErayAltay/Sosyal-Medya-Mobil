@@ -1184,13 +1184,22 @@ data class StoryDto(
     @SerializedName("caption_position_x") val captionPositionX: Double? = null,
     @SerializedName("caption_position_y") val captionPositionY: Double? = null,
     val poll: PollDto? = null,
-    // 2026-08-09 (kullanıcı isteği: "gifi/stickerı çekerek istediğimiz yere
-    // koyabilelim") — caption_position ile AYNI desen, yeni (native-only,
-    // web'de bunu ayarlayan UI yok) sürüklenebilir GIF/sticker overlay'i.
-    @SerializedName("overlay_image_url") val overlayImageUrl: String? = null,
-    @SerializedName("overlay_image_position_x") val overlayImagePositionX: Double? = null,
-    @SerializedName("overlay_image_position_y") val overlayImagePositionY: Double? = null,
-    @SerializedName("overlay_image_scale") val overlayImageScale: Double? = null,
+    // 2026-08-10 (kullanıcı raporu: "2.ye tıklayınca öncekini siliyor") —
+    // İLK sürüm (2026-08-09) TEKİL overlay_image_url/position_x/position_y/
+    // scale alanlarıydı, ikinci bir GIF/sticker eklemek ilkini SİLİYORDU.
+    // Backend'de HENÜZ gerçek veri yokken (aynı gün eklenmiş özellik) temiz
+    // değiştirme yapıldı — artık `overlay_elements` (liste, en fazla 3).
+    @SerializedName("overlay_elements") val overlayElements: List<StoryOverlayElementDto>? = null,
+)
+
+/** Hikaye üzerine sürüklenmiş TEK bir GIF/sticker — bkz. StoryDto.overlayElements
+ * yorumu. Post/caption/poll'dan FARKLI olarak birden fazla eş zamanlı
+ * olabilir (en fazla 3, backend api_create_story() sınırı). */
+data class StoryOverlayElementDto(
+    val url: String,
+    @SerializedName("position_x") val positionX: Double = 0.5,
+    @SerializedName("position_y") val positionY: Double = 0.5,
+    val scale: Double = 1.0,
 )
 
 data class UserStoriesResponse(

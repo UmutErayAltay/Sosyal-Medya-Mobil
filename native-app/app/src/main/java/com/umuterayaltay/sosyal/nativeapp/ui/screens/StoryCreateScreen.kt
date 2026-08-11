@@ -82,6 +82,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -92,6 +93,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
@@ -115,6 +117,7 @@ import com.umuterayaltay.sosyal.nativeapp.repository.PollOption
 import com.umuterayaltay.sosyal.nativeapp.ui.components.MediaPickerSheet
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.StoryCreateEvent
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.StoryCreateViewModel
+import com.umuterayaltay.sosyal.nativeapp.viewmodel.StoryOverlayElementState
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -174,10 +177,7 @@ fun StoryCreateScreen(
     val pollPositionX by viewModel.pollPositionX.collectAsState()
     val pollPositionY by viewModel.pollPositionY.collectAsState()
     val pollScale by viewModel.pollScale.collectAsState()
-    val overlayImageUrl by viewModel.overlayImageUrl.collectAsState()
-    val overlayImagePositionX by viewModel.overlayImagePositionX.collectAsState()
-    val overlayImagePositionY by viewModel.overlayImagePositionY.collectAsState()
-    val overlayImageScale by viewModel.overlayImageScale.collectAsState()
+    val overlayElements by viewModel.overlayElements.collectAsState()
     val submitting by viewModel.submitting.collectAsState()
     val error by viewModel.error.collectAsState()
 
@@ -262,10 +262,7 @@ fun StoryCreateScreen(
             pollPositionX = pollPositionX,
             pollPositionY = pollPositionY,
             pollScale = pollScale,
-            overlayImageUrl = overlayImageUrl,
-            overlayImagePositionX = overlayImagePositionX,
-            overlayImagePositionY = overlayImagePositionY,
-            overlayImageScale = overlayImageScale,
+            overlayElements = overlayElements,
             submitting = submitting,
             error = error,
             canSubmit = canSubmit,
@@ -747,10 +744,7 @@ private fun StoryFormStep(
     pollPositionX: Float,
     pollPositionY: Float,
     pollScale: Float,
-    overlayImageUrl: String?,
-    overlayImagePositionX: Float,
-    overlayImagePositionY: Float,
-    overlayImageScale: Float,
+    overlayElements: List<StoryOverlayElementState>,
     submitting: Boolean,
     error: String?,
     canSubmit: Boolean,
@@ -761,9 +755,9 @@ private fun StoryFormStep(
     onPollPositionChange: (Float, Float) -> Unit,
     onPollScaleChange: (Float) -> Unit,
     onAddOverlayClick: () -> Unit,
-    onRemoveOverlayImage: () -> Unit,
-    onOverlayImagePositionChange: (Float, Float) -> Unit,
-    onOverlayImageScaleChange: (Float) -> Unit,
+    onRemoveOverlayImage: (String) -> Unit,
+    onOverlayImagePositionChange: (String, Float, Float) -> Unit,
+    onOverlayImageScaleChange: (String, Float) -> Unit,
     onRemoveImage: () -> Unit,
     onRemoveVideo: () -> Unit,
     onAddPollOption: () -> Unit,
@@ -882,42 +876,67 @@ private fun StoryFormStep(
                 }
             }
 
-            if (!overlayImageUrl.isNullOrBlank()) {
-                DraggableStoryElement(
-                    positionX = overlayImagePositionX,
-                    positionY = overlayImagePositionY,
-                    scale = overlayImageScale,
-                    scalable = true,
-                    canvasWidthPx = canvasWidthPx,
-                    canvasHeightPx = canvasHeightPx,
-                    onPositionChange = onOverlayImagePositionChange,
-                    onScaleChange = onOverlayImageScaleChange,
-                ) {
-                    Box {
-                        AsyncImage(
-                            model = overlayImageUrl,
-                            contentDescription = null,
-                            modifier = Modifier.size(120.dp),
-                        )
-                        IconButton(
-                            onClick = onRemoveOverlayImage,
-                            modifier = Modifier
-                                .align(Alignment.TopEnd)
-                                .size(24.dp)
-                                .clip(CircleShape)
-                                .background(Color.Black.copy(alpha = 0.5f)),
-                        ) {
-                            Icon(
-                                Icons.Filled.Close,
-                                contentDescription = "GIF/Sticker'ı kaldır",
-                                tint = Color.White,
-                                modifier = Modifier.size(14.dp),
+            // 2026-08-10 (kullanıcı raporu: "2.ye tıklayınca öncekini
+            // siliyor") — TEKİL bir overlay yerine LİSTE, her eleman
+            // KENDİ id'siyle key()'lenerek bağımsız render ediliyor (Compose
+            // bir eleman kaldırılınca kalanların state'ini yanlış eşleştirip
+            // pozisyon/ölçeklerini birbirine KAYDIRMASIN diye).
+            overlayElements.forEach { element ->
+                key(element.id) {
+                    DraggableStoryElement(
+                        positionX = element.positionX,
+                        positionY = element.positionY,
+                        scale = element.scale,
+                        scalable = true,
+                        canvasWidthPx = canvasWidthPx,
+                        canvasHeightPx = canvasHeightPx,
+                        onPositionChange = { x, y -> onOverlayImagePositionChange(element.id, x, y) },
+                        onScaleChange = { scale -> onOverlayImageScaleChange(element.id, scale) },
+                    ) {
+                        Box {
+                            AsyncImage(
+                                model = element.url,
+                                contentDescription = null,
+                                modifier = Modifier.size(120.dp),
                             )
+                            IconButton(
+                                onClick = { onRemoveOverlayImage(element.id) },
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .size(24.dp)
+                                    .clip(CircleShape)
+                                    .background(Color.Black.copy(alpha = 0.5f)),
+                            ) {
+                                Icon(
+                                    Icons.Filled.Close,
+                                    contentDescription = "GIF/Sticker'ı kaldır",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(14.dp),
+                                )
+                            }
                         }
                     }
                 }
             }
         }
+
+        // Kullanıcı raporu (2026-08-10): "telefonun üst kısmındaki bildirim
+        // kısmı şeffaf olduğu için fotoğrafın üst kısmı taşıyormuş gibi
+        // hissettiriyor" — StoryViewerScreen.kt'deki AYNI düzeltme: aşağıdaki
+        // üst-bar Column'u ZATEN statusBarsPadding() ile sistem ikonlarının
+        // ALTINA itiyordu, ama status bar'ın KENDİ bölgesinde fotoğraf hâlâ
+        // hiçbir yumuşatma OLMADAN ekranın en üst pikseline kadar uzanıyordu.
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth()
+                .height(110.dp)
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(Color.Black.copy(alpha = 0.45f), Color.Transparent),
+                    ),
+                ),
+        )
 
         // ---- Üst bar: kapat (X) + görünürlük seçimi + Paylaş ----
         Column(
@@ -986,7 +1005,10 @@ private fun StoryFormStep(
             StoryToolButton(
                 icon = Icons.Filled.Gif,
                 contentDescription = "GIF/Sticker ekle",
-                enabled = !submitting,
+                // ViewModel'in MAX_OVERLAY_ELEMENTS'iyle AYNI sınır — ulaşılınca
+                // buton devre dışı, aksi halde MediaPickerSheet'te bir GIF/
+                // sticker seçilip HİÇBİR ŞEY OLMAZDI (sessiz no-op, kafa karıştırıcı).
+                enabled = !submitting && overlayElements.size < 3,
                 onClick = onAddOverlayClick,
             )
             StoryToolButton(
