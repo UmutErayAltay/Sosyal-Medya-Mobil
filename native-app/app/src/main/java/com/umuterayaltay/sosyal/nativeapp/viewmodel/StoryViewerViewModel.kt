@@ -10,6 +10,8 @@ import com.umuterayaltay.sosyal.nativeapp.repository.ReactToStoryResult
 import com.umuterayaltay.sosyal.nativeapp.repository.ReplyToStoryResult
 import com.umuterayaltay.sosyal.nativeapp.repository.SaveHighlightResult
 import com.umuterayaltay.sosyal.nativeapp.repository.Story
+import com.umuterayaltay.sosyal.nativeapp.repository.StoryViewer
+import com.umuterayaltay.sosyal.nativeapp.repository.StoryViewersResult
 import com.umuterayaltay.sosyal.nativeapp.repository.UserStoriesResult
 import com.umuterayaltay.sosyal.nativeapp.repository.VotePollResult
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -18,6 +20,15 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+
+/** "İzleyenler" bottom sheet'inin durumu — 2026-08-11 (kullanıcı isteği:
+ * "hikayeyi kim izledi listesi"). */
+sealed class StoryViewersUiState {
+    data object Idle : StoryViewersUiState()
+    data object Loading : StoryViewersUiState()
+    data class Success(val viewers: List<StoryViewer>, val count: Int) : StoryViewersUiState()
+    data class Error(val message: String) : StoryViewersUiState()
+}
 
 sealed class StoryViewerEvent {
     data object SessionExpired : StoryViewerEvent()
@@ -87,6 +98,13 @@ class StoryViewerViewModel(
 
     private val _events = MutableSharedFlow<StoryViewerEvent>()
     val events: SharedFlow<StoryViewerEvent> = _events
+
+    // 2026-08-11 (kullanıcı isteği: "hikayeyi kim izledi listesi") — SADECE
+    // kendi hikayendeyken anlamlı, o yüzden lazy: ekran açılır açılmaz
+    // OTOMATİK çekilmiyor (her hikaye geçişinde gereksiz bir network isteği
+    // olurdu), sadece kullanıcı "izleyenler" satırına dokununca yüklenir.
+    private val _viewers = MutableStateFlow<StoryViewersUiState>(StoryViewersUiState.Idle)
+    val viewers: StateFlow<StoryViewersUiState> = _viewers.asStateFlow()
 
     init {
         loadUserStories()
@@ -183,6 +201,37 @@ class StoryViewerViewModel(
                 is SaveHighlightResult.Error -> handleError(result.code, silent = true)
             }
         }
+    }
+
+    /** "İzleyenler" satırına dokununca çağrılır — SADECE kendi hikayen için
+     * anlamlı (backend başkasının hikayesinde 403 döner, bu ViewModel bunu
+     * genel "izlenemedi" hatası olarak gösterir, isMine kontrolü zaten
+     * UI'da yapılıyor). */
+    fun loadViewers() {
+        val story = currentStory() ?: return
+        viewModelScope.launch {
+            _viewers.value = StoryViewersUiState.Loading
+            when (val result = storiesRepository.getStoryViewers(story.id)) {
+                is StoryViewersResult.Success -> {
+                    _viewers.value = StoryViewersUiState.Success(result.viewers, result.count)
+                }
+                is StoryViewersResult.Error -> {
+                    if (result.code == "unauthorized") {
+                        tokenStore.clearToken()
+                        _events.emit(StoryViewerEvent.SessionExpired)
+                        _viewers.value = StoryViewersUiState.Idle
+                    } else {
+                        _viewers.value = StoryViewersUiState.Error("İzleyenler yüklenemedi")
+                    }
+                }
+            }
+        }
+    }
+
+    /** Bottom sheet kapanınca çağrılır — bir sonraki açılışta eski veriyi
+     * BİR AN göstermesin diye (Idle'a dönerse sheet kendi loading'ini gösterir). */
+    fun resetViewers() {
+        _viewers.value = StoryViewersUiState.Idle
     }
 
     /** FeedViewModel.votePoll() ile AYNI desen: sunucudan dönen GÜNCEL anket

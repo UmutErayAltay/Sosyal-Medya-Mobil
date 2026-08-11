@@ -7,34 +7,41 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -70,9 +77,11 @@ import androidx.media3.ui.PlayerView
 import androidx.compose.ui.viewinterop.AndroidView
 import coil.compose.AsyncImage
 import com.umuterayaltay.sosyal.nativeapp.repository.Story
+import com.umuterayaltay.sosyal.nativeapp.repository.StoryOverlayElement
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.StoryViewerEvent
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.StoryViewerViewModel
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.StoryViewerViewModelFactory
+import com.umuterayaltay.sosyal.nativeapp.viewmodel.StoryViewersUiState
 import kotlinx.coroutines.delay
 
 private const val IMAGE_DURATION_MS = 5000
@@ -105,6 +114,12 @@ fun StoryViewerScreen(
     // bayrağı) yazıyor, storyCreated/postCreated ile AYNI desen.
     onNavigateBack: (highlightChanged: Boolean) -> Unit,
     onSessionExpired: () -> Unit,
+    // 2026-08-11 (kullanıcı isteği: "@bahsetme ve #hashtag sticker'ı") —
+    // sticker'lara dokununca profile/hashtag sayfasına gidebilsin diye,
+    // PostCard.kt'deki onUsernameClick/onHashtagClick ile AYNI VARSAYILAN
+    // DEĞERLİ opsiyonel callback deseni.
+    onNavigateToProfile: (String) -> Unit = {},
+    onNavigateToHashtag: (String) -> Unit = {},
     viewModel: StoryViewerViewModel = viewModel(
         factory = StoryViewerViewModelFactory(userIds, startIndex),
     ),
@@ -116,6 +131,7 @@ fun StoryViewerScreen(
     val currentIndex by viewModel.currentIndex.collectAsState()
     val loading by viewModel.loading.collectAsState()
     val error by viewModel.error.collectAsState()
+    val viewersState by viewModel.viewers.collectAsState()
 
     var paused by remember { mutableStateOf(false) }
     var showReplyField by remember { mutableStateOf(false) }
@@ -123,6 +139,8 @@ fun StoryViewerScreen(
     var showSaveHighlightDialog by remember { mutableStateOf(false) }
     var highlightTitle by remember { mutableStateOf("") }
     var highlightChanged by remember { mutableStateOf(false) }
+    // 2026-08-11 (kullanıcı isteği: "hikayeyi kim izledi listesi").
+    var showViewersSheet by remember { mutableStateOf(false) }
 
     // Sistem geri tuşu, ekrandaki "X"/TapZone çağrılarının AKSİNE varsayılan
     // olarak NavController'ın kendi navigateUp()'ına gider — bizim
@@ -297,17 +315,15 @@ fun StoryViewerScreen(
                     if (!story.caption.isNullOrBlank()) {
                         val posX = story.captionPositionX.toFloat()
                         val posY = story.captionPositionY.toFloat()
-                        Text(
+                        StoryCaptionText(
                             text = story.caption,
-                            color = Color.White,
-                            style = MaterialTheme.typography.bodyLarge,
+                            captionStyle = story.captionStyle,
                             modifier = Modifier
                                 .align(Alignment.TopStart)
                                 .graphicsLayer {
                                     translationX = posX * canvasWidthPx - size.width / 2f
                                     translationY = posY * canvasHeightPx - size.height / 2f
-                                }
-                                .padding(horizontal = 24.dp),
+                                },
                         )
                     }
 
@@ -319,19 +335,34 @@ fun StoryViewerScreen(
                         val posX = element.positionX.toFloat()
                         val posY = element.positionY.toFloat()
                         val scale = element.scale.toFloat()
-                        AsyncImage(
-                            model = element.url,
-                            contentDescription = null,
-                            modifier = Modifier
-                                .align(Alignment.TopStart)
-                                .size(120.dp)
-                                .graphicsLayer {
-                                    translationX = posX * canvasWidthPx - size.width / 2f
-                                    translationY = posY * canvasHeightPx - size.height / 2f
-                                    scaleX = scale
-                                    scaleY = scale
-                                },
-                        )
+                        val positionModifier = Modifier
+                            .align(Alignment.TopStart)
+                            .graphicsLayer {
+                                translationX = posX * canvasWidthPx - size.width / 2f
+                                translationY = posY * canvasHeightPx - size.height / 2f
+                                scaleX = scale
+                                scaleY = scale
+                            }
+                        // 2026-08-11 (kullanıcı isteği: "@bahsetme ve #hashtag
+                        // sticker'ı") — mention/hashtag TIKLANABİLİR (profile/
+                        // hashtag sayfasına gider, PostCard'daki AYNI davranış),
+                        // GIF/sticker (Image) tıklamaya tepki VERMEZ (zaten
+                        // sadece dekoratif bir görsel).
+                        when (element) {
+                            is StoryOverlayElement.Image -> AsyncImage(
+                                model = element.url,
+                                contentDescription = null,
+                                modifier = positionModifier.size(120.dp),
+                            )
+                            is StoryOverlayElement.Mention -> StoryStickerPill(
+                                text = "@${element.username}",
+                                modifier = positionModifier.clickable { onNavigateToProfile(element.username) },
+                            )
+                            is StoryOverlayElement.Hashtag -> StoryStickerPill(
+                                text = "#${element.tag}",
+                                modifier = positionModifier.clickable { onNavigateToHashtag(element.tag) },
+                            )
+                        }
                     }
                 }
 
@@ -356,13 +387,46 @@ fun StoryViewerScreen(
                         modifier = Modifier.align(Alignment.BottomCenter),
                     )
                 } else {
-                    IconButton(
-                        onClick = { showSaveHighlightDialog = true },
+                    Row(
                         modifier = Modifier
                             .align(Alignment.BottomCenter)
-                            .padding(bottom = 24.dp),
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 24.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Icon(Icons.Filled.Bookmark, contentDescription = "Öne çıkanlara kaydet", tint = Color.White)
+                        // 2026-08-11 (kullanıcı isteği: "hikayeyi kim izledi
+                        // listesi") — story_views tablosu ZATEN her
+                        // görüntülemede yazılıyordu (halka rengi için), sadece
+                        // bunu OKUYAN bir ekran yoktu. Lazy: sheet ilk açılışta
+                        // yükleniyor (bkz. ViewModel.loadViewers() yorumu).
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .clip(MaterialTheme.shapes.large)
+                                .clickable {
+                                    paused = true
+                                    showViewersSheet = true
+                                    viewModel.loadViewers()
+                                }
+                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                        ) {
+                            Icon(
+                                Icons.Filled.Visibility,
+                                contentDescription = "İzleyenler",
+                                tint = Color.White,
+                                modifier = Modifier.size(20.dp),
+                            )
+                            Text(
+                                text = "İzleyenler",
+                                color = Color.White,
+                                style = MaterialTheme.typography.labelLarge,
+                                modifier = Modifier.padding(start = 6.dp),
+                            )
+                        }
+                        IconButton(onClick = { showSaveHighlightDialog = true }) {
+                            Icon(Icons.Filled.Bookmark, contentDescription = "Öne çıkanlara kaydet", tint = Color.White)
+                        }
                     }
                 }
 
@@ -377,7 +441,110 @@ fun StoryViewerScreen(
                         modifier = Modifier.align(Alignment.BottomCenter),
                     )
                 }
+
+                if (showViewersSheet) {
+                    StoryViewersSheet(
+                        state = viewersState,
+                        onDismiss = {
+                            showViewersSheet = false
+                            paused = false
+                            viewModel.resetViewers()
+                        },
+                    )
+                }
             }
+        }
+    }
+}
+
+/**
+ * "İzleyenler" bottom sheet — 2026-08-11 (kullanıcı isteği: "hikayeyi kim
+ * izledi listesi"). ModalBottomSheet MediaPickerSheet/StoryPollEditorSheet
+ * ile AYNI desen; boş liste durumu ("henüz kimse görmedi") AYRI bir dal.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun StoryViewersSheet(state: StoryViewersUiState, onDismiss: () -> Unit) {
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 160.dp)
+                .padding(horizontal = 20.dp, vertical = 8.dp),
+        ) {
+            Text(
+                text = when (state) {
+                    is StoryViewersUiState.Success -> "İzleyenler (${state.count})"
+                    else -> "İzleyenler"
+                },
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(bottom = 12.dp),
+            )
+            when (state) {
+                is StoryViewersUiState.Loading, StoryViewersUiState.Idle -> {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().height(120.dp),
+                        contentAlignment = Alignment.Center,
+                    ) { CircularProgressIndicator() }
+                }
+                is StoryViewersUiState.Error -> {
+                    Text(
+                        text = state.message,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(vertical = 24.dp),
+                    )
+                }
+                is StoryViewersUiState.Success -> {
+                    if (state.viewers.isEmpty()) {
+                        Text(
+                            text = "Henüz kimse görmedi",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(vertical = 24.dp),
+                        )
+                    } else {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 400.dp)
+                                .verticalScroll(rememberScrollState()),
+                        ) {
+                            state.viewers.forEach { viewer ->
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 8.dp),
+                                ) {
+                                    if (!viewer.avatarUrl.isNullOrBlank()) {
+                                        AsyncImage(
+                                            model = viewer.avatarUrl,
+                                            contentDescription = null,
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier.size(40.dp).clip(CircleShape),
+                                        )
+                                    } else {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(40.dp)
+                                                .clip(CircleShape)
+                                                .background(MaterialTheme.colorScheme.surfaceVariant),
+                                            contentAlignment = Alignment.Center,
+                                        ) {
+                                            Icon(Icons.Filled.Person, contentDescription = null)
+                                        }
+                                    }
+                                    Text(
+                                        text = viewer.username,
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        modifier = Modifier.padding(start = 12.dp),
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(16.dp))
         }
     }
 }
@@ -709,4 +876,64 @@ internal fun parseHexColor(hex: String?): Color? {
     } catch (e: Exception) {
         null
     }
+}
+
+/**
+ * Hikaye caption'ının stilize render'ı — StoryCreateScreen.kt'nin editör
+ * önizlemesi İLE StoryViewerScreen'in GERÇEK görüntüleyicisi TARAFINDAN
+ * paylaşılan TEK yer (2026-08-11, kullanıcı isteği: "metin stili/rengi
+ * seçenekleri" — WYSIWYG: ikisi FARKLI stil/padding kullanırsa editörde
+ * gördüğün son paylaşılanla EŞLEŞMEZ). `captionStyle` null ise klasik
+ * (düz beyaz yazı, arka plansız); "pill_light"/"pill_dark" backend'in kabul
+ * ettiği TAM OLARAK bu iki değer (bkz. StoriesApi.createStory yorumu),
+ * TANIMSIZ bir değer klasike düşer (backend zaten fail-open null'a
+ * düşürüyor, ama native ekstra bir savunma katmanı — sunucu tanımadığı bir
+ * stil string'i gönderse bile çökme/yanlış render YOK).
+ */
+@Composable
+internal fun StoryCaptionText(text: String, captionStyle: String?, modifier: Modifier = Modifier) {
+    when (captionStyle) {
+        "pill_light" -> Text(
+            text = text,
+            color = Color.Black,
+            style = MaterialTheme.typography.headlineSmall,
+            modifier = modifier
+                .background(Color.White.copy(alpha = 0.9f), RoundedCornerShape(50))
+                .padding(horizontal = 20.dp, vertical = 8.dp),
+        )
+        "pill_dark" -> Text(
+            text = text,
+            color = Color.White,
+            style = MaterialTheme.typography.headlineSmall,
+            modifier = modifier
+                .background(Color.Black.copy(alpha = 0.75f), RoundedCornerShape(50))
+                .padding(horizontal = 20.dp, vertical = 8.dp),
+        )
+        else -> Text(
+            text = text,
+            color = Color.White,
+            style = MaterialTheme.typography.headlineSmall,
+            modifier = modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+        )
+    }
+}
+
+/**
+ * @mention/#hashtag sticker'ının görsel pili — StoryCreateScreen.kt'nin
+ * editör önizlemesi İLE StoryViewerScreen'in GERÇEK görüntüleyicisi
+ * TARAFINDAN paylaşılan TEK yer (2026-08-11, kullanıcı isteği: "@bahsetme
+ * ve #hashtag sticker'ı"). Instagram'daki mention/hashtag sticker'larının
+ * AYNI "renkli pil" hissi — GIF/sticker (Image) overlay'inden görsel
+ * olarak AYRIŞTIRILABİLSİN diye kasıtlı farklı (bir görsel değil, metin).
+ */
+@Composable
+internal fun StoryStickerPill(text: String, modifier: Modifier = Modifier) {
+    Text(
+        text = text,
+        color = Color.White,
+        style = MaterialTheme.typography.titleMedium,
+        modifier = modifier
+            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.9f), RoundedCornerShape(50))
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+    )
 }

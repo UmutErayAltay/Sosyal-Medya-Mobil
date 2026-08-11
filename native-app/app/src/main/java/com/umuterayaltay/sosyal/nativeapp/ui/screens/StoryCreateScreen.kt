@@ -36,22 +36,27 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.AlternateEmail
 import androidx.compose.material.icons.filled.FlipCameraAndroid
 import androidx.compose.material.icons.filled.Gif
 import androidx.compose.material.icons.filled.Group
@@ -61,7 +66,9 @@ import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Tag
 import androidx.compose.material.icons.filled.TextFields
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -112,6 +119,9 @@ import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
+import com.umuterayaltay.sosyal.nativeapp.ServiceLocator
+import com.umuterayaltay.sosyal.nativeapp.network.MentionSuggestionDto
+import com.umuterayaltay.sosyal.nativeapp.repository.MentionSearchResult
 import com.umuterayaltay.sosyal.nativeapp.repository.Poll
 import com.umuterayaltay.sosyal.nativeapp.repository.PollOption
 import com.umuterayaltay.sosyal.nativeapp.ui.components.MediaPickerSheet
@@ -174,6 +184,7 @@ fun StoryCreateScreen(
     val pollOptions by viewModel.pollOptions.collectAsState()
     val captionPositionX by viewModel.captionPositionX.collectAsState()
     val captionPositionY by viewModel.captionPositionY.collectAsState()
+    val captionStyle by viewModel.captionStyle.collectAsState()
     val pollPositionX by viewModel.pollPositionX.collectAsState()
     val pollPositionY by viewModel.pollPositionY.collectAsState()
     val pollScale by viewModel.pollScale.collectAsState()
@@ -259,6 +270,7 @@ fun StoryCreateScreen(
             pollOptions = pollOptions,
             captionPositionX = captionPositionX,
             captionPositionY = captionPositionY,
+            captionStyle = captionStyle,
             pollPositionX = pollPositionX,
             pollPositionY = pollPositionY,
             pollScale = pollScale,
@@ -270,9 +282,12 @@ fun StoryCreateScreen(
             onVisibilityChange = viewModel::onVisibilityChange,
             onBackgroundColorChange = viewModel::onBackgroundColorChange,
             onCaptionPositionChange = viewModel::onCaptionPositionChange,
+            onCaptionStyleCycle = viewModel::onCaptionStyleCycle,
             onPollPositionChange = viewModel::onPollPositionChange,
             onPollScaleChange = viewModel::onPollScaleChange,
             onAddOverlayClick = { showMediaPicker = true },
+            onMentionSelected = viewModel::onMentionSelected,
+            onHashtagAdded = viewModel::onHashtagAdded,
             onRemoveOverlayImage = viewModel::onOverlayImageRemoved,
             onOverlayImagePositionChange = viewModel::onOverlayImagePositionChange,
             onOverlayImageScaleChange = viewModel::onOverlayImageScaleChange,
@@ -741,6 +756,8 @@ private fun StoryFormStep(
     pollOptions: List<String>,
     captionPositionX: Float,
     captionPositionY: Float,
+    // 2026-08-11 (kullanıcı isteği: "metin stili/rengi seçenekleri").
+    captionStyle: String?,
     pollPositionX: Float,
     pollPositionY: Float,
     pollScale: Float,
@@ -752,9 +769,13 @@ private fun StoryFormStep(
     onVisibilityChange: (String) -> Unit,
     onBackgroundColorChange: (String?) -> Unit,
     onCaptionPositionChange: (Float, Float) -> Unit,
+    onCaptionStyleCycle: () -> Unit,
     onPollPositionChange: (Float, Float) -> Unit,
     onPollScaleChange: (Float) -> Unit,
     onAddOverlayClick: () -> Unit,
+    // 2026-08-11 (kullanıcı isteği: "@bahsetme ve #hashtag sticker'ı").
+    onMentionSelected: (String) -> Unit,
+    onHashtagAdded: (String) -> Unit,
     onRemoveOverlayImage: (String) -> Unit,
     onOverlayImagePositionChange: (String, Float, Float) -> Unit,
     onOverlayImageScaleChange: (String, Float) -> Unit,
@@ -771,6 +792,10 @@ private fun StoryFormStep(
     var showTextEditor by remember { mutableStateOf(false) }
     var showPollEditor by remember { mutableStateOf(false) }
     val pollEditorSheetState = rememberModalBottomSheetState()
+    // 2026-08-11 (kullanıcı isteği: "@bahsetme ve #hashtag sticker'ı").
+    var showMentionSheet by remember { mutableStateOf(false) }
+    val mentionSheetState = rememberModalBottomSheetState()
+    var showHashtagDialog by remember { mutableStateOf(false) }
 
     Box(
         modifier = Modifier
@@ -828,13 +853,14 @@ private fun StoryFormStep(
                     onPositionChange = onCaptionPositionChange,
                     onScaleChange = {},
                 ) {
-                    Text(
+                    // StoryViewerScreen.kt'deki AYNI composable — WYSIWYG
+                    // (editördeki önizleme, GERÇEK viewer'ın kullandığı stil
+                    // renderer'ıyla AYNI kod yolundan geçmezse ikisi
+                    // birbirinden SAPABİLİRDİ, bkz. o composable'ın yorumu).
+                    StoryCaptionText(
                         text = caption,
-                        color = Color.White,
-                        style = MaterialTheme.typography.headlineSmall,
-                        modifier = Modifier
-                            .clickable(enabled = !submitting) { showTextEditor = true }
-                            .padding(horizontal = 20.dp, vertical = 8.dp),
+                        captionStyle = captionStyle,
+                        modifier = Modifier.clickable(enabled = !submitting) { showTextEditor = true },
                     )
                 }
             }
@@ -894,11 +920,20 @@ private fun StoryFormStep(
                         onScaleChange = { scale -> onOverlayImageScaleChange(element.id, scale) },
                     ) {
                         Box {
-                            AsyncImage(
-                                model = element.url,
-                                contentDescription = null,
-                                modifier = Modifier.size(120.dp),
-                            )
+                            // 2026-08-11 (kullanıcı isteği: "@bahsetme ve
+                            // #hashtag sticker'ı") — GIF/sticker (Image)
+                            // AsyncImage, mention/hashtag ise StoryStickerPill
+                            // (StoryViewerScreen.kt'deki AYNI paylaşılan
+                            // composable, WYSIWYG önizleme).
+                            when (element) {
+                                is StoryOverlayElementState.Image -> AsyncImage(
+                                    model = element.url,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(120.dp),
+                                )
+                                is StoryOverlayElementState.Mention -> StoryStickerPill(text = "@${element.username}")
+                                is StoryOverlayElementState.Hashtag -> StoryStickerPill(text = "#${element.tag}")
+                            }
                             IconButton(
                                 onClick = { onRemoveOverlayImage(element.id) },
                                 modifier = Modifier
@@ -909,7 +944,7 @@ private fun StoryFormStep(
                             ) {
                                 Icon(
                                     Icons.Filled.Close,
-                                    contentDescription = "GIF/Sticker'ı kaldır",
+                                    contentDescription = "Kaldır",
                                     tint = Color.White,
                                     modifier = Modifier.size(14.dp),
                                 )
@@ -1002,14 +1037,28 @@ private fun StoryFormStep(
                 enabled = !submitting,
                 onClick = { showTextEditor = true },
             )
+            // ViewModel'in MAX_OVERLAY_ELEMENTS'iyle AYNI sınır (üçü de AYNI
+            // listeyi paylaşıyor — GIF/sticker, mention, hashtag) — ulaşılınca
+            // ÜÇÜ DE devre dışı, aksi halde seçim yapılıp HİÇBİR ŞEY OLMAZDI
+            // (sessiz no-op, kafa karıştırıcı).
+            val canAddMoreOverlay = !submitting && overlayElements.size < 3
             StoryToolButton(
                 icon = Icons.Filled.Gif,
                 contentDescription = "GIF/Sticker ekle",
-                // ViewModel'in MAX_OVERLAY_ELEMENTS'iyle AYNI sınır — ulaşılınca
-                // buton devre dışı, aksi halde MediaPickerSheet'te bir GIF/
-                // sticker seçilip HİÇBİR ŞEY OLMAZDI (sessiz no-op, kafa karıştırıcı).
-                enabled = !submitting && overlayElements.size < 3,
+                enabled = canAddMoreOverlay,
                 onClick = onAddOverlayClick,
+            )
+            StoryToolButton(
+                icon = Icons.Filled.AlternateEmail,
+                contentDescription = "Bahset",
+                enabled = canAddMoreOverlay,
+                onClick = { showMentionSheet = true },
+            )
+            StoryToolButton(
+                icon = Icons.Filled.Tag,
+                contentDescription = "Etiket ekle",
+                enabled = canAddMoreOverlay,
+                onClick = { showHashtagDialog = true },
             )
             StoryToolButton(
                 icon = Icons.Filled.BarChart,
@@ -1065,6 +1114,8 @@ private fun StoryFormStep(
     if (showTextEditor) {
         StoryTextEditorOverlay(
             initialValue = caption,
+            captionStyle = captionStyle,
+            onStyleCycle = onCaptionStyleCycle,
             onDone = { text ->
                 onCaptionChange(text.trim())
                 showTextEditor = false
@@ -1082,6 +1133,27 @@ private fun StoryFormStep(
             onRemovePollOption = onRemovePollOption,
             onPollOptionChange = onPollOptionChange,
             onDismiss = { showPollEditor = false },
+        )
+    }
+
+    if (showMentionSheet) {
+        StoryMentionSearchSheet(
+            sheetState = mentionSheetState,
+            onUserSelected = { username ->
+                onMentionSelected(username)
+                showMentionSheet = false
+            },
+            onDismiss = { showMentionSheet = false },
+        )
+    }
+
+    if (showHashtagDialog) {
+        StoryHashtagDialog(
+            onAdd = { tag ->
+                onHashtagAdded(tag)
+                showHashtagDialog = false
+            },
+            onDismiss = { showHashtagDialog = false },
         )
     }
 }
@@ -1162,12 +1234,26 @@ private fun StoryBackgroundColorButton(
 @Composable
 private fun StoryTextEditorOverlay(
     initialValue: String,
+    captionStyle: String?,
+    onStyleCycle: () -> Unit,
     onDone: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
     var text by remember { mutableStateOf(initialValue) }
     val focusRequester = remember { FocusRequester() }
     LaunchedEffect(Unit) { focusRequester.requestFocus() }
+
+    // 2026-08-11 (kullanıcı isteği: "metin stili/rengi seçenekleri") —
+    // StoryCaptionText'in canvas'taki AYNI görsel kararı (pill_light/
+    // pill_dark rengi+arka planı), YAZARKEN de canlı önizlensin diye
+    // burada TEKRARLANIYOR (BasicTextField kendi decorationBox'ı olduğu
+    // için StoryCaptionText'in Text() tabanlı gövdesi DOĞRUDAN reuse
+    // edilemiyor — sadece renk/arka plan MANTIĞI aynı, iki YERDE yaşıyor).
+    val (textColor, fieldBackground) = when (captionStyle) {
+        "pill_light" -> Color.Black to Color.White.copy(alpha = 0.9f)
+        "pill_dark" -> Color.White to Color.Black.copy(alpha = 0.75f)
+        else -> Color.White to Color.Transparent
+    }
 
     Box(
         modifier = Modifier
@@ -1184,7 +1270,13 @@ private fun StoryTextEditorOverlay(
                 .align(Alignment.TopEnd)
                 .statusBarsPadding()
                 .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
+            // Instagram'daki "Aa" stil döngü butonunun AYNI fikri — her
+            // dokunuşta klasik -> açık pil -> koyu pil -> klasik.
+            IconButton(onClick = onStyleCycle) {
+                Icon(Icons.Filled.TextFields, contentDescription = "Yazı stili", tint = Color.White)
+            }
             TextButton(onClick = { onDone(text) }) {
                 Text("Tamam", color = Color.White)
             }
@@ -1204,19 +1296,27 @@ private fun StoryTextEditorOverlay(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
                 ) {},
-            textStyle = MaterialTheme.typography.headlineSmall.copy(color = Color.White, textAlign = TextAlign.Center),
-            cursorBrush = SolidColor(Color.White),
+            textStyle = MaterialTheme.typography.headlineSmall.copy(color = textColor, textAlign = TextAlign.Center),
+            cursorBrush = SolidColor(textColor),
             decorationBox = { innerTextField ->
-                if (text.isEmpty()) {
-                    Text(
-                        text = "Bir şeyler yaz...",
-                        style = MaterialTheme.typography.headlineSmall,
-                        color = Color.White.copy(alpha = 0.6f),
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(fieldBackground, RoundedCornerShape(50))
+                        .padding(horizontal = 20.dp, vertical = 12.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (text.isEmpty()) {
+                        Text(
+                            text = "Bir şeyler yaz...",
+                            style = MaterialTheme.typography.headlineSmall,
+                            color = textColor.copy(alpha = 0.6f),
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                    innerTextField()
                 }
-                innerTextField()
             },
         )
     }
@@ -1283,6 +1383,127 @@ private fun StoryPollEditorSheet(
             }
         }
     }
+}
+
+/**
+ * @bahsetme sticker'ı için kullanıcı arama sheet'i — 2026-08-11 (kullanıcı
+ * isteği: "@bahsetme ve #hashtag sticker'ı"). PostShareSheet.kt'nin AYNI
+ * arama+liste+dokun-seç deseni, ama SONUÇ bir mesaj hedefi DEĞİL, canvas'a
+ * eklenecek bir "@kullanıcı" sticker'ı. Mevcut [ServiceLocator.mentionsRepository]
+ * REUSE edilir (yorum composer'ının @otomatik-tamamlama'sıyla AYNI arama
+ * endpoint'i) — yeni bir arama mekanizması İCAT EDİLMEDİ.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun StoryMentionSearchSheet(
+    sheetState: SheetState,
+    onUserSelected: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val mentionsRepository = ServiceLocator.mentionsRepository
+    var query by remember { mutableStateOf("") }
+    var results by remember { mutableStateOf<List<MentionSuggestionDto>>(emptyList()) }
+    var searching by remember { mutableStateOf(false) }
+
+    // DiscoverScreen/PostShareSheet'teki AYNI ~400ms debounce gerekçesi.
+    LaunchedEffect(query) {
+        val q = query.trim()
+        if (q.length < 2) {
+            results = emptyList()
+            return@LaunchedEffect
+        }
+        delay(400)
+        searching = true
+        when (val result = mentionsRepository.search(q)) {
+            is MentionSearchResult.Success -> results = result.users
+            is MentionSearchResult.Error -> results = emptyList()
+        }
+        searching = false
+    }
+
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 200.dp)
+                .padding(horizontal = 20.dp, vertical = 8.dp),
+        ) {
+            Text(text = "Bahset", style = MaterialTheme.typography.titleMedium)
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                placeholder = { Text("Kullanıcı ara") },
+                singleLine = true,
+            )
+            when {
+                searching -> Box(
+                    modifier = Modifier.fillMaxWidth().height(100.dp),
+                    contentAlignment = Alignment.Center,
+                ) { CircularProgressIndicator() }
+                query.trim().length < 2 -> Text(
+                    text = "En az 2 harf yaz",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(vertical = 24.dp),
+                )
+                results.isEmpty() -> Text(
+                    text = "Kullanıcı bulunamadı",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(vertical = 24.dp),
+                )
+                else -> Column(
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 280.dp).verticalScroll(rememberScrollState()),
+                ) {
+                    results.forEach { user ->
+                        val username = user.username
+                        if (!username.isNullOrBlank()) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { onUserSelected(username) }
+                                    .padding(vertical = 8.dp),
+                            ) {
+                                UserRow(avatarUrl = user.avatarUrl, username = username, fullName = null)
+                            }
+                        }
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+        }
+    }
+}
+
+/**
+ * #hashtag sticker'ı için basit metin girişi — mention'ın AKSİNE arama
+ * GEREKMEZ (backend serbest metin kabul eder, hashtag'in önceden var olması
+ * ŞART DEĞİL — bkz. app/api_v1/stories.py yorumu).
+ */
+@Composable
+private fun StoryHashtagDialog(onAdd: (String) -> Unit, onDismiss: () -> Unit) {
+    var tag by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Etiket ekle") },
+        text = {
+            OutlinedTextField(
+                value = tag,
+                onValueChange = { tag = it },
+                placeholder = { Text("örn. tatil") },
+                leadingIcon = { Text("#") },
+                singleLine = true,
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = { if (tag.isNotBlank()) onAdd(tag) }, enabled = tag.isNotBlank()) {
+                Text("Ekle")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Vazgeç") }
+        },
+    )
 }
 
 /**

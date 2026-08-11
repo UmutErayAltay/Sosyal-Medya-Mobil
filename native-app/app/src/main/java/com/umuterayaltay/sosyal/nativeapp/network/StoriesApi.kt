@@ -38,6 +38,10 @@ interface StoriesApi {
         @Part("background_color") backgroundColor: RequestBody?,
         @Part("caption_position_x") captionPositionX: RequestBody?,
         @Part("caption_position_y") captionPositionY: RequestBody?,
+        // 2026-08-11 (kullanıcı isteği: "metin stili/rengi seçenekleri") —
+        // null/absent = klasik (backend zaten böyle davranıyor), "pill_light"/
+        // "pill_dark" dışındaki değerleri backend fail-open null'a düşürür.
+        @Part("caption_style") captionStyle: RequestBody?,
         @Part("poll_option_1") pollOption1: RequestBody?,
         @Part("poll_option_2") pollOption2: RequestBody?,
         @Part("poll_option_3") pollOption3: RequestBody?,
@@ -71,6 +75,13 @@ interface StoriesApi {
 
     @POST("stories/{id}/delete")
     suspend fun deleteStory(@Path("id") storyId: String): Response<SimpleOkResponse>
+
+    // 2026-08-11 (kullanıcı isteği: "hikayeyi kim izledi listesi") — SADECE
+    // hikaye sahibi çağırabilir (backend 403 döner değilse), story_views
+    // tablosu zaten HER görüntülemede yazılıyordu (halka rengi için), bu
+    // sadece o veriyi OKUYAN ilk endpoint.
+    @GET("stories/{id}/viewers")
+    suspend fun getStoryViewers(@Path("id") storyId: String): Response<StoryViewersResponse>
 
     @POST("stories/{id}/save-highlight")
     suspend fun saveHighlight(

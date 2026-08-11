@@ -45,6 +45,9 @@ data class Story(
     val backgroundColor: String?,
     val captionPositionX: Double,
     val captionPositionY: Double,
+    // 2026-08-11 (kullanıcı isteği: "metin stili/rengi seçenekleri") — null =
+    // klasik, "pill_light"/"pill_dark" = renkli pilli arka plan.
+    val captionStyle: String?,
     val poll: Poll?,
     // 2026-08-10 (kullanıcı raporu: "2.ye tıklayınca öncekini siliyor") —
     // TEKİL overlayImageUrl/Position/Scale YERİNE liste (bkz. ApiModels.kt
@@ -52,19 +55,54 @@ data class Story(
     val overlayElements: List<StoryOverlayElement>,
 )
 
-/** Hikaye üzerine sürüklenmiş TEK bir GIF/sticker. */
-data class StoryOverlayElement(
-    val url: String,
-    val positionX: Double,
-    val positionY: Double,
-    val scale: Double,
-)
+/**
+ * Hikaye üzerine sürüklenmiş TEK bir öğe — 2026-08-11 (kullanıcı isteği:
+ * "@bahsetme ve #hashtag sticker'ı") ile sealed class'a genişletildi
+ * (ÖNCEDEN sadece GIF/sticker görseli, `Image` alt tipi bu ESKİ tekil
+ * DTO'nun karşılığı). Görüntüleyici Mention/Hashtag'i TIKLANABİLİR
+ * kılabilsin diye (profile/hashtag sayfasına git) ayrı alt tipler.
+ */
+sealed class StoryOverlayElement {
+    abstract val positionX: Double
+    abstract val positionY: Double
+    abstract val scale: Double
+
+    data class Image(
+        val url: String,
+        override val positionX: Double,
+        override val positionY: Double,
+        override val scale: Double,
+    ) : StoryOverlayElement()
+
+    data class Mention(
+        val username: String,
+        override val positionX: Double,
+        override val positionY: Double,
+        override val scale: Double,
+    ) : StoryOverlayElement()
+
+    data class Hashtag(
+        val tag: String,
+        override val positionX: Double,
+        override val positionY: Double,
+        override val scale: Double,
+    ) : StoryOverlayElement()
+}
 
 data class UserStories(
     val username: String,
     val avatarUrl: String?,
     val isMine: Boolean,
     val stories: List<Story>,
+)
+
+/** GET /stories/{id}/viewers satırı — 2026-08-11 (kullanıcı isteği: "hikayeyi
+ * kim izledi listesi"). SADECE hikaye sahibi çekebilir. */
+data class StoryViewer(
+    val userId: String,
+    val username: String,
+    val avatarUrl: String?,
+    val viewedAt: String?,
 )
 
 data class Highlight(
@@ -95,6 +133,27 @@ private fun StoryBarItemDto.toDomain() = StoryBarItem(
     allSeen = allSeen,
 )
 
+/** `type` alanına göre AYRIŞAN dönüşüm — bkz. StoryOverlayElementDto/
+ * StoryOverlayElement yorumları. `type` yoksa ama `url` varsa (eski/geriye
+ * dönük veri) "image" sayılır — backend'in AYNI fallback'i. Geçersiz/eksik
+ * bir eleman (ör. mention'da username yok) `null` döner, çağıran taraf
+ * `mapNotNull` ile bunları sessizce eler. */
+private fun StoryOverlayElementDto.toDomainOrNull(): StoryOverlayElement? {
+    val effectiveType = type ?: if (!url.isNullOrBlank()) "image" else null
+    return when (effectiveType) {
+        "image" -> url?.takeIf { it.isNotBlank() }?.let {
+            StoryOverlayElement.Image(it, positionX, positionY, scale)
+        }
+        "mention" -> username?.takeIf { it.isNotBlank() }?.let {
+            StoryOverlayElement.Mention(it, positionX, positionY, scale)
+        }
+        "hashtag" -> tag?.takeIf { it.isNotBlank() }?.let {
+            StoryOverlayElement.Hashtag(it, positionX, positionY, scale)
+        }
+        else -> null
+    }
+}
+
 private fun StoryDto.toDomain() = Story(
     id = id,
     userId = userId,
@@ -106,14 +165,8 @@ private fun StoryDto.toDomain() = Story(
     backgroundColor = backgroundColor,
     captionPositionX = captionPositionX ?: 0.5,
     captionPositionY = captionPositionY ?: 0.75,
-    overlayElements = (overlayElements ?: emptyList()).map {
-        StoryOverlayElement(
-            url = it.url,
-            positionX = it.positionX,
-            positionY = it.positionY,
-            scale = it.scale,
-        )
-    },
+    captionStyle = captionStyle,
+    overlayElements = (overlayElements ?: emptyList()).mapNotNull { it.toDomainOrNull() },
     poll = poll?.let { p ->
         Poll(
             id = p.id,
@@ -157,6 +210,11 @@ sealed class StoryBarResult {
 sealed class UserStoriesResult {
     data class Success(val data: UserStories) : UserStoriesResult()
     data class Error(val code: String?) : UserStoriesResult()
+}
+
+sealed class StoryViewersResult {
+    data class Success(val viewers: List<StoryViewer>, val count: Int) : StoryViewersResult()
+    data class Error(val code: String?) : StoryViewersResult()
 }
 
 sealed class CreateStoryResult {
@@ -257,6 +315,35 @@ class StoriesRepository(
         }
     }
 
+    /** 2026-08-11 (kullanıcı isteği: "hikayeyi kim izledi listesi") — SADECE
+     * kendi hikayen için anlamlı, backend başkasının hikayesi için 403 döner
+     * (bkz. app/api_v1/stories.py). En yeni izleyen ÖNCE (backend sıralıyor). */
+    suspend fun getStoryViewers(storyId: String): StoryViewersResult = withContext(Dispatchers.IO) {
+        try {
+            val response = storiesApi.getStoryViewers(storyId)
+            val body = response.body()
+            if (response.isSuccessful && body != null && body.error == null) {
+                StoryViewersResult.Success(
+                    viewers = (body.viewers ?: emptyList()).map {
+                        StoryViewer(
+                            userId = it.userId,
+                            username = it.username ?: "Bilinmeyen",
+                            avatarUrl = it.avatarUrl,
+                            viewedAt = it.viewedAt,
+                        )
+                    },
+                    count = body.count,
+                )
+            } else {
+                StoryViewersResult.Error(body?.error ?: RetrofitClient.parseErrorCode(response))
+            }
+        } catch (e: IOException) {
+            StoryViewersResult.Error("network_error")
+        } catch (e: Exception) {
+            StoryViewersResult.Error("unknown_error")
+        }
+    }
+
     /**
      * Yeni hikaye — app/api_v1/stories.py api_create_story() ile AYNI kısıt:
      * caption/image/video/poll hepsi boşsa backend "empty_story" döner, burada
@@ -276,6 +363,8 @@ class StoriesRepository(
         backgroundColor: String?,
         captionPositionX: Float?,
         captionPositionY: Float?,
+        // 2026-08-11 (kullanıcı isteği: "metin stili/rengi seçenekleri").
+        captionStyle: String?,
         pollOptions: List<String>,
         pollPositionX: Float?,
         pollPositionY: Float?,
@@ -306,8 +395,21 @@ class StoriesRepository(
             // sözleşmesiyle eşleşiyor) — hem-yazma-hem-okuma için AYRI bir
             // "request" DTO'su İCAT EDİLMEDİ.
             val overlayElementsJson = overlayElements.takeIf { it.isNotEmpty() }?.let { elements ->
-                val dtos = elements.map {
-                    StoryOverlayElementDto(url = it.url, positionX = it.positionX, positionY = it.positionY, scale = it.scale)
+                val dtos = elements.map { element ->
+                    when (element) {
+                        is StoryOverlayElement.Image -> StoryOverlayElementDto(
+                            type = "image", url = element.url,
+                            positionX = element.positionX, positionY = element.positionY, scale = element.scale,
+                        )
+                        is StoryOverlayElement.Mention -> StoryOverlayElementDto(
+                            type = "mention", username = element.username,
+                            positionX = element.positionX, positionY = element.positionY, scale = element.scale,
+                        )
+                        is StoryOverlayElement.Hashtag -> StoryOverlayElementDto(
+                            type = "hashtag", tag = element.tag,
+                            positionX = element.positionX, positionY = element.positionY, scale = element.scale,
+                        )
+                    }
                 }
                 text(Gson().toJson(dtos))
             }
@@ -320,6 +422,7 @@ class StoriesRepository(
                 backgroundColor = textOrNull(backgroundColor),
                 captionPositionX = textOrNull(captionPositionX?.toString()),
                 captionPositionY = textOrNull(captionPositionY?.toString()),
+                captionStyle = textOrNull(captionStyle),
                 pollOption1 = opt(0),
                 pollOption2 = opt(1),
                 pollOption3 = opt(2),

@@ -742,6 +742,10 @@ fun AppNavHost() {
                         popUpTo(ROUTE_MAIN) { inclusive = true }
                     }
                 },
+                // 2026-08-11 (kullanıcı isteği: "@bahsetme ve #hashtag
+                // sticker'ı") — diğer ekranlardaki AYNI navigate deseni.
+                onNavigateToProfile = { username -> navController.navigate("profile/$username") },
+                onNavigateToHashtag = { tag -> navController.navigate("hashtag/$tag") },
             )
         }
         composable("storyCreate") {

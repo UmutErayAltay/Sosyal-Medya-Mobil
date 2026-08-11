@@ -1183,6 +1183,10 @@ data class StoryDto(
     @SerializedName("background_color") val backgroundColor: String? = null,
     @SerializedName("caption_position_x") val captionPositionX: Double? = null,
     @SerializedName("caption_position_y") val captionPositionY: Double? = null,
+    // 2026-08-11 (kullanıcı isteği: "metin stili/rengi seçenekleri") — null =
+    // klasik (düz beyaz yazı, arka plansız); "pill_light"/"pill_dark" = renkli
+    // pilli arka plan. Backend SADECE bu iki değeri veya null kabul eder.
+    @SerializedName("caption_style") val captionStyle: String? = null,
     val poll: PollDto? = null,
     // 2026-08-10 (kullanıcı raporu: "2.ye tıklayınca öncekini siliyor") —
     // İLK sürüm (2026-08-09) TEKİL overlay_image_url/position_x/position_y/
@@ -1192,14 +1196,44 @@ data class StoryDto(
     @SerializedName("overlay_elements") val overlayElements: List<StoryOverlayElementDto>? = null,
 )
 
-/** Hikaye üzerine sürüklenmiş TEK bir GIF/sticker — bkz. StoryDto.overlayElements
+/**
+ * Hikaye üzerine sürüklenmiş TEK bir öğe — bkz. StoryDto.overlayElements
  * yorumu. Post/caption/poll'dan FARKLI olarak birden fazla eş zamanlı
- * olabilir (en fazla 3, backend api_create_story() sınırı). */
+ * olabilir (en fazla 3, backend api_create_story() sınırı).
+ *
+ * 2026-08-11 (kullanıcı isteği: "@bahsetme ve #hashtag sticker'ı") — backend
+ * artık `type` alanına göre AYRIŞAN 3 şekli kabul/döndürüyor (image/mention/
+ * hashtag). Bu proje Gson için polimorfik bir TypeAdapterFactory KURMADIĞI
+ * için (CommentStickerDto gibi diğer "opsiyonel alanlı düz DTO" örnekleriyle
+ * TUTARLI) DÜZ bir DTO — tipe göre HANGİ alanların dolu olacağı değişir,
+ * domain katmanındaki `toDomain()` bunu sealed class'a (StoryOverlayElement)
+ * çevirir. `type` YOKSA ama `url` VARSA backend geriye dönük uyumluluk için
+ * bunu "image" sayıyor (bkz. app/api_v1/stories.py), native tarafı da AYNI
+ * fallback'i uyguluyor.
+ */
 data class StoryOverlayElementDto(
-    val url: String,
+    val type: String? = null,
+    val url: String? = null,
+    val username: String? = null,
+    val tag: String? = null,
     @SerializedName("position_x") val positionX: Double = 0.5,
     @SerializedName("position_y") val positionY: Double = 0.5,
     val scale: Double = 1.0,
+)
+
+/** GET /stories/{id}/viewers satırı — 2026-08-11 (kullanıcı isteği: "hikayeyi
+ * kim izledi listesi"). */
+data class StoryViewerDto(
+    @SerializedName("user_id") val userId: String,
+    val username: String? = null,
+    @SerializedName("avatar_url") val avatarUrl: String? = null,
+    @SerializedName("viewed_at") val viewedAt: String? = null,
+)
+
+data class StoryViewersResponse(
+    val viewers: List<StoryViewerDto>? = null,
+    val count: Int = 0,
+    val error: String? = null,
 )
 
 data class UserStoriesResponse(

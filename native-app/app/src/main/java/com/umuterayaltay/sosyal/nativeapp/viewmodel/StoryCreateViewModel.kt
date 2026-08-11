@@ -21,17 +21,63 @@ sealed class StoryCreateEvent {
     data object SessionExpired : StoryCreateEvent()
 }
 
-/** Canvas'a eklenmiş TEK bir GIF/sticker — kararlı `id` (yerel, backend'e
- * hiç gönderilmez) Compose'un liste render'ında key() için var, aksi halde
- * bir eleman kaldırılınca kalanların pozisyon/ölçek state'i BİRBİRİNE
- * KAYABİLİRDİ (bkz. StoryCreateScreen.kt'deki key() kullanımı). */
-data class StoryOverlayElementState(
-    val id: String,
-    val url: String,
-    val positionX: Float = 0.5f,
-    val positionY: Float = 0.5f,
-    val scale: Float = 1f,
-)
+/**
+ * Canvas'a eklenmiş TEK bir öğe — kararlı `id` (yerel, backend'e hiç
+ * gönderilmez) Compose'un liste render'ında key() için var, aksi halde bir
+ * eleman kaldırılınca kalanların pozisyon/ölçek state'i BİRBİRİNE KAYABİLİRDİ
+ * (bkz. StoryCreateScreen.kt'deki key() kullanımı).
+ *
+ * 2026-08-11 (kullanıcı isteği: "@bahsetme ve #hashtag sticker'ı") —
+ * repository.StoryOverlayElement (backend'e GİDEN/backend'den GELEN Double
+ * tabanlı domain) ile AYNI 3 alt tip, ama UI katmanı Float kullandığı için
+ * (DraggableStoryElement zaten Float konuşuyor) AYRI bir hafif "düzenleme
+ * state'i" — submit()'te StoryOverlayElement'e çevrilir.
+ */
+sealed class StoryOverlayElementState {
+    abstract val id: String
+    abstract val positionX: Float
+    abstract val positionY: Float
+    abstract val scale: Float
+
+    data class Image(
+        override val id: String,
+        val url: String,
+        override val positionX: Float = 0.5f,
+        override val positionY: Float = 0.5f,
+        override val scale: Float = 1f,
+    ) : StoryOverlayElementState()
+
+    data class Mention(
+        override val id: String,
+        val username: String,
+        override val positionX: Float = 0.5f,
+        override val positionY: Float = 0.5f,
+        override val scale: Float = 1f,
+    ) : StoryOverlayElementState()
+
+    data class Hashtag(
+        override val id: String,
+        val tag: String,
+        override val positionX: Float = 0.5f,
+        override val positionY: Float = 0.5f,
+        override val scale: Float = 1f,
+    ) : StoryOverlayElementState()
+}
+
+/** Sürükleme/pinch sonucu KENDİ alt tipini KORUYARAK yeni konum/ölçekle
+ * `copy()` etmek için — `sealed class`'ın `abstract val`'ları ayrı ayrı
+ * `copy()` EDİLEMEZ, her alt tip kendi `copy()`'sini çağırmalı. */
+private fun StoryOverlayElementState.withPosition(x: Float, y: Float): StoryOverlayElementState = when (this) {
+    is StoryOverlayElementState.Image -> copy(positionX = x, positionY = y)
+    is StoryOverlayElementState.Mention -> copy(positionX = x, positionY = y)
+    is StoryOverlayElementState.Hashtag -> copy(positionX = x, positionY = y)
+}
+
+private fun StoryOverlayElementState.withScale(scale: Float): StoryOverlayElementState = when (this) {
+    is StoryOverlayElementState.Image -> copy(scale = scale)
+    is StoryOverlayElementState.Mention -> copy(scale = scale)
+    is StoryOverlayElementState.Hashtag -> copy(scale = scale)
+}
 
 /**
  * "Yeni Hikaye" ekranı için ViewModel — app/api_v1/stories.py api_create_story()
@@ -94,6 +140,12 @@ class StoryCreateViewModel : ViewModel() {
     private val _captionPositionY = MutableStateFlow(0.75f)
     val captionPositionY: StateFlow<Float> = _captionPositionY.asStateFlow()
 
+    // 2026-08-11 (kullanıcı isteği: "metin stili/rengi seçenekleri") — null =
+    // klasik (düz beyaz yazı), CAPTION_STYLES listesindeki DİĞER değerler
+    // arasında döngüsel geçiş (bkz. onCaptionStyleCycle).
+    private val _captionStyle = MutableStateFlow<String?>(null)
+    val captionStyle: StateFlow<String?> = _captionStyle.asStateFlow()
+
     private val _pollPositionX = MutableStateFlow(0.5f)
     val pollPositionX: StateFlow<Float> = _pollPositionX.asStateFlow()
 
@@ -145,6 +197,17 @@ class StoryCreateViewModel : ViewModel() {
         _captionPositionY.value = y.coerceIn(0f, 1f)
     }
 
+    /** Metin düzenleyicideki stil butonuna her dokunuşta döngüsel geçiş —
+     * null (klasik) -> pill_light -> pill_dark -> null. Backend'in kabul
+     * ettiği TAM OLARAK bu iki değer (bkz. StoriesApi.createStory yorumu). */
+    fun onCaptionStyleCycle() {
+        _captionStyle.value = when (_captionStyle.value) {
+            null -> "pill_light"
+            "pill_light" -> "pill_dark"
+            else -> null
+        }
+    }
+
     /** Canvas'taki anket widget'ı sürüklenince/pinch ile ölçeklenince çağrılır. */
     fun onPollPositionChange(x: Float, y: Float) {
         _pollPositionX.value = x.coerceIn(0f, 1f)
@@ -163,12 +226,26 @@ class StoryCreateViewModel : ViewModel() {
      * MAX_OVERLAY_ELEMENTS sınırı — üstündeyse sessizce yok sayılır, kullanıcı
      * zaten "kaldır" ile yer açabilir). */
     fun onOverlayImageSelected(url: String) {
+        addOverlayElement(StoryOverlayElementState.Image(id = java.util.UUID.randomUUID().toString(), url = url))
+    }
+
+    /** Mention arama sheet'inden bir kullanıcı seçilince çağrılır — 2026-08-11
+     * (kullanıcı isteği: "@bahsetme ve #hashtag sticker'ı"). */
+    fun onMentionSelected(username: String) {
+        addOverlayElement(StoryOverlayElementState.Mention(id = java.util.UUID.randomUUID().toString(), username = username))
+    }
+
+    /** Hashtag ekleme dialog'unda "Ekle"ye basılınca çağrılır — mention'ın
+     * AKSİNE önceden var olması GEREKMEZ (backend serbest metin kabul eder). */
+    fun onHashtagAdded(tag: String) {
+        val normalized = tag.trim().removePrefix("#").lowercase()
+        if (normalized.isBlank()) return
+        addOverlayElement(StoryOverlayElementState.Hashtag(id = java.util.UUID.randomUUID().toString(), tag = normalized))
+    }
+
+    private fun addOverlayElement(element: StoryOverlayElementState) {
         if (_overlayElements.value.size >= MAX_OVERLAY_ELEMENTS) return
-        val newElement = StoryOverlayElementState(
-            id = java.util.UUID.randomUUID().toString(),
-            url = url,
-        )
-        _overlayElements.value = _overlayElements.value + newElement
+        _overlayElements.value = _overlayElements.value + element
     }
 
     fun onOverlayImageRemoved(id: String) {
@@ -177,13 +254,13 @@ class StoryCreateViewModel : ViewModel() {
 
     fun onOverlayImagePositionChange(id: String, x: Float, y: Float) {
         _overlayElements.value = _overlayElements.value.map {
-            if (it.id == id) it.copy(positionX = x.coerceIn(0f, 1f), positionY = y.coerceIn(0f, 1f)) else it
+            if (it.id == id) it.withPosition(x.coerceIn(0f, 1f), y.coerceIn(0f, 1f)) else it
         }
     }
 
     fun onOverlayImageScaleChange(id: String, scale: Float) {
         _overlayElements.value = _overlayElements.value.map {
-            if (it.id == id) it.copy(scale = scale.coerceIn(0.3f, 3f)) else it
+            if (it.id == id) it.withScale(scale.coerceIn(0.3f, 3f)) else it
         }
     }
 
@@ -305,17 +382,32 @@ class StoryCreateViewModel : ViewModel() {
                     // caption boşsa hiç kullanmıyor).
                     captionPositionX = if (text.isNotEmpty()) _captionPositionX.value else null,
                     captionPositionY = if (text.isNotEmpty()) _captionPositionY.value else null,
+                    captionStyle = if (text.isNotEmpty()) _captionStyle.value else null,
                     pollOptions = filledOptions,
                     pollPositionX = if (hasPoll) _pollPositionX.value else null,
                     pollPositionY = if (hasPoll) _pollPositionY.value else null,
                     pollScale = if (hasPoll) _pollScale.value else null,
-                    overlayElements = _overlayElements.value.map {
-                        StoryOverlayElement(
-                            url = it.url,
-                            positionX = it.positionX.toDouble(),
-                            positionY = it.positionY.toDouble(),
-                            scale = it.scale.toDouble(),
-                        )
+                    overlayElements = _overlayElements.value.map { state ->
+                        when (state) {
+                            is StoryOverlayElementState.Image -> StoryOverlayElement.Image(
+                                url = state.url,
+                                positionX = state.positionX.toDouble(),
+                                positionY = state.positionY.toDouble(),
+                                scale = state.scale.toDouble(),
+                            )
+                            is StoryOverlayElementState.Mention -> StoryOverlayElement.Mention(
+                                username = state.username,
+                                positionX = state.positionX.toDouble(),
+                                positionY = state.positionY.toDouble(),
+                                scale = state.scale.toDouble(),
+                            )
+                            is StoryOverlayElementState.Hashtag -> StoryOverlayElement.Hashtag(
+                                tag = state.tag,
+                                positionX = state.positionX.toDouble(),
+                                positionY = state.positionY.toDouble(),
+                                scale = state.scale.toDouble(),
+                            )
+                        }
                     },
                 )
             ) {
