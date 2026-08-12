@@ -36,6 +36,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.umuterayaltay.sosyal.nativeapp.network.MessageSearchResultDto
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.MessageSearchEvent
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.MessageSearchViewModel
+import kotlinx.coroutines.flow.distinctUntilChanged
 
 /**
  * TÜM sohbetlerde mesaj arama (Faz 5 Dalga 1B) — NewMessageScreen ile AYNI
@@ -69,13 +70,19 @@ fun MessageSearchScreen(
     }
 
     val listState = rememberLazyListState()
+    // Performans düzeltmesi (2026-08-12) — FeedScreen.kt/DiscoverScreen.kt'deki
+    // AYNI kök neden ve düzeltme: snapshotFlow { listState.layoutInfo } HER
+    // frame'de dedupe'siz çalışıyordu. HideableTopBar.kt:92'deki DOĞRU deseni
+    // takip eder — sadece Int emit edilir. `results.size` karşılaştırması
+    // (total item sayısı yerine) BURADA BİLEREK KORUNUR.
     LaunchedEffect(listState, hasNext) {
-        snapshotFlow { listState.layoutInfo }.collect { info ->
-            val lastVisible = info.visibleItemsInfo.lastOrNull()?.index ?: 0
-            if (hasNext && lastVisible >= results.size - 3) {
-                viewModel.loadMore()
+        snapshotFlow { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 }
+            .distinctUntilChanged()
+            .collect { lastVisible ->
+                if (hasNext && lastVisible >= results.size - 3) {
+                    viewModel.loadMore()
+                }
             }
-        }
     }
 
     Scaffold(

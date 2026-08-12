@@ -55,6 +55,7 @@ import com.umuterayaltay.sosyal.nativeapp.repository.CallSignalingManager
 import com.umuterayaltay.sosyal.nativeapp.repository.CallSessionManager
 import com.umuterayaltay.sosyal.nativeapp.network.LinkPreviewApi
 import com.umuterayaltay.sosyal.nativeapp.repository.LinkPreviewRepository
+import com.umuterayaltay.sosyal.nativeapp.player.FeedVideoPlayerPool
 // FAZ5_IMPORTS_MARKER — her ajan kendi Api/Repository import'unu bu satırın
 // HEMEN ÜSTÜNE ekler (dalga başına ayrı ajan çakışmasın diye).
 
@@ -126,6 +127,11 @@ object ServiceLocator {
     lateinit var updateRepository: UpdateRepository
         private set
     lateinit var linkPreviewRepository: LinkPreviewRepository
+        private set
+    // Batch C3 (Akış kaydırma performansı — otomatik video oynatma havuzu):
+    // süreç ömrü boyunca TEK ExoPlayer, PostCard/FeedScreen bu instance'ı
+    // paylaşır (bkz. FeedVideoPlayerPool sınıf yorumu).
+    lateinit var feedVideoPlayerPool: FeedVideoPlayerPool
         private set
     // FAZ5_LATEINIT_MARKER — her ajan kendi `lateinit var xxxRepository`'sini
     // bu satırın HEMEN ÜSTÜNE ekler.
@@ -212,6 +218,8 @@ object ServiceLocator {
 
         val linkPreviewApi = retrofit.create(LinkPreviewApi::class.java)
         linkPreviewRepository = LinkPreviewRepository(linkPreviewApi)
+
+        feedVideoPlayerPool = FeedVideoPlayerPool(appContext)
 
         // FAZ5_INIT_MARKER — her ajan kendi `val xxxApi = retrofit.create(...)`
         // + `xxxRepository = XxxRepository(xxxApi)` satırlarını bu satırın

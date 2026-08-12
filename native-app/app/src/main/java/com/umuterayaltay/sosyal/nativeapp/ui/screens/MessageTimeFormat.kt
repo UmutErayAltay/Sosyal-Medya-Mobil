@@ -36,13 +36,19 @@ internal fun formatClockTime(iso: String?): String {
     return CLOCK_FORMATTER.format(instant)
 }
 
+// Performans taraması (Batch C1, "kasıyor" raporu): Supabase/PostgREST
+// timestamptz genelde "+00:00" formatında dönüyor — Instant.parse (katı
+// ISO_INSTANT, sadece "…Z") bunu HER ÇAĞRIDA reddedip exception fırlatıyordu
+// (stack-trace doldurma maliyetiyle) sonra OffsetDateTime.parse'a düşülüyordu.
+// Sıra değiştirildi: asıl backend formatı ARTIK ilk denemede geçiyor, exception
+// SADECE gerçekten "…Z" biçimli (nadir) veya geçersiz bir değerde oluşuyor.
 private fun parseIsoTimestamp(iso: String?): Instant? {
     if (iso.isNullOrBlank()) return null
     return try {
-        Instant.parse(iso)
+        OffsetDateTime.parse(iso).toInstant()
     } catch (e: Exception) {
         try {
-            OffsetDateTime.parse(iso).toInstant()
+            Instant.parse(iso)
         } catch (e2: Exception) {
             null
         }

@@ -1,10 +1,12 @@
 package com.umuterayaltay.sosyal.nativeapp.repository
 
+import androidx.compose.runtime.Immutable
 import com.umuterayaltay.sosyal.nativeapp.data.local.PostEntity
 import com.umuterayaltay.sosyal.nativeapp.network.PostDto
 
 /** Bir postun anketi — web'in poll_widget makrosunun gördüğü AYNI veri
  * (app/polls.py attach_polls()). Yüzdeler backend'de hesaplanır. */
+@Immutable
 data class PollOption(
     val id: String,
     val text: String,
@@ -12,6 +14,7 @@ data class PollOption(
     val pct: Int,
 )
 
+@Immutable
 data class Poll(
     val id: String,
     val options: List<PollOption>,
@@ -35,6 +38,7 @@ data class Poll(
  * hiç taşınmıyordu, bu yüzden repost atılan içeriksiz postlar (content boş)
  * PostCard'da TAMAMEN BOŞ görünüyordu. Poll ile AYNI gerekçeyle (bkz. Post.poll
  * yorumu) SADECE ağdan gelen postta dolu — Room cache'e (PostEntity) YAZILMAZ. */
+@Immutable
 data class RepostEmbed(
     val id: String?,
     val content: String?,
@@ -45,7 +49,16 @@ data class RepostEmbed(
     val avatarUrl: String?,
 )
 
-/** UI'nin gördüğü sade post modeli — hem ağdan hem Room cache'inden aynı şekilde üretilir. */
+/** UI'nin gördüğü sade post modeli — hem ağdan hem Room cache'inden aynı şekilde üretilir.
+ *
+ * [Immutable]: compiler'a verilen bir SÖZLEŞME — bu sınıftaki (ve PollOption/
+ * Poll/RepostEmbed'deki) `List` alanları BUGÜN sadece `map`/`split`/`filter`
+ * ile TAZE üretiliyor, hiçbir yerde yerinde (in-place) mutasyona uğramıyor.
+ * Compose bu sözü GÜVENİLİR kabul edip aynı referanslı listeleri "değişmedi"
+ * sayar (recomposition skip) — biri ileride mutable bir liste geçirirse
+ * Compose SESSİZCE yanlış skip yapar (UI güncellenmez), derleyici hatası
+ * VERMEZ. */
+@Immutable
 data class Post(
     val id: String,
     val userId: String,

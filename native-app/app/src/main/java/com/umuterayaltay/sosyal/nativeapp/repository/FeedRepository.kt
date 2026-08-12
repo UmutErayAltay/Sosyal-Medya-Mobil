@@ -6,6 +6,8 @@ import com.umuterayaltay.sosyal.nativeapp.network.RetrofitClient
 import com.umuterayaltay.sosyal.nativeapp.network.SuggestedUserDto
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import java.io.IOException
@@ -45,8 +47,17 @@ class FeedRepository(
     private val postDao: PostDao,
 ) {
 
+    // A1 (akış performansı): entity->domain dönüşümü artık Dispatchers.Default'ta
+    // (ana thread DEĞİL) çalışıyor — flowOn olmadan bu dönüşüm FeedViewModel'in
+    // stateIn(viewModelScope, ...) çağrısını topladığı ana thread'de yapılıyordu,
+    // her beğeni/kaydetme/mute TÜM listenin yeniden toDomain()'lenmesini ana
+    // thread'de tetikliyordu. distinctUntilChanged Room'un aynı liste için
+    // gereksiz emisyonlarını (referans farklı ama içerik aynı) eler.
     fun observePosts(): Flow<List<Post>> =
-        postDao.getAll().map { entities -> entities.map { it.toDomain() } }
+        postDao.getAll()
+            .map { entities -> entities.map { it.toDomain() } }
+            .distinctUntilChanged()
+            .flowOn(Dispatchers.Default)
 
     /** InteractionsRepository.toggleLike() sunucu yanıtı geldikten SONRA
      * çağrılır (optimistic DEĞİL) — Room cache'i güncelleyip observePosts()'un
@@ -71,8 +82,7 @@ class FeedRepository(
             if (response.isSuccessful && body?.posts != null) {
                 val now = System.currentTimeMillis()
                 val entities = body.posts.map { it.toEntity(cachedAt = now) }
-                postDao.clearAll()
-                postDao.insertAll(entities)
+                postDao.replaceAll(entities)
                 FeedRefreshResult.Success(
                     hasNext = body.hasNext,
                     nextCursor = body.nextCursor,
@@ -101,8 +111,7 @@ class FeedRepository(
             if (response.isSuccessful && body?.posts != null) {
                 val now = System.currentTimeMillis()
                 val entities = body.posts.map { it.toEntity(cachedAt = now) }
-                postDao.insertAll(entities)
-                postDao.pruneOldest(MAX_CACHED_POSTS)
+                postDao.appendAndPrune(entities, MAX_CACHED_POSTS)
                 FeedRefreshResult.Success(
                     hasNext = body.hasNext,
                     nextCursor = body.nextCursor,

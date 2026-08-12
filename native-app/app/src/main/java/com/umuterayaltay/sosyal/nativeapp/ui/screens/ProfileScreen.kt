@@ -5,14 +5,11 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -86,6 +83,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
@@ -1078,23 +1076,35 @@ private fun FollowActionButton(
  * composition'ı disposed/recompose ettiği durumlarda animasyonun TEKRAR
  * oynamasını engeller — çağıran taraf (ProfileScreen) bu Set'i ekranın/sekmenin
  * yaşam süresi boyunca `remember`'lar.
+ *
+ * 2026-08-12 (performans düzeltmesi turu — FeedScreen.kt'deki PostFeedStaggerReveal
+ * B3 düzeltmesiyle AYNI şekil): bu fonksiyon `animationDone` hilesini hiç
+ * kullanmadığı için FeedScreen'in dispose/yeniden-kurma bug'ını taşımıyordu,
+ * AMA `AnimatedVisibility`'yi animasyon bittikten SONRA da SÜREKLİ monte
+ * bırakıyordu — FeedScreen.kt:103-114'ün belgelediği AYNI pager-engelleme
+ * sınıfı sorun (kalıcı AnimatedVisibility katmanı, PostCard'ın HorizontalPager'ıyla
+ * LazyColumn arasında). Artık content() TEK bir kompozisyon grubundan çağrılıyor,
+ * giriş efekti kompozisyonu hiç etkilemeyen bir DRAW-fazı animasyonu
+ * (Animatable + graphicsLayer). `index < 8`: `loadMore` ile gelen sayfalanmış
+ * postlar artık animasyon ALMAZ (FeedScreen.kt'deki AYNI gerekçe).
  */
 @Composable
 private fun StaggeredPostEntry(index: Int, itemKey: String, seenKeys: MutableSet<String>, content: @Composable () -> Unit) {
-    val isNew = remember(itemKey) { seenKeys.add(itemKey) }
+    val isNew = remember(itemKey) { seenKeys.add(itemKey) && index < 8 }
     if (!isNew) {
         content()
         return
     }
-    var visible by remember { mutableStateOf(false) }
+    val progress = remember { Animatable(0f) }
     LaunchedEffect(Unit) {
         delay(minOf(index, 8) * 40L)
-        visible = true
+        progress.animateTo(1f, animationSpec = tween(durationMillis = 220))
     }
-    AnimatedVisibility(
-        visible = visible,
-        enter = fadeIn(animationSpec = tween(220)) +
-            slideInVertically(animationSpec = tween(220)) { it / 10 },
+    Box(
+        modifier = Modifier.graphicsLayer {
+            alpha = progress.value
+            translationY = (1f - progress.value) * 24.dp.toPx()
+        },
     ) {
         content()
     }

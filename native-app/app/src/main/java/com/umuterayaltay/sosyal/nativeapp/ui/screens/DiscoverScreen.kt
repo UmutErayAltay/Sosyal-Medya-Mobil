@@ -72,6 +72,7 @@ import com.umuterayaltay.sosyal.nativeapp.viewmodel.SearchType
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
+import kotlinx.coroutines.flow.distinctUntilChanged
 
 /**
  * Keşfet sekmesi — arama (kullanıcı/post/hashtag, tip filtresi, tarih aralığı,
@@ -124,14 +125,20 @@ fun DiscoverScreen(
     // Sonsuz kaydırma: son görünür öğe listenin sonuna yaklaşınca sonraki sayfa
     // istenir — loadMoreDiscover() zaten hasMore/loading guard'lı, tekrar tekrar
     // tetiklenmesi zararsız (early-return).
+    // Performans düzeltmesi (2026-08-12) — FeedScreen.kt'deki AYNI kök neden ve
+    // AYNI düzeltme: snapshotFlow { listState.layoutInfo } HER frame'de
+    // dedupe'siz çalışıyordu (LazyListLayoutInfo'nun equals() override'ı yok).
+    // HideableTopBar.kt:92'deki DOĞRU deseni takip eder — gerçek equality'si
+    // olan bir Int emit edilir, totalItemsCount collect içinde TAZE okunur.
     LaunchedEffect(listState) {
-        snapshotFlow { listState.layoutInfo }.collect { layoutInfo ->
-            val total = layoutInfo.totalItemsCount
-            val lastVisible = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-            if (total > 0 && lastVisible >= total - 3) {
-                viewModel.loadMoreDiscover()
+        snapshotFlow { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 }
+            .distinctUntilChanged()
+            .collect { lastVisible ->
+                val total = listState.layoutInfo.totalItemsCount
+                if (total > 0 && lastVisible >= total - 3) {
+                    viewModel.loadMoreDiscover()
+                }
             }
-        }
     }
 
     val isSearchActive = query.length >= 2

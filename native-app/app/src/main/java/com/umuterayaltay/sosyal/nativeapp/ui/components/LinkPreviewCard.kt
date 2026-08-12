@@ -42,7 +42,6 @@ import com.pierfrancescosoffritti.androidyoutubeplayer.core.player.listeners.Abs
 import com.pierfrancescosoffritti.androidyoutubeplayer.core.player.views.YouTubePlayerView
 import com.umuterayaltay.sosyal.nativeapp.ServiceLocator
 import com.umuterayaltay.sosyal.nativeapp.network.LinkPreviewDto
-import com.umuterayaltay.sosyal.nativeapp.repository.LinkPreviewResult
 
 /**
  * Post/mesajlarda paylaşılan http(s) linkler için Open Graph önizleme kartı —
@@ -54,9 +53,13 @@ import com.umuterayaltay.sosyal.nativeapp.repository.LinkPreviewResult
  * Fetch başarısız veya ok:false → HİÇBİR ŞEY render edilmez (backend'in
  * gifs.py/turn-credentials proxy'lerindeki graceful-degradation felsefesiyle
  * aynı — kritik olmayan bir özellik, sessizce geç).
+ *
+ * Batch C4 (Akış kaydırma performansı): fetch dedupe + negatif cache artık
+ * BURADA değil, LinkPreviewRepository.previewOrNull()'da (`Deferred`-anahtarlı,
+ * repository'nin kendi coroutine scope'unda) tutuluyor — dosya-seviyesi
+ * `urlPreviewCache` HashMap'i (item scroll'dan çıkıp LaunchedEffect iptal
+ * olunca hiçbir şey cache'lemiyordu) BİLİNÇLİ olarak KALDIRILDI.
  */
-private val urlPreviewCache = HashMap<String, LinkPreviewDto?>() // url -> null (yok/hata) veya dolu — proses içi, ServiceLocator ile AYNI ömür
-
 private val URL_REGEX = Regex("""https?://[^\s<>"']+""")
 
 private val URL_TRAILING_PUNCT = charArrayOf('.', ',', ';', ':', '!', '?', ')', ']', '}', '\'', '"')
@@ -96,16 +99,10 @@ fun buildUrlOnlyAnnotatedString(content: String, linkColor: Color): AnnotatedStr
 
 @Composable
 fun LinkPreviewCard(url: String, modifier: Modifier = Modifier) {
-    var preview by remember(url) { mutableStateOf(urlPreviewCache[url]) }
-    var fetched by remember(url) { mutableStateOf(urlPreviewCache.containsKey(url)) }
+    var preview by remember(url) { mutableStateOf<LinkPreviewDto?>(null) }
 
     LaunchedEffect(url) {
-        if (fetched) return@LaunchedEffect
-        val result = ServiceLocator.linkPreviewRepository.getPreview(url)
-        val data = (result as? LinkPreviewResult.Success)?.preview
-        urlPreviewCache[url] = data
-        preview = data
-        fetched = true
+        preview = ServiceLocator.linkPreviewRepository.previewOrNull(url)
     }
 
     val data = preview ?: return

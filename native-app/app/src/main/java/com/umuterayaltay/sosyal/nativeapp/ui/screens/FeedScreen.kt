@@ -1,10 +1,8 @@
 package com.umuterayaltay.sosyal.nativeapp.ui.screens
 
 import android.widget.Toast
-import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -41,6 +39,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -51,13 +50,18 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
+import com.umuterayaltay.sosyal.nativeapp.ServiceLocator
 import com.umuterayaltay.sosyal.nativeapp.network.SuggestedUserDto
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.FeedEvent
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.FeedUiState
@@ -65,6 +69,7 @@ import com.umuterayaltay.sosyal.nativeapp.viewmodel.FeedViewModel
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.StoryBarEvent
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.StoryBarViewModel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.distinctUntilChanged
 
 /**
  * Animasyon turu (2026-08-08, UI güzelleştirme çalışması 3. kısım) — liste
@@ -83,9 +88,23 @@ import kotlinx.coroutines.delay
  * (composition dispose/recompose'dan ETKİLENMEYEN bir üst seviyede) hangi
  * key'lerin daha önce animasyonla girdiğini tutuyor — `seenKeys.add(key)`
  * SADECE gerçekten YENİ bir key'de `true` döner, aynı key ikinci kez
- * (scroll-geri-geliş) görüldüğünde animasyon TAMAMEN ATLANIR (AnimatedVisibility
- * bile mount edilmez). `index` en fazla 8 adıma SINIRLANIR (60ms adım = en
- * fazla 480ms).
+ * (scroll-geri-geliş) görüldüğünde animasyon TAMAMEN ATLANIR. `index` en
+ * fazla 8 adıma SINIRLANIR (60ms adım = en fazla 480ms).
+ *
+ * 2026-08-12 (performans düzeltmesi turu, kök neden #3 — bkz.
+ * shimmering-zooming-petal.md B3): ÖNCEKİ sürüm `content()`'i ÜÇ farklı
+ * kompozisyon grubundan çağırıyordu (isNew==false erken dönüş / AnimatedVisibility
+ * içinde / animationDone==true sonrası) — `animationDone` true olunca
+ * AnimatedVisibility SÖKÜLÜP content() FARKLI bir grup kimliğinde tekrar
+ * çağrılıyordu, Compose state'i taşıyamayıp TÜM PostCard alt ağacını (ExoPlayer,
+ * HorizontalPager, LinkPreviewCard state'i) dispose edip ~220ms sonra BAŞTAN
+ * kuruyordu — tam da scroll fling'i sırasında. Artık content() TEK bir yerden,
+ * hep AYNI kompozisyon grubundan çağrılıyor; giriş efekti kompozisyonu hiç
+ * etkilemeyen bir DRAW-fazı animasyonu (Animatable + graphicsLayer) — bu yüzden
+ * hiçbir alt state kaybolmuyor. `isNew`'e eklenen `index < 8` koşulu:
+ * `loadMore` ile gelen sayfalanmış postlar artık animasyon ALMAZ (kullanıcı
+ * hâlâ fling yaparken en fazla 480ms sonra beliren bir gecikme, asıl niyeti
+ * — "ilk ekran dolusu şık girsin" — bozan bir yan etkiydi).
  */
 @Composable
 internal fun PostFeedStaggerReveal(
@@ -94,43 +113,21 @@ internal fun PostFeedStaggerReveal(
     seenKeys: MutableSet<String>,
     content: @Composable () -> Unit,
 ) {
-    val isNew = remember(itemKey) { seenKeys.add(itemKey) }
+    val isNew = remember(itemKey) { seenKeys.add(itemKey) && index < 8 }
     if (!isNew) {
         content()
         return
     }
-    var visible by remember { mutableStateOf(false) }
-    // 2026-08-09 (kullanıcı raporu: "posta girince kaydırma var fakat akışta
-    // gezerken görsel kaydırma özelliği yok" — PostCard'daki HorizontalPager
-    // carousel post detayında çalışıyor ama feed'de çalışmıyordu): kök neden
-    // AnimatedVisibility'nin visible=true olduktan SONRA da SONSUZA KADAR
-    // mount'lu kalması (exit dalı hiç tetiklenmiyor, çünkü `visible` bir daha
-    // false'a dönmüyor) — yani her post'un HorizontalPager'ı ile LazyColumn
-    // arasında KALICI bir AnimatedVisibility katmanı vardı. PostDetailScreen
-    // bu wrapper'ı HİÇ kullanmıyor, bu yüzden orada carousel'in yatay
-    // sürüklemesi LazyColumn'un dikey sürüklemesiyle çakışmadan çalışıyordu.
-    // Giriş animasyonu bittikten SONRA `content()` DOĞRUDAN çağrılıyor,
-    // AnimatedVisibility SÖKÜLÜYOR — `isNew == false` erken-dönüşüyle AYNI
-    // mantık, sadece animasyon bir kere oynadıktan SONRA gerçekleşiyor.
-    var animationDone by remember { mutableStateOf(false) }
+    val progress = remember { Animatable(0f) }
     LaunchedEffect(Unit) {
-        val delayMs = index.coerceIn(0, 8) * 60L
-        if (delayMs > 0) delay(delayMs)
-        visible = true
-        delay(220L)
-        animationDone = true
+        delay(index.coerceIn(0, 8) * 60L)
+        progress.animateTo(1f, animationSpec = tween(durationMillis = 220))
     }
-    if (animationDone) {
-        content()
-        return
-    }
-    AnimatedVisibility(
-        visible = visible,
-        enter = fadeIn(animationSpec = tween(durationMillis = 220)) +
-            slideInVertically(
-                animationSpec = tween(durationMillis = 220),
-                initialOffsetY = { fullHeight -> fullHeight / 8 },
-            ),
+    Box(
+        modifier = Modifier.graphicsLayer {
+            alpha = progress.value
+            translationY = (1f - progress.value) * 24.dp.toPx()
+        },
     ) {
         content()
     }
@@ -239,13 +236,60 @@ fun FeedScreen(
     // görünür item listenin sonuna (son 3 item) yaklaşınca sonraki sayfa
     // istenir. loadMore() zaten hasMore/loadingMore guard'lı, tekrar tekrar
     // tetiklenmesi zararsız (early-return).
+    // Performans düzeltmesi (2026-08-12): snapshotFlow { listState.layoutInfo }
+    // HER scroll FRAME'inde (60-120Hz) yeniden çalışıyordu — LazyListLayoutInfo'nun
+    // equals() override'ı yok, distinctUntilChanged() hiç dedupe yapmıyordu.
+    // HideableTopBar.kt:92'deki DOĞRU desen: gerçek equality'si olan bir DEĞER
+    // (Int) emit et, nesne değil. totalItemsCount collect bloğunda TAZE okunur
+    // (snapshotFlow lambdası içinde okunsaydı, o da her frame yeniden tetiklerdi).
     LaunchedEffect(listState) {
-        snapshotFlow { listState.layoutInfo }.collect { layoutInfo ->
-            val total = layoutInfo.totalItemsCount
-            val lastVisible = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-            if (total > 0 && lastVisible >= total - 3) {
-                viewModel.loadMore()
+        snapshotFlow { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 }
+            .distinctUntilChanged()
+            .collect { lastVisible ->
+                val total = listState.layoutInfo.totalItemsCount
+                if (total > 0 && lastVisible >= total - 3) {
+                    viewModel.loadMore()
+                }
             }
+    }
+
+    // Batch C3 (Akış kaydırma performansı — Instagram tarzı otomatik oynatma):
+    // hangi video "en görünür" (viewport merkezine en yakın) olduğu SADECE bu
+    // değer DEĞİŞTİĞİNDE hesaplanır (yukarıdaki loadMore ile AYNI dedupe
+    // deseni, her-frame ÇALIŞMAZ). PostCard.kt'deki PostVideoPlayer bu id'ye
+    // eşit olan post için gerçek bir ExoPlayer/PlayerView kurar, diğerleri
+    // statik poster kalır (bkz. FeedVideoPlayerPool sınıf yorumu).
+    var activeVideoPostId by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(listState, posts) {
+        snapshotFlow {
+            val info = listState.layoutInfo
+            if (info.visibleItemsInfo.isEmpty()) return@snapshotFlow null
+            val center = (info.viewportStartOffset + info.viewportEndOffset) / 2
+            val nearestId = info.visibleItemsInfo
+                .minByOrNull { kotlin.math.abs((it.offset + it.size / 2) - center) }
+                ?.key as? String
+            posts.firstOrNull { it.id == nearestId && !it.videoUrl.isNullOrBlank() }?.id
+        }.distinctUntilChanged().collect { activeVideoPostId = it }
+    }
+
+    // Batch C3 — uygulama ömrü boyunca duraklat/devam et: sekme arkaplana
+    // alınınca (ON_PAUSE) veya Akış ekranı composition'dan tamamen ayrılınca
+    // havuzdaki TEK player duraklatılır, tekrar öne gelince (ON_RESUME) aktif
+    // video varsa devam eder. ReelsScreen.kt'nin ASLA sahip olmadığı bir
+    // disiplin — bkz. FeedVideoPlayerPool.pauseAll()/resumeIfActive() yorumu.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(Unit) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_PAUSE -> ServiceLocator.feedVideoPlayerPool.pauseAll()
+                Lifecycle.Event.ON_RESUME -> ServiceLocator.feedVideoPlayerPool.resumeIfActive()
+                else -> {}
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            ServiceLocator.feedVideoPlayerPool.pauseAll() // Akış sekmesinden ayrılınca da duraklat
         }
     }
 
@@ -345,7 +389,34 @@ fun FeedScreen(
                     // AYNI konum — index 4 (5. post), o post'un HEMEN ALTINA tek seferlik
                     // bir yatay öneri şeridi eklenir. itemsIndexed kullanıldı (posts.size
                     // <= 5 olduğunda hiç tetiklenmez, bu KABUL EDİLEBİLİR bir sınır).
-                    itemsIndexed(posts, key = { _, post -> post.id }) { index, post ->
+                    //
+                    // 2026-08-12 (performans düzeltmesi turu B4) — contentType:
+                    // aynı türden item'lar arasında Compose'un composable'ı YENİDEN
+                    // KULLANMASINI sağlar (slot reuse), scroll sırasında sıfırdan
+                    // kurulum maliyetini azaltır. Dal sırası PostCard.kt'nin GERÇEK
+                    // render önceliğiyle AYNI olmak ZORUNDA — PostCard.kt (~382-493)
+                    // önce `images` (imageUrls ?: imageUrl) doluysa görsel bloğunu,
+                    // SADECE images BOŞSA `else if (videoUrl doluysa)` video bloğunu
+                    // çizer (yani görsel varsa video ASLA render edilmez, video
+                    // dalı image'siz postlar İÇİNDİR) — bu yüzden `image` kontrolü
+                    // `video`'dan ÖNCE gelir (plandaki taslağın AKSİNE, PostCard'ın
+                    // gerçek kodu okunarak doğrulandı). poll/repostOf ise PostCard'da
+                    // görsel/videodan BAĞIMSIZ, HER ZAMAN ayrıca render edilen ek
+                    // bloklar (mutually exclusive değil) — bu yüzden en baskın görsel
+                    // öğe (image/video) yoksa fallback olarak sıralanıyor.
+                    itemsIndexed(
+                        posts,
+                        key = { _, post -> post.id },
+                        contentType = { _, post ->
+                            when {
+                                !post.imageUrls.isNullOrEmpty() || !post.imageUrl.isNullOrBlank() -> "image"
+                                !post.videoUrl.isNullOrBlank() -> "video"
+                                post.poll != null -> "poll"
+                                post.repostOf != null -> "repost"
+                                else -> "text"
+                            }
+                        },
+                    ) { index, post ->
                         PostFeedStaggerReveal(index = index, itemKey = post.id, seenKeys = seenPostKeys) {
                         Column {
                             PostCard(
@@ -365,6 +436,7 @@ fun FeedScreen(
                                 onArchivePost = { postId -> viewModel.toggleArchive(postId) },
                                 onPinPost = { postId -> viewModel.togglePin(postId) },
                                 onUsernameClick = onNavigateToProfile,
+                                isActiveVideo = post.id == activeVideoPostId,
                             )
                             if (index == 4 && suggestedUsers.isNotEmpty()) {
                                 SuggestedUsersRow(

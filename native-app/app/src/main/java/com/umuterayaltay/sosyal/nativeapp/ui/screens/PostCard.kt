@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -61,6 +62,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
@@ -69,11 +71,10 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.media3.common.MediaItem
-import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
+import com.umuterayaltay.sosyal.nativeapp.ServiceLocator
 import com.umuterayaltay.sosyal.nativeapp.ui.components.FullscreenVideoViewer
 import com.umuterayaltay.sosyal.nativeapp.ui.components.LinkPreviewCard
 import com.umuterayaltay.sosyal.nativeapp.ui.components.extractFirstUrl
@@ -193,6 +194,14 @@ fun PostCard(
     // profillere yönlendirsin") — VARSAYILAN DEĞERLİ, diğer opsiyonel
     // callback'lerle AYNI gerekçe.
     onUsernameClick: (String) -> Unit = {},
+    // Batch C3 (Akış kaydırma performansı — Instagram tarzı otomatik oynatma):
+    // hangi video "en görünür" olduğu FeedScreen.kt'de hesaplanıp buraya
+    // akıyor. VARSAYILAN DEĞERLİ (false) — diğer opsiyonel parametrelerle AYNI
+    // gerekçe: DiscoverScreen/ProfileScreen/HashtagScreen/PostDetailScreen gibi
+    // henüz bu hesaplamayı yapmayan çağrı yerleri değişmeden derlenmeye devam
+    // eder (o ekranlarda video her zaman statik poster olarak görünür, havuz
+    // SADECE Feed'de aktif).
+    isActiveVideo: Boolean = false,
 ) {
     // 2026-08-09: video tam ekranı SADECE PostVideoPlayer'ın yanındaki küçük
     // ikonla açılır (bkz. aşağıdaki video bloğu yorumu) — fotoğraflarda artık
@@ -310,7 +319,11 @@ fun PostCard(
                             text = post.username ?: "Bilinmeyen kullanıcı",
                             style = MaterialTheme.typography.titleMedium,
                         )
-                        val timeLabel = formatClockTime(post.createdAt)
+                        // Batch C1 (performans taraması): formatClockTime çağrısı
+                        // remember'landı — HER recomposition'da yeniden çağrılıp
+                        // yeniden parse etmesin (bkz. buildContentAnnotatedString'in
+                        // AŞAĞIDA zaten kullandığı AYNI desen).
+                        val timeLabel = remember(post.createdAt) { formatClockTime(post.createdAt) }
                         if (timeLabel.isNotBlank()) {
                             Text(
                                 text = timeLabel,
@@ -355,7 +368,10 @@ fun PostCard(
                 )
                 // İçerikteki İLK link için önizleme kartı (web'in "her blok için
                 // sadece ilk link" davranışıyla AYNI) — sadece görünür URL varsa.
-                extractFirstUrl(post.content)?.let { url ->
+                // Batch C2: remember'landı, HER recomposition'da regex taraması
+                // TEKRARLANMASIN (annotatedContent'in AYNI remember deseni).
+                val firstUrl = remember(post.content) { extractFirstUrl(post.content) }
+                firstUrl?.let { url ->
                     LinkPreviewCard(url = url, modifier = Modifier.padding(top = 8.dp))
                 }
             }
@@ -379,9 +395,14 @@ fun PostCard(
                 )
             }
 
-            val images = post.imageUrls?.filter { it.isNotBlank() }?.takeIf { it.isNotEmpty() }
-                ?: post.imageUrl?.takeIf { it.isNotBlank() }?.let { listOf(it) }
-                ?: emptyList()
+            // Batch C2: remember'landı — bu liste-çözümleme HER recomposition'da
+            // yeniden filter/takeIf zinciri KURMASIN (annotatedContent'in AYNI
+            // remember deseni).
+            val images = remember(post.imageUrls, post.imageUrl) {
+                post.imageUrls?.filter { it.isNotBlank() }?.takeIf { it.isNotEmpty() }
+                    ?: post.imageUrl?.takeIf { it.isNotBlank() }?.let { listOf(it) }
+                    ?: emptyList()
+            }
             if (images.isNotEmpty()) {
                 // 2026-08-09 (kullanıcı isteği: "1'den fazla görsel ekleme
                 // olsun postlarda, instadaki gibi kaydırmalı olabilir" + "
@@ -490,7 +511,12 @@ fun PostCard(
                         .padding(top = 12.dp)
                         .clip(MaterialTheme.shapes.medium),
                 ) {
-                    PostVideoPlayer(videoUrl = post.videoUrl, modifier = Modifier.matchParentSize())
+                    PostVideoPlayer(
+                        videoUrl = post.videoUrl,
+                        isActive = isActiveVideo,
+                        postId = post.id,
+                        modifier = Modifier.matchParentSize(),
+                    )
                     IconButton(
                         onClick = { showFullscreenVideo = true },
                         modifier = Modifier
@@ -747,37 +773,45 @@ fun PostCard(
 }
 
 /**
- * Feed'deki video-yalnız postlar (özellikle reels) için oynatıcı — ConversationScreen.kt'deki
- * `MessageVideoPlayer` ile AYNI desen (ayrı dosyada `private` olduğu için buraya
- * KOPYALANDI, ortak bir bileşene taşımak bu turun kapsamı DIŞI): kontrol
- * çubuğuyla (`useController = true`) oynatılıp duraklatılır, tam ekran/
- * otomatik-oynatma/loop YOK (reels için ayrı bir tam ekran akış zaten
- * ReelsScreen.kt'de var). Composable disposed olunca `release()` — LazyColumn
- * scroll'da item'lar disposed/recompose edildiği için bu ŞART, yoksa arka
- * planda çalan/bellek sızdıran ExoPlayer instance'ları birikir.
+ * Feed'deki video-yalnız postlar (özellikle reels) için oynatıcı.
+ *
+ * Batch C3 (Akış kaydırma performansı düzeltmesi, kullanıcı raporu: "kasıyormuş
+ * hissi"): ÖNCEKİ hâl her scroll-in'de KENDİ ExoPlayer.Builder().build()'ını
+ * kuruyordu (composition/ana thread'de pahalı bir işlem) — `PostFeedStaggerReveal`
+ * ile birleşince scroll başına 2 kez kurup yıkıyordu. Artık Instagram/Reels
+ * tarzı: süreç ömrü boyunca TEK, önceden kurulmuş bir ExoPlayer HAVUZU
+ * (ServiceLocator.feedVideoPlayerPool, bkz. FeedVideoPlayerPool sınıf yorumu)
+ * SADECE en görünür video için gerçek bir yüzeye (PlayerView) bağlanır.
+ * `isActive == false` iken gerçek player/AndroidView HİÇ kurulmaz — sadece
+ * statik siyah kutu + play ikonu (havuzda TEK player olduğu için aynı anda
+ * sadece BİR video gerçek yüzeye sahip olabilir).
  */
 @Composable
-private fun PostVideoPlayer(videoUrl: String, modifier: Modifier = Modifier) {
-    val context = LocalContext.current
-    val exoPlayer = remember(videoUrl) {
-        ExoPlayer.Builder(context).build().apply {
-            setMediaItem(MediaItem.fromUri(videoUrl))
-            playWhenReady = false
-            prepare()
+private fun PostVideoPlayer(videoUrl: String, isActive: Boolean, postId: String, modifier: Modifier = Modifier) {
+    if (!isActive) {
+        // AKTİF DEĞİLKEN gerçek bir PlayerView/ExoPlayer YOK — sadece statik
+        // poster. Havuzda TEK player olduğu için aynı anda sadece BİR video
+        // gerçek yüzeye sahip olabilir.
+        Box(modifier = modifier.background(Color.Black), contentAlignment = Alignment.Center) {
+            Icon(Icons.Filled.PlayArrow, contentDescription = null, tint = Color.White.copy(alpha = 0.85f))
         }
+        return
     }
-    DisposableEffect(videoUrl) {
-        onDispose { exoPlayer.release() }
-    }
+    val context = LocalContext.current
+    val pool = ServiceLocator.feedVideoPlayerPool
+    DisposableEffect(postId) { onDispose { pool.releaseIfActive(postId) } }
     AndroidView(
         factory = { ctx ->
             PlayerView(ctx).apply {
                 useController = true
-                player = exoPlayer
                 resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
             }
         },
-        update = { it.player = exoPlayer },
+        // update (factory DEĞİL) — re-kompozisyonda AYNI havuzlanmış player'ı
+        // bu PlayerView'e YENİDEN bağlar (PlayerView.player = ... ataması
+        // Media3'ün kendi iç mantığıyla ÖNCEKİ yüzeyden ayırıp YENİ yüzeye
+        // bağlıyor, elle detach/attach kodu gerekmiyor).
+        update = { view -> view.player = pool.playerFor(postId, videoUrl) },
         modifier = modifier,
     )
 }
