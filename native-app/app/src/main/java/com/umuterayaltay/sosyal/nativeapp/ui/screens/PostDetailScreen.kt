@@ -1,9 +1,13 @@
 package com.umuterayaltay.sosyal.nativeapp.ui.screens
 
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.text.ClickableText
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -68,6 +72,9 @@ import com.umuterayaltay.sosyal.nativeapp.network.CommentDto
 import com.umuterayaltay.sosyal.nativeapp.network.CommentReactionDto
 import com.umuterayaltay.sosyal.nativeapp.network.MentionSuggestionDto
 import com.umuterayaltay.sosyal.nativeapp.ui.components.MediaPickerSheet
+import com.umuterayaltay.sosyal.nativeapp.ui.components.LinkPreviewCard
+import com.umuterayaltay.sosyal.nativeapp.ui.components.buildUrlOnlyAnnotatedString
+import com.umuterayaltay.sosyal.nativeapp.ui.components.extractFirstUrl
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.PostDetailEvent
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.PostDetailViewModel
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.PostDetailViewModelFactory
@@ -388,11 +395,29 @@ private fun CommentRow(
                 modifier = usernameClickModifier,
             )
             if (!comment.content.isNullOrBlank()) {
-                Text(
-                    text = comment.content,
-                    style = MaterialTheme.typography.bodyMedium,
+                val linkColor = MaterialTheme.colorScheme.primary
+                val context = LocalContext.current
+                val annotatedContent = remember(comment.content, linkColor) {
+                    buildUrlOnlyAnnotatedString(comment.content, linkColor)
+                }
+                ClickableText(
+                    text = annotatedContent,
+                    style = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface),
                     modifier = Modifier.padding(top = 2.dp),
+                    onClick = { offset ->
+                        annotatedContent.getStringAnnotations(tag = "url", start = offset, end = offset)
+                            .firstOrNull()?.let {
+                                try {
+                                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(it.item)))
+                                } catch (e: ActivityNotFoundException) {
+                                    // Tarayıcı yok/açılamadı — kritik değil, sessizce geç.
+                                }
+                            }
+                    },
                 )
+                extractFirstUrl(comment.content)?.let { url ->
+                    LinkPreviewCard(url = url, modifier = Modifier.padding(top = 4.dp))
+                }
             }
             // Sticker — kullanıcı raporu: yorumlarda hiç görünmüyordu (CommentDto.sticker
             // doğru tipliydi ama render eden kod hiç yazılmamıştı). ConversationScreen'in

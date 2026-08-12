@@ -1,5 +1,8 @@
 package com.umuterayaltay.sosyal.nativeapp.ui.screens
 
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
@@ -72,6 +75,8 @@ import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
 import com.umuterayaltay.sosyal.nativeapp.ui.components.FullscreenVideoViewer
+import com.umuterayaltay.sosyal.nativeapp.ui.components.LinkPreviewCard
+import com.umuterayaltay.sosyal.nativeapp.ui.components.extractFirstUrl
 import com.umuterayaltay.sosyal.nativeapp.repository.Post
 import com.umuterayaltay.sosyal.nativeapp.repository.RepostEmbed
 import kotlinx.coroutines.launch
@@ -98,22 +103,47 @@ import kotlinx.coroutines.launch
  * gerekmez).
  */
 private val HASHTAG_REGEX = Regex("#([\\p{L}\\p{N}_]+)")
+// app/link_preview.py linkify_urls'teki AYNI URL regex — sadece http(s),
+// başka şema (javascript:/data: vb.) hiç eşleşmez.
+private val URL_REGEX = Regex("""https?://[^\s<>"']+""")
+private val URL_TRAILING_PUNCT = charArrayOf('.', ',', ';', ':', '!', '?', ')', ']', '}', '\'', '"')
 
+/**
+ * Hashtag VE URL'leri TEK GEÇİŞTE (aynı buildAnnotatedString çağrısı) işler —
+ * ayrı ayrı iki regex geçişi yapılsaydı (önce hashtag sonra URL veya tersi)
+ * bir eşleşmenin ürettiği metin diğerinin ARA-METİN sanılıp yanlışlıkla
+ * tekrar taranması riski olurdu (web tarafında linkify_urls/linkify_hashtags
+ * zincirinde YAŞANAN AYNI sınıf hata — bkz. app/linkify_utils.py). Burada
+ * regex'ler HAM content üzerinde birlikte, pozisyona göre sıralanarak
+ * uygulandığı için o risk hiç oluşmuyor.
+ */
 private fun buildContentAnnotatedString(content: String, hashtagColor: androidx.compose.ui.graphics.Color): AnnotatedString =
     buildAnnotatedString {
+        data class Match(val range: IntRange, val tag: String, val displayText: String, val annotation: String)
+        val matches = mutableListOf<Match>()
+        for (m in HASHTAG_REGEX.findAll(content)) {
+            // displayText orijinal yazım (büyük/küçük harf) KORUNUR, annotation
+            // (tıklama sonucu onHashtagClick'e giden değer) küçük harfe çevrilir
+            // — ÖNCEKİ davranışla birebir aynı, sadece URL'lerle tek geçişte
+            // birleştirildi.
+            matches.add(Match(m.range, "hashtag", m.value, m.groupValues[1].lowercase()))
+        }
+        for (m in URL_REGEX.findAll(content)) {
+            var end = m.range.last
+            while (end >= m.range.first && content[end] in URL_TRAILING_PUNCT) end--
+            if (end < m.range.first) continue
+            val url = content.substring(m.range.first, end + 1)
+            matches.add(Match(m.range.first..end, "url", url, url))
+        }
+        matches.sortBy { it.range.first }
+
         var lastEnd = 0
-        for (match in HASHTAG_REGEX.findAll(content)) {
+        for (match in matches) {
+            if (match.range.first < lastEnd) continue // çakışan eşleşme (olmamalı ama savunma amaçlı atla)
             append(content.substring(lastEnd, match.range.first))
             val start = length
-            withStyle(SpanStyle(color = hashtagColor)) {
-                append(match.value)
-            }
-            addStringAnnotation(
-                tag = "hashtag",
-                annotation = match.groupValues[1].lowercase(),
-                start = start,
-                end = length,
-            )
+            withStyle(SpanStyle(color = hashtagColor)) { append(match.displayText) }
+            addStringAnnotation(tag = match.tag, annotation = match.annotation, start = start, end = length)
             lastEnd = match.range.last + 1
         }
         append(content.substring(lastEnd))
@@ -302,6 +332,7 @@ fun PostCard(
             if (!post.content.isNullOrBlank()) {
                 val hashtagColor = MaterialTheme.colorScheme.primary
                 val contentColor = MaterialTheme.colorScheme.onSurface
+                val context = LocalContext.current
                 val annotatedContent = remember(post.content, hashtagColor) {
                     buildContentAnnotatedString(post.content, hashtagColor)
                 }
@@ -312,8 +343,21 @@ fun PostCard(
                     onClick = { offset ->
                         annotatedContent.getStringAnnotations(tag = "hashtag", start = offset, end = offset)
                             .firstOrNull()?.let { onHashtagClick(it.item) }
+                        annotatedContent.getStringAnnotations(tag = "url", start = offset, end = offset)
+                            .firstOrNull()?.let {
+                                try {
+                                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(it.item)))
+                                } catch (e: ActivityNotFoundException) {
+                                    // Tarayıcı yok/açılamadı — kritik değil, sessizce geç.
+                                }
+                            }
                     },
                 )
+                // İçerikteki İLK link için önizleme kartı (web'in "her blok için
+                // sadece ilk link" davranışıyla AYNI) — sadece görünür URL varsa.
+                extractFirstUrl(post.content)?.let { url ->
+                    LinkPreviewCard(url = url, modifier = Modifier.padding(top = 8.dp))
+                }
             }
 
             // Madde 5 (kullanıcı raporu: repost içeriği hiç gösterilmiyor) —

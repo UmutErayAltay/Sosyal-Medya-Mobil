@@ -1,6 +1,8 @@
 package com.umuterayaltay.sosyal.nativeapp.ui.screens
 
 import android.Manifest
+import android.content.ActivityNotFoundException
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -16,6 +18,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.text.ClickableText
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -107,7 +110,10 @@ import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
 import com.umuterayaltay.sosyal.nativeapp.ui.components.FullscreenImageViewer
 import com.umuterayaltay.sosyal.nativeapp.ui.components.FullscreenVideoViewer
+import com.umuterayaltay.sosyal.nativeapp.ui.components.LinkPreviewCard
 import com.umuterayaltay.sosyal.nativeapp.ui.components.MediaPickerSheet
+import com.umuterayaltay.sosyal.nativeapp.ui.components.buildUrlOnlyAnnotatedString
+import com.umuterayaltay.sosyal.nativeapp.ui.components.extractFirstUrl
 import com.umuterayaltay.sosyal.nativeapp.network.MessageDto
 import com.umuterayaltay.sosyal.nativeapp.network.MessageReactionDto
 import com.umuterayaltay.sosyal.nativeapp.network.MessageSearchResultDto
@@ -1088,10 +1094,17 @@ private fun MessageBubble(
                             )
                         }
                         if (!message.content.isNullOrBlank()) {
-                            Text(
-                                text = message.content,
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = contentColor,
+                            val linkContext = LocalContext.current
+                            // Link rengi contentColor'dan BİLİNÇLİ farklı (primary) —
+                            // aksi halde link, düz metinle aynı renkte olup ayırt
+                            // edilemez hale gelirdi (görsel ipucu kaybolur).
+                            val linkColor = MaterialTheme.colorScheme.primary
+                            val annotatedContent = remember(message.content, linkColor) {
+                                buildUrlOnlyAnnotatedString(message.content, linkColor)
+                            }
+                            ClickableText(
+                                text = annotatedContent,
+                                style = MaterialTheme.typography.bodyLarge.copy(color = contentColor),
                                 modifier = Modifier.padding(
                                     top = if (replyTo != null || !imageUrl.isNullOrBlank() ||
                                         !videoUrl.isNullOrBlank() || !stickerUrl.isNullOrBlank()
@@ -1101,7 +1114,20 @@ private fun MessageBubble(
                                         0.dp
                                     },
                                 ),
+                                onClick = { offset ->
+                                    annotatedContent.getStringAnnotations(tag = "url", start = offset, end = offset)
+                                        .firstOrNull()?.let {
+                                            try {
+                                                linkContext.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(it.item)))
+                                            } catch (e: ActivityNotFoundException) {
+                                                // Tarayıcı yok/açılamadı — kritik değil, sessizce geç.
+                                            }
+                                        }
+                                },
                             )
+                            extractFirstUrl(message.content)?.let { url ->
+                                LinkPreviewCard(url = url, modifier = Modifier.padding(top = 4.dp))
+                            }
                         }
                     }
                     Row(

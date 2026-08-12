@@ -53,6 +53,8 @@ import com.umuterayaltay.sosyal.nativeapp.network.MentionsApi
 import com.umuterayaltay.sosyal.nativeapp.repository.MentionsRepository
 import com.umuterayaltay.sosyal.nativeapp.repository.CallSignalingManager
 import com.umuterayaltay.sosyal.nativeapp.repository.CallSessionManager
+import com.umuterayaltay.sosyal.nativeapp.network.LinkPreviewApi
+import com.umuterayaltay.sosyal.nativeapp.repository.LinkPreviewRepository
 // FAZ5_IMPORTS_MARKER — her ajan kendi Api/Repository import'unu bu satırın
 // HEMEN ÜSTÜNE ekler (dalga başına ayrı ajan çakışmasın diye).
 
@@ -122,6 +124,8 @@ object ServiceLocator {
     // bkz. UpdateRepository.kt yorumu, backend'in bearer token'lı Retrofit
     // istemcisinden BİLİNÇLİ olarak AYRI (RetrofitClient.createGithub()).
     lateinit var updateRepository: UpdateRepository
+        private set
+    lateinit var linkPreviewRepository: LinkPreviewRepository
         private set
     // FAZ5_LATEINIT_MARKER — her ajan kendi `lateinit var xxxRepository`'sini
     // bu satırın HEMEN ÜSTÜNE ekler.
@@ -205,6 +209,9 @@ object ServiceLocator {
         val githubApi = RetrofitClient.createGithub().create(GithubApi::class.java)
         val updatePreferenceStore = UpdatePreferenceStore(appContext)
         updateRepository = UpdateRepository(githubApi, updatePreferenceStore)
+
+        val linkPreviewApi = retrofit.create(LinkPreviewApi::class.java)
+        linkPreviewRepository = LinkPreviewRepository(linkPreviewApi)
 
         // FAZ5_INIT_MARKER — her ajan kendi `val xxxApi = retrofit.create(...)`
         // + `xxxRepository = XxxRepository(xxxApi)` satırlarını bu satırın

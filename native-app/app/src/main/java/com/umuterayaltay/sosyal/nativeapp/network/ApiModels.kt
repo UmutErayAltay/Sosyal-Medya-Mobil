@@ -1473,3 +1473,20 @@ data class UpdateHighlightRequest(
     @SerializedName("cover_url") val coverUrl: String? = null,
 )
 // NOT: yanıt {"ok":true}/{"error":"..."} şekli — SimpleOkResponse reuse edilir.
+
+// ---- Link önizleme (post/mesajlarda paylaşılan URL'ler) ----
+// GET /api/v1/link-preview?url=... — app/api_v1/link_preview.py ile birebir
+// eşleşir (web tarafının AYNI JSON sözleşmesi, orada da {"ok": true/false}).
+// ok:false HTTP 200 ile döner (önizleme yok, HATA değil — backend'in
+// gifs.py'deki graceful-degradation felsefesiyle aynı), bu yüzden repository
+// katmanında bunu ayrı bir "NotAvailable" durumu olarak ele almak gerekir,
+// HTTP hatasıyla KARIŞTIRILMAMALI.
+data class LinkPreviewDto(
+    val ok: Boolean,
+    val url: String? = null,
+    val domain: String? = null,
+    val title: String? = null,
+    val description: String? = null,
+    val image: String? = null,
+    @SerializedName("site_name") val siteName: String? = null,
+)
