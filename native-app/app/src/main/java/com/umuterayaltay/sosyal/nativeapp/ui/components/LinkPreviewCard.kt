@@ -3,7 +3,6 @@ package com.umuterayaltay.sosyal.nativeapp.ui.components
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
-import android.webkit.WebView
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -38,7 +37,9 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import coil.compose.AsyncImage
-import com.umuterayaltay.sosyal.nativeapp.BuildConfig
+import com.pierfrancescosoffritti.androidyoutubeplayer.core.player.YouTubePlayer
+import com.pierfrancescosoffritti.androidyoutubeplayer.core.player.listeners.AbstractYouTubePlayerListener
+import com.pierfrancescosoffritti.androidyoutubeplayer.core.player.views.YouTubePlayerView
 import com.umuterayaltay.sosyal.nativeapp.ServiceLocator
 import com.umuterayaltay.sosyal.nativeapp.network.LinkPreviewDto
 import com.umuterayaltay.sosyal.nativeapp.repository.LinkPreviewResult
@@ -48,7 +49,7 @@ import com.umuterayaltay.sosyal.nativeapp.repository.LinkPreviewResult
  * web'in `linkPreview.js`'i ile AYNI davranış/platform ayrımı (YouTube tıkla-
  * oynat embed, Twitter/X tweet-stili kart, diğerleri generic kart). PostCard/
  * CommentRow/MessageBubble'ın her biri bu TEK composable'ı çağırır (backend
- * çağrısı+cache tek yerde, WebView/AsyncImage detayları tekrarlanmaz).
+ * çağrısı+cache tek yerde, YouTubePlayerView/AsyncImage detayları tekrarlanmaz).
  *
  * Fetch başarısız veya ok:false → HİÇBİR ŞEY render edilmez (backend'in
  * gifs.py/turn-credentials proxy'lerindeki graceful-degradation felsefesiyle
@@ -217,17 +218,14 @@ private fun YouTubeLinkPreviewCard(data: LinkPreviewDto, videoId: String, onOpen
     Column(
         modifier = modifier
             .fillMaxWidth()
-            // .clip() SADECE oynatmıyorken uygulanır — WebView'ı (Chromium
-            // draw-functor) saran her kırpma/graphics-layer katmanı donanım
-            // video yolunun kompozisyon modunu bozup SİYAH KAREYE
-            // düşürebiliyor (SurfaceView/offscreen-compositing çakışması,
-            // kullanıcı raporu "siyah ekran kalıyor"un kök nedeni). .clip()
-            // ÇİZİM-fazı modifier'ı (graphicsLayer) — ölçüm/yerleşime
-            // dokunmaz, bu yüzden koşullu hale getirmek layout regresyonu
-            // YARATMAZ (matchParentSize düzeltmesindeki riskten FARKLI).
-            // Yuvarlak görünüm zaten .border() ile çiziliyor, .clip()'e bağlı
-            // DEĞİL. Asıl düzeltme aşağıdaki embed yükleme değişikliği (aynı
-            // commit'te, bilinçli olarak birlikte) — bkz. YouTubeEmbedWebView.
+            // .clip() SADECE oynatmıyorken uygulanır — video render eden
+            // View'ı (SurfaceView/TextureView tabanlı olabilir) saran her
+            // kırpma/graphics-layer katmanının donanım video yolunu
+            // bozabileceği teorisine karşı ZARARSIZ bir önlem (çizim-fazı
+            // modifier, ölçüm/yerleşime dokunmaz — layout regresyonu riski
+            // YOK). Asıl düzeltme YouTubeEmbedPlayer'ın çıplak WebView yerine
+            // android-youtube-player kütüphanesini kullanması (bkz. o
+            // composable'ın yorumu + build.gradle.kts bağımlılık notu).
             .then(if (playing) Modifier else Modifier.clip(MaterialTheme.shapes.medium))
             .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f), MaterialTheme.shapes.medium),
     ) {
@@ -236,11 +234,11 @@ private fun YouTubeLinkPreviewCard(data: LinkPreviewDto, videoId: String, onOpen
                 // matchParentSize() ŞART — Box'ın aspectRatio ile belirlenen
                 // yüksekliğini DOLDURMAK için (fillMaxWidth() sadece genişliği
                 // doldurur, AndroidView'ın kendi "intrinsic" yüksekliği
-                // olmadığından WebView neredeyse 0 yükseklikte, GÖRÜNMEZ
-                // kalırdı — kullanıcı raporu "video oynatmıyor"un kök nedeni
-                // buydu, PostVideoPlayer'ın AYNI Box+matchParentSize deseni
-                // burada da uygulandı).
-                YouTubeEmbedWebView(videoId = videoId, modifier = Modifier.matchParentSize())
+                // olmadığından YouTubePlayerView neredeyse 0 yükseklikte,
+                // GÖRÜNMEZ kalırdı — bu dersi ilk WebView denemesinde
+                // öğrenmiştik, PostVideoPlayer'ın AYNI Box+matchParentSize
+                // deseni burada da uygulandı).
+                YouTubeEmbedPlayer(videoId = videoId, modifier = Modifier.matchParentSize())
             } else {
                 AsyncImage(
                     model = "https://img.youtube.com/vi/$videoId/hqdefault.jpg",
@@ -271,59 +269,35 @@ private fun YouTubeLinkPreviewCard(data: LinkPreviewDto, videoId: String, onOpen
 }
 
 /**
- * Uygulamadaki İLK WebView kullanımı. `videoId` çağıran yerde (`extractYouTubeId`)
- * 11 karakterlik `YT_ID_RE` ile DOĞRULANMIŞ — HTML/URL enjeksiyonu mümkün
- * değil, bu yüzden aşağıdaki string interpolasyonu güvenli.
- *
- * Embed, `webView.loadUrl(embedUrl)` ile ÜST SEVİYE doküman olarak DEĞİL,
- * kendi ürettiğimiz küçük bir HTML sayfasına gömülü `<iframe>` olarak,
- * `loadDataWithBaseURL("https://www.youtube.com", ...)` ile yükleniyor — web
- * tarafında ZATEN ÇALIŞAN yaklaşımın (linkPreview.js'te sayfaya gömülü
- * `<iframe>`) native karşılığı. Bare `loadUrl()` embed sayfasını gerçek bir
- * YouTube-güvenilir origin/referrer OLMADAN top-level navigasyon gibi
- * açıyordu — kullanıcı raporundaki "siyah ekran" büyük ölçüde buna bağlıydı.
+ * ÖNCE çıplak WebView + loadUrl (top-level embed navigasyonu), SONRA
+ * loadDataWithBaseURL ile gömülü iframe olarak denendi — ikisi de gerçek
+ * cihazda siyah ekranla sonuçlandı (kullanıcı raporu, iki ayrı düzeltme
+ * turu sonrası da doğrulandı). Çıplak WebView'i cihaz erişimi olmadan daha
+ * fazla debug etmek yerine, YouTube'un resmi IFrame Player API'sini DOĞRU
+ * origin/postMessage yönetimiyle uygulayan, binlerce üretim uygulamasında
+ * kullanılan `android-youtube-player` kütüphanesine geçildi (bkz.
+ * build.gradle.kts bağımlılık yorumu). PostVideoPlayer'daki (bu dosyanın
+ * ait olduğu paketin bir üst dizininde, PostCard.kt) ExoPlayer+AndroidView
+ * deseniyle BİREBİR aynı: remember + DisposableEffect(release).
  */
 @Composable
-private fun YouTubeEmbedWebView(videoId: String, modifier: Modifier = Modifier) {
+private fun YouTubeEmbedPlayer(videoId: String, modifier: Modifier = Modifier) {
     val context = LocalContext.current
-    // remember: LazyColumn recompose/scroll'da her seferinde YENİ bir WebView
-    // yaratılmasın (ExoPlayer'ı PostVideoPlayer'da remember(videoUrl) ile
-    // tutmakla AYNI gerekçe) — composable disposed olunca (scroll'da item
-    // dışarı çıkınca) destroy() ŞART, yoksa arka planda oynamaya devam eden/
-    // bellek sızdıran WebView instance'ları birikir.
-    val webView = remember(videoId) {
-        // Sadece debug build'de chrome://inspect ile WebView içi incelenebilsin
-        // — RetrofitClient.kt'deki BuildConfig.DEBUG deseniyle AYNI. Statik
-        // metod, tekrar çağrılması zararsız.
-        if (BuildConfig.DEBUG) WebView.setWebContentsDebuggingEnabled(true)
-        WebView(context).apply {
-            settings.javaScriptEnabled = true
-            settings.mediaPlaybackRequiresUserGesture = false
-            settings.domStorageEnabled = true
-            webChromeClient = android.webkit.WebChromeClient()
-            // loadDataWithBaseURL ile yüklenen sayfada iframe içi
-            // navigasyonların WebView'da KALMASI için ŞART (client YOKKEN
-            // bazı navigasyonlar harici tarayıcıya/YouTube app'ine kaçar).
-            webViewClient = android.webkit.WebViewClient()
-            setBackgroundColor(android.graphics.Color.BLACK)
-
-            val html = """
-                <!DOCTYPE html><html><head>
-                <meta name="viewport" content="width=device-width, initial-scale=1">
-                <style>html,body{margin:0;padding:0;height:100%;background:#000;overflow:hidden}
-                iframe{border:0;display:block;width:100%;height:100%}</style>
-                </head><body>
-                <iframe src="https://www.youtube-nocookie.com/embed/$videoId?autoplay=1&playsinline=1&fs=0&rel=0&modestbranding=1"
-                        allow="autoplay; encrypted-media; picture-in-picture"></iframe>
-                </body></html>
-            """.trimIndent()
-            loadDataWithBaseURL("https://www.youtube.com", html, "text/html", "utf-8", null)
+    val playerView = remember(videoId) {
+        YouTubePlayerView(context).apply {
+            addYouTubePlayerListener(object : AbstractYouTubePlayerListener() {
+                override fun onReady(youTubePlayer: YouTubePlayer) {
+                    // videoId çağıran yerde YT_ID_RE ("^[\\w-]{11}$") ile
+                    // DOĞRULANMIŞ — enjeksiyon riski yok.
+                    youTubePlayer.loadVideo(videoId, 0f)
+                }
+            })
         }
     }
     DisposableEffect(videoId) {
-        onDispose { webView.destroy() }
+        onDispose { playerView.release() }
     }
-    AndroidView(factory = { webView }, modifier = modifier)
+    AndroidView(factory = { playerView }, modifier = modifier)
 }
 
 // --- Tweet-benzeri kart ---------------------------------------------------

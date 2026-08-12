@@ -207,6 +207,22 @@ dependencies {
     implementation("io.getstream:stream-webrtc-android:1.3.9")
     implementation("io.getstream:stream-webrtc-android-compose:1.3.9")
 
+    // Link önizleme kartında YouTube gömülü video oynatma (native görev) —
+    // ÖNCE çıplak WebView + loadDataWithBaseURL ile denendi (kullanıcının
+    // web tarafında ÇALIŞAN "sayfaya gömülü iframe" yaklaşımının native
+    // karşılığı olarak) ama gerçek cihazda YİNE siyah ekran raporlandı —
+    // web araştırması (Compose+SurfaceView offscreen-compositing teorisi)
+    // yeterli KANIT değildi, kod incelemesiyle bazı varsayımları çürütüldü
+    // (PostVideoPlayer'ın AYNI clip-ata deseniyle ExoPlayer sorunsuz
+    // çalışıyor). Cihaz erişimi olmadan çıplak WebView'i daha fazla debug
+    // etmek yerine, YouTube'un resmi IFrame Player API'sini DOĞRU origin/
+    // postMessage yönetimiyle uygulayan, binlerce üretim uygulamasında
+    // kullanılan bu kütüphaneye geçildi (Maven Central, JitPack GEREKMEZ —
+    // LiveKit'in aksine). Kullanım deseni PostVideoPlayer'daki AndroidView+
+    // remember+DisposableEffect(release) ile AYNI, sadece PlayerView yerine
+    // YouTubePlayerView.
+    implementation("com.pierfrancescosoffritti.androidyoutubeplayer:core:13.0.0")
+
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
