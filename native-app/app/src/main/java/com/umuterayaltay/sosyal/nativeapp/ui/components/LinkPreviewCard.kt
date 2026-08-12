@@ -221,13 +221,20 @@ private fun YouTubeLinkPreviewCard(data: LinkPreviewDto, videoId: String, onOpen
     ) {
         Box(modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f)) {
             if (playing) {
-                YouTubeEmbedWebView(videoId = videoId, modifier = Modifier.fillMaxWidth())
+                // matchParentSize() ŞART — Box'ın aspectRatio ile belirlenen
+                // yüksekliğini DOLDURMAK için (fillMaxWidth() sadece genişliği
+                // doldurur, AndroidView'ın kendi "intrinsic" yüksekliği
+                // olmadığından WebView neredeyse 0 yükseklikte, GÖRÜNMEZ
+                // kalırdı — kullanıcı raporu "video oynatmıyor"un kök nedeni
+                // buydu, PostVideoPlayer'ın AYNI Box+matchParentSize deseni
+                // burada da uygulandı).
+                YouTubeEmbedWebView(videoId = videoId, modifier = Modifier.matchParentSize())
             } else {
                 AsyncImage(
                     model = "https://img.youtube.com/vi/$videoId/hqdefault.jpg",
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxWidth().clickable { playing = true },
+                    modifier = Modifier.matchParentSize().clickable { playing = true },
                 )
                 Box(
                     modifier = Modifier
@@ -272,6 +279,15 @@ private fun YouTubeEmbedWebView(videoId: String, modifier: Modifier = Modifier) 
         WebView(context).apply {
             settings.javaScriptEnabled = true
             settings.mediaPlaybackRequiresUserGesture = false
+            // YouTube'un embed player'ı durumu (oynatma ilerlemesi vb.)
+            // localStorage/sessionStorage'a yazıyor — DOM storage KAPALIYSA
+            // player HİÇBİR hata vermeden sessizce başlatılamıyor (siyah
+            // ekran/oynamıyor gibi görünüyor). webChromeClient de bazı
+            // cihazlarda video elemanının render edilmesi için gerekiyor
+            // (varsayılan WebClient'ın aksine progress/video callback'lerini
+            // karşılıyor).
+            settings.domStorageEnabled = true
+            webChromeClient = android.webkit.WebChromeClient()
             loadUrl("https://www.youtube-nocookie.com/embed/$videoId?autoplay=1")
         }
     }
