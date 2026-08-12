@@ -1489,4 +1489,9 @@ data class LinkPreviewDto(
     val description: String? = null,
     val image: String? = null,
     @SerializedName("site_name") val siteName: String? = null,
+    // Backend (app/link_preview.py::_is_media_image) hesaplar — `image` gerçek
+    // bir medya karesi mi (büyük 16:9 göster) yoksa küçük profil avatarı mı
+    // (36dp yuvarlak göster)? Sınıflandırma web ile TEK kaynaktan paylaşılsın
+    // diye istemcide TEKRARLANMAZ (domain çıkarımıyla aynı desen).
+    @SerializedName("image_is_media") val imageIsMedia: Boolean = false,
 )

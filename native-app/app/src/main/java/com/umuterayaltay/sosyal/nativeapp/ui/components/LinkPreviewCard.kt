@@ -38,6 +38,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import coil.compose.AsyncImage
+import com.umuterayaltay.sosyal.nativeapp.BuildConfig
 import com.umuterayaltay.sosyal.nativeapp.ServiceLocator
 import com.umuterayaltay.sosyal.nativeapp.network.LinkPreviewDto
 import com.umuterayaltay.sosyal.nativeapp.repository.LinkPreviewResult
@@ -216,7 +217,18 @@ private fun YouTubeLinkPreviewCard(data: LinkPreviewDto, videoId: String, onOpen
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .clip(MaterialTheme.shapes.medium)
+            // .clip() SADECE oynatmıyorken uygulanır — WebView'ı (Chromium
+            // draw-functor) saran her kırpma/graphics-layer katmanı donanım
+            // video yolunun kompozisyon modunu bozup SİYAH KAREYE
+            // düşürebiliyor (SurfaceView/offscreen-compositing çakışması,
+            // kullanıcı raporu "siyah ekran kalıyor"un kök nedeni). .clip()
+            // ÇİZİM-fazı modifier'ı (graphicsLayer) — ölçüm/yerleşime
+            // dokunmaz, bu yüzden koşullu hale getirmek layout regresyonu
+            // YARATMAZ (matchParentSize düzeltmesindeki riskten FARKLI).
+            // Yuvarlak görünüm zaten .border() ile çiziliyor, .clip()'e bağlı
+            // DEĞİL. Asıl düzeltme aşağıdaki embed yükleme değişikliği (aynı
+            // commit'te, bilinçli olarak birlikte) — bkz. YouTubeEmbedWebView.
+            .then(if (playing) Modifier else Modifier.clip(MaterialTheme.shapes.medium))
             .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f), MaterialTheme.shapes.medium),
     ) {
         Box(modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f)) {
@@ -259,13 +271,17 @@ private fun YouTubeLinkPreviewCard(data: LinkPreviewDto, videoId: String, onOpen
 }
 
 /**
- * Uygulamadaki İLK WebView kullanımı — sadece SABİT, kendi ürettiğimiz
- * `youtube-nocookie.com/embed/{id}` URL'sini yükler (11 karakterlik video
- * ID'si regex ile doğrulanmış), kullanıcının/dış sitenin verdiği HAM HTML/URL
- * ASLA yüklenmez — bu yüzden JavaScript etkinleştirmek (embed player'ın
- * çalışması için ZORUNLU) güvenlik riski taşımaz. Kullanıcı play butonuna
- * BASMADAN hiçbir YouTube isteği/çerezi gitmez (tıkla-oynat), autoplay=1
- * SADECE bu tıklamadan SONRA devreye girer.
+ * Uygulamadaki İLK WebView kullanımı. `videoId` çağıran yerde (`extractYouTubeId`)
+ * 11 karakterlik `YT_ID_RE` ile DOĞRULANMIŞ — HTML/URL enjeksiyonu mümkün
+ * değil, bu yüzden aşağıdaki string interpolasyonu güvenli.
+ *
+ * Embed, `webView.loadUrl(embedUrl)` ile ÜST SEVİYE doküman olarak DEĞİL,
+ * kendi ürettiğimiz küçük bir HTML sayfasına gömülü `<iframe>` olarak,
+ * `loadDataWithBaseURL("https://www.youtube.com", ...)` ile yükleniyor — web
+ * tarafında ZATEN ÇALIŞAN yaklaşımın (linkPreview.js'te sayfaya gömülü
+ * `<iframe>`) native karşılığı. Bare `loadUrl()` embed sayfasını gerçek bir
+ * YouTube-güvenilir origin/referrer OLMADAN top-level navigasyon gibi
+ * açıyordu — kullanıcı raporundaki "siyah ekran" büyük ölçüde buna bağlıydı.
  */
 @Composable
 private fun YouTubeEmbedWebView(videoId: String, modifier: Modifier = Modifier) {
@@ -276,19 +292,32 @@ private fun YouTubeEmbedWebView(videoId: String, modifier: Modifier = Modifier) 
     // dışarı çıkınca) destroy() ŞART, yoksa arka planda oynamaya devam eden/
     // bellek sızdıran WebView instance'ları birikir.
     val webView = remember(videoId) {
+        // Sadece debug build'de chrome://inspect ile WebView içi incelenebilsin
+        // — RetrofitClient.kt'deki BuildConfig.DEBUG deseniyle AYNI. Statik
+        // metod, tekrar çağrılması zararsız.
+        if (BuildConfig.DEBUG) WebView.setWebContentsDebuggingEnabled(true)
         WebView(context).apply {
             settings.javaScriptEnabled = true
             settings.mediaPlaybackRequiresUserGesture = false
-            // YouTube'un embed player'ı durumu (oynatma ilerlemesi vb.)
-            // localStorage/sessionStorage'a yazıyor — DOM storage KAPALIYSA
-            // player HİÇBİR hata vermeden sessizce başlatılamıyor (siyah
-            // ekran/oynamıyor gibi görünüyor). webChromeClient de bazı
-            // cihazlarda video elemanının render edilmesi için gerekiyor
-            // (varsayılan WebClient'ın aksine progress/video callback'lerini
-            // karşılıyor).
             settings.domStorageEnabled = true
             webChromeClient = android.webkit.WebChromeClient()
-            loadUrl("https://www.youtube-nocookie.com/embed/$videoId?autoplay=1")
+            // loadDataWithBaseURL ile yüklenen sayfada iframe içi
+            // navigasyonların WebView'da KALMASI için ŞART (client YOKKEN
+            // bazı navigasyonlar harici tarayıcıya/YouTube app'ine kaçar).
+            webViewClient = android.webkit.WebViewClient()
+            setBackgroundColor(android.graphics.Color.BLACK)
+
+            val html = """
+                <!DOCTYPE html><html><head>
+                <meta name="viewport" content="width=device-width, initial-scale=1">
+                <style>html,body{margin:0;padding:0;height:100%;background:#000;overflow:hidden}
+                iframe{border:0;display:block;width:100%;height:100%}</style>
+                </head><body>
+                <iframe src="https://www.youtube-nocookie.com/embed/$videoId?autoplay=1&playsinline=1&fs=0&rel=0&modestbranding=1"
+                        allow="autoplay; encrypted-media; picture-in-picture"></iframe>
+                </body></html>
+            """.trimIndent()
+            loadDataWithBaseURL("https://www.youtube.com", html, "text/html", "utf-8", null)
         }
     }
     DisposableEffect(videoId) {
@@ -300,45 +329,63 @@ private fun YouTubeEmbedWebView(videoId: String, modifier: Modifier = Modifier) 
 // --- Tweet-benzeri kart ---------------------------------------------------
 @Composable
 private fun TweetLinkPreviewCard(data: LinkPreviewDto, onOpen: () -> Unit, modifier: Modifier = Modifier) {
+    // Tek bir `image` alanı var: YA avatar YA medya karesi, ikisi asla
+    // birlikte gelmez (X'in og:image'i tweet türüne göre birini döndürür) —
+    // bu yüzden medya varyantında avatar "kaldırılmıyor", zaten hiç yok.
+    val hasMedia = data.imageIsMedia && !data.image.isNullOrBlank()
+    val hasAvatar = !data.imageIsMedia && !data.image.isNullOrBlank()
+
     Column(
         modifier = modifier
             .fillMaxWidth()
             .clip(MaterialTheme.shapes.medium)
             .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f), MaterialTheme.shapes.medium)
-            .clickable(onClick = onOpen)
-            .padding(10.dp),
+            .clickable(onClick = onOpen),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            if (!data.image.isNullOrBlank()) {
-                AsyncImage(
-                    model = data.image,
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.size(36.dp).clip(CircleShape),
-                )
-            }
-            if (!data.title.isNullOrBlank()) {
-                Text(
-                    text = stripTweetTitleSuffix(data.title),
-                    style = MaterialTheme.typography.titleSmall,
-                    modifier = Modifier.padding(start = 8.dp),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
+        if (hasMedia) {
+            // X, tweet videosunu OYNATILABİLİR sunmuyor (og:video/public embed
+            // API YOK) — bu yüzden inline oynatma YOK, sadece gerçek önizleme
+            // karesi; karta dokunmak tweet'i tarayıcıda/X uygulamasında açar.
+            AsyncImage(
+                model = data.image,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f),
+            )
         }
-        if (!data.description.isNullOrBlank()) {
+        Column(modifier = Modifier.padding(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (hasAvatar) {
+                    AsyncImage(
+                        model = data.image,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.size(36.dp).clip(CircleShape),
+                    )
+                }
+                if (!data.title.isNullOrBlank()) {
+                    Text(
+                        text = stripTweetTitleSuffix(data.title),
+                        style = MaterialTheme.typography.titleSmall,
+                        modifier = Modifier.padding(start = if (hasAvatar) 8.dp else 0.dp),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+            if (!data.description.isNullOrBlank()) {
+                Text(
+                    text = data.description,
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(top = 6.dp),
+                )
+            }
             Text(
-                text = data.description,
-                style = MaterialTheme.typography.bodyMedium,
+                text = if (data.domain?.lowercase() == "x.com") "X" else "Twitter",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 6.dp),
             )
         }
-        Text(
-            text = if (data.domain?.lowercase() == "x.com") "X" else "Twitter",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(top = 6.dp),
-        )
     }
 }
