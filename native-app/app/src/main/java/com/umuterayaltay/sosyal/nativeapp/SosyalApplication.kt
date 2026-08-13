@@ -16,6 +16,13 @@ class SosyalApplication : Application(), ImageLoaderFactory {
         // indirmeden kalan APK/yama artıklarını temizle — hedef henüz
         // bilinmediği için (checkForUpdate henüz çağrılmadı) HEPSİ silinir.
         UpdateStorage.cleanStale(this)
+        // 2026-08-14 (kullanıcı raporu: "ilk açılışta akış kaydırırken
+        // takılıyor, sonra düzeliyor") — ExoPlayer havuzunu burada, ana
+        // thread'de ama UYGULAMA SOĞUK BAŞLARKEN inşa et (bkz.
+        // FeedVideoPlayerPool.warmUp() yorumu) — Feed ekranı ilk kez
+        // kaydırılıp ilk video aktif olduğunda artık build() maliyeti
+        // ZATEN bitmiş oluyor.
+        ServiceLocator.feedVideoPlayerPool.warmUp()
     }
 
     // 2026-08-08 (kullanıcı raporu: "gifler hareket etmiyor") — Coil'in

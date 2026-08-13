@@ -26,6 +26,24 @@ class FeedVideoPlayerPool(context: Context) {
     }
     private var activePostId: String? = null
 
+    /** ExoPlayer'ı ŞİMDİ (çağıranın thread'inde) inşa eder — `by lazy`'nin
+     * kendisi thread-safe ama BU çağrının HANGİ thread'de yapıldığı önemli:
+     * ExoPlayer, build() edildiği thread'e "sahip" olur (Looper affinity) —
+     * sonraki TÜM `playerFor()` çağrıları da AYNI thread'den (ana thread,
+     * Compose'un AndroidView update lambda'sı) geldiği için bu fonksiyon da
+     * ana thread'den çağrılmalı (bkz. SosyalApplication.onCreate()).
+     *
+     * 2026-08-14 (kullanıcı raporu: "ilk açılışta akış yüklenirken kaydırma
+     * takılıyor, sonra düzeliyor") — ÖNCEDEN `player` ilk kez `playerFor()`
+     * içinde, yani kullanıcı akışta İLK videoya geldiğinde (tam kaydırma
+     * ortasında) dokunuluyordu — ExoPlayer.Builder().build() (reflective
+     * codec keşfi, renderer/track-selector/load-control kurulumu) gerçek
+     * cihazlarda onlarca ms sürebilen, ANA THREAD'i bloklayan bir işlem.
+     * `warmUp()` bunu uygulama SOĞUK BAŞLARKEN (ilk frame çizilmeden ÖNCE,
+     * kullanıcı zaten kısa bir başlangıç gecikmesine alışkın olduğu an)
+     * yapıp akış ilk kez kaydırılana kadar maliyeti bitirmiş oluyor. */
+    fun warmUp() { player }
+
     /** postId zaten aktifse SADECE mevcut player'ı döner (setMediaItem
      * TEKRARLANMAZ — video baştan sarılmasın). */
     fun playerFor(postId: String, videoUrl: String): ExoPlayer {
