@@ -428,46 +428,36 @@ fun PostCard(
                 // ORADA tap-to-fullscreen KORUNDU — bu karar SADECE post
                 // kartları için).
                 Column(modifier = Modifier.padding(top = 12.dp)) {
-                    val pagerState = rememberPagerState(pageCount = { images.size })
+                    // 2026-08-14 (Gemini'den ikinci görüş, doğrulanıp uygulandı)
+                    // — HorizontalPager arka planda SubcomposeLayout kullanıyor;
+                    // TEK görselli postlarda (çoğunluk) bu subcomposition
+                    // maliyeti tamamen GEREKSİZDİ, sadece çoklu-görsel
+                    // carousel'de gerçekten gerekiyor. Tek görselde artık
+                    // Pager'a hiç girilmiyor, düz AsyncImage kullanılıyor.
+                    val pagerState = if (images.size > 1) rememberPagerState(pageCount = { images.size }) else null
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(400.dp)
                             .clip(MaterialTheme.shapes.medium),
                     ) {
-                        HorizontalPager(
-                            state = pagerState,
-                            modifier = Modifier.matchParentSize(),
-                        ) { page ->
-                            // 2026-08-13 (kullanıcı raporu: "gif postlarda
-                            // kasma var") — video (PostVideoPlayer) gibi bir
-                            // "sadece en görünür olan oynasın" kısıtlaması
-                            // GIF'lerde HİÇ yoktu: viewport'ta aynı anda
-                            // görünen HER GIF sürekli kare-kare yeniden
-                            // çiziliyordu. `onSuccess` ile yakalanan
-                            // android.graphics.drawable.Animatable (Coil'in
-                            // GIF/AnimatedImageDrawable çözücülerinin ürettiği
-                            // TÜM animasyonlu drawable'lar bunu implement
-                            // eder — statik görsellerde bu cast `null` olur,
-                            // no-op) SADECE bu post viewport merkezine en
-                            // yakınken VE pager'da bu sayfa görünürken
-                            // oynatılır, diğerleri ilk karede duraklar.
-                            var pageAnimatable by remember(images[page]) {
-                                mutableStateOf<android.graphics.drawable.Animatable?>(null)
+                        if (pagerState != null) {
+                            HorizontalPager(
+                                state = pagerState,
+                                modifier = Modifier.matchParentSize(),
+                            ) { page ->
+                                PostImageContent(
+                                    url = images[page],
+                                    shouldAnimate = isActiveMedia && pagerState.currentPage == page,
+                                    modifier = Modifier.fillMaxSize(),
+                                )
                             }
-                            val shouldAnimate = isActiveMedia && pagerState.currentPage == page
-                            AsyncImage(
-                                model = images[page],
-                                contentDescription = null,
-                                contentScale = ContentScale.Fit,
-                                modifier = Modifier.fillMaxSize(),
-                                onSuccess = { state ->
-                                    pageAnimatable = state.result.drawable as? android.graphics.drawable.Animatable
-                                },
+                        } else {
+                            PostImageContent(
+                                url = images[0],
+                                shouldAnimate = isActiveMedia,
+                                modifier = Modifier.matchParentSize(),
                             )
-                            LaunchedEffect(shouldAnimate, pageAnimatable) {
-                                if (shouldAnimate) pageAnimatable?.start() else pageAnimatable?.stop()
-                            }
                         }
                     }
                     if (images.size > 1) {
@@ -478,7 +468,7 @@ fun PostCard(
                             horizontalArrangement = Arrangement.Center,
                         ) {
                             repeat(images.size) { i ->
-                                val active = pagerState.currentPage == i
+                                val active = pagerState?.currentPage == i
                                 Box(
                                     modifier = Modifier
                                         .padding(horizontal = 3.dp)
@@ -816,6 +806,28 @@ fun PostCard(
  * statik siyah kutu + play ikonu (havuzda TEK player olduğu için aynı anda
  * sadece BİR video gerçek yüzeye sahip olabilir).
  */
+/**
+ * Tek görselli VE çoklu-görselli (HorizontalPager sayfası) carousel'in
+ * PAYLAŞTIĞI görsel + GIF-kısıtlama mantığı — bkz. 2026-08-13 GIF gating
+ * yorumu (images carousel çağrı yeri). `onSuccess` ile yakalanan
+ * android.graphics.drawable.Animatable (statik görsellerde `null`, no-op)
+ * sadece [shouldAnimate] true iken oynatılır.
+ */
+@Composable
+private fun PostImageContent(url: String, shouldAnimate: Boolean, modifier: Modifier = Modifier) {
+    var animatable by remember(url) { mutableStateOf<android.graphics.drawable.Animatable?>(null) }
+    AsyncImage(
+        model = url,
+        contentDescription = null,
+        contentScale = ContentScale.Fit,
+        modifier = modifier,
+        onSuccess = { state -> animatable = state.result.drawable as? android.graphics.drawable.Animatable },
+    )
+    LaunchedEffect(shouldAnimate, animatable) {
+        if (shouldAnimate) animatable?.start() else animatable?.stop()
+    }
+}
+
 @Composable
 private fun PostVideoPlayer(videoUrl: String, isActive: Boolean, postId: String, modifier: Modifier = Modifier) {
     if (!isActive) {

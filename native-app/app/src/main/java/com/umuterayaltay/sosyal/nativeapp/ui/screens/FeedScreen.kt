@@ -280,8 +280,18 @@ fun FeedScreen(
     // — PostCard'daki GIF'ler bunun DIŞINDAYSA `Animatable.stop()` ile
     // duraklatılıyor (bkz. PostCard.kt image carousel).
     var activeMediaPostId by remember { mutableStateOf<String?>(null) }
+    // 2026-08-14 (Gemini'den ikinci görüş, doğrulanıp uygulandı) — kayma
+    // DEVAM EDERKEN merkez post sık sık değişip her seferinde ExoPlayer'da
+    // setMediaItem+prepare() tetikleniyordu; bu, hızlı fling sırasında
+    // ExoPlayer'ın dahili state machine'inde mikro takılmalara yol açabiliyor.
+    // Artık aktivasyon SADECE kayma durunca (`isScrollInProgress == false`)
+    // yeniden hesaplanıyor — kayma sırasında snapshotFlow `null` döner,
+    // distinctUntilChanged tekrar tekrar aynı null'ı elediği için pahalı
+    // kısma HİÇ girilmez, collect'te de null görmezden gelinip ÖNCEKİ aktif
+    // post korunur (kayma bitene kadar video/GIF değişmez).
     LaunchedEffect(listState, posts) {
         snapshotFlow {
+            if (listState.isScrollInProgress) return@snapshotFlow null
             val info = listState.layoutInfo
             if (info.visibleItemsInfo.isEmpty()) return@snapshotFlow null
             val center = (info.viewportStartOffset + info.viewportEndOffset) / 2
@@ -289,8 +299,10 @@ fun FeedScreen(
                 .minByOrNull { kotlin.math.abs((it.offset + it.size / 2) - center) }
                 ?.key as? String
         }.distinctUntilChanged().collect { nearestId ->
-            activeMediaPostId = nearestId
-            activeVideoPostId = posts.firstOrNull { it.id == nearestId && !it.videoUrl.isNullOrBlank() }?.id
+            if (nearestId != null) {
+                activeMediaPostId = nearestId
+                activeVideoPostId = posts.firstOrNull { it.id == nearestId && !it.videoUrl.isNullOrBlank() }?.id
+            }
         }
     }
 
