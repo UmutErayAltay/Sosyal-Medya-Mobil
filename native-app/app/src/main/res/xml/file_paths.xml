@@ -10,8 +10,12 @@
 -->
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
     <cache-path name="story_media" path="story_media/" />
-    <!-- 2026-08-09: uygulama içi güncelleme — indirilen APK context.cacheDir/
-         updates/ altına kaydediliyor (bkz. UpdateRepository.kt), install
-         Intent'i AYNI FileProvider'la content:// Uri'sine çevriliyor. -->
+    <!-- 2026-08-13: delta güncelleme planı — cacheDir/updates/ context.filesDir/
+         updates/'a TAŞINDI (bkz. UpdateStorage.kt): cacheDir OS tarafından
+         baskı altında tahliye edilebiliyor, 58 MB'lık bir indirme/yama
+         uygulamanın ORTASINDA bu ölümcül olurdu. Eski cache-path girdisi
+         geriye dönük uyumluluk için (önceki sürümde oraya yazılmış artık bir
+         dosya varsa FileProvider hâlâ Uri üretebilsin diye) KORUNDU. -->
     <cache-path name="updates" path="updates/" />
+    <files-path name="updates" path="updates/" />
 </paths>

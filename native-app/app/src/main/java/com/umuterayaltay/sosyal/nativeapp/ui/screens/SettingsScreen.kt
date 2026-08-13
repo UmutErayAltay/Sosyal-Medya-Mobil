@@ -39,6 +39,7 @@ import androidx.compose.material.icons.filled.Stars
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -411,28 +412,62 @@ private fun UpdateDialog(viewModel: UpdateViewModel, onDismiss: () -> Unit) {
                     }
                     is UpdateUiState.Available -> {
                         val sizeMb = s.info.sizeBytes / (1024 * 1024)
+                        val patchMb = s.info.deltaPlan?.patchSize?.div(1024 * 1024)
                         Text(
-                            "Yeni bir sürüm mevcut (${sizeMb}MB). İndirip kurabilirsin.",
+                            if (patchMb != null) {
+                                "Yeni bir sürüm var. Parça güncelleme: ${patchMb}MB (tam sürüm ${sizeMb}MB yerine)."
+                            } else {
+                                "Yeni bir sürüm mevcut (${sizeMb}MB). Bu sürüm için parça güncelleme yok."
+                            },
                             style = MaterialTheme.typography.bodyMedium,
                         )
                     }
-                    is UpdateUiState.Downloading -> {
+                    is UpdateUiState.DownloadingPatch -> {
+                        UpdateProgressRow("Yama indiriliyor...", s.done, s.total)
+                    }
+                    is UpdateUiState.DownloadingFull -> {
+                        Column {
+                            if (s.fellBackReason != null) {
+                                Text(
+                                    "Parça güncelleme uygulanamadı, tam sürüm indiriliyor…",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error,
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                            }
+                            UpdateProgressRow("İndiriliyor...", s.done, s.total)
+                        }
+                    }
+                    is UpdateUiState.ApplyingPatch -> {
+                        UpdateProgressRow("Yama uygulanıyor...", s.done, s.total)
+                    }
+                    is UpdateUiState.Verifying -> {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                             Text(
-                                "İndiriliyor...",
+                                "Doğrulanıyor...",
                                 style = MaterialTheme.typography.bodyMedium,
                                 modifier = Modifier.padding(start = 12.dp),
                             )
                         }
                     }
                     is UpdateUiState.ReadyToInstall -> {
-                        Text(
-                            "İndirme tamamlandı. Kuruluma başlamak için \"Kur\"a bas — " +
-                                "sistem izin isterse (\"Bilinmeyen kaynaklardan yükle\") ayarı " +
-                                "açıp geri dön, kurulum otomatik devam eder.",
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
+                        Column {
+                            Text(
+                                "İndirme tamamlandı. Kuruluma başlamak için \"Kur\"a bas — " +
+                                    "sistem izin isterse (\"Bilinmeyen kaynaklardan yükle\") ayarı " +
+                                    "açıp geri dön, kurulum otomatik devam eder.",
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                            if (s.viaDelta && s.savedBytes > 0) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    "Bu güncellemede ${s.savedBytes / (1024 * 1024)}MB indirmeden tasarruf edildi.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                            }
+                        }
                     }
                     is UpdateUiState.Error -> {
                         Text(
@@ -447,12 +482,12 @@ private fun UpdateDialog(viewModel: UpdateViewModel, onDismiss: () -> Unit) {
         confirmButton = {
             when (val s = state) {
                 is UpdateUiState.Idle, is UpdateUiState.Error -> {
-                    TextButton(onClick = { viewModel.checkForUpdate() }) {
+                    TextButton(onClick = { viewModel.checkForUpdate(context) }) {
                         Text("Kontrol Et")
                     }
                 }
                 is UpdateUiState.UpToDate -> {
-                    TextButton(onClick = { viewModel.checkForUpdate() }) {
+                    TextButton(onClick = { viewModel.checkForUpdate(context) }) {
                         Text("Tekrar Kontrol Et")
                     }
                 }
@@ -466,17 +501,56 @@ private fun UpdateDialog(viewModel: UpdateViewModel, onDismiss: () -> Unit) {
                         Text("Kur")
                     }
                 }
-                is UpdateUiState.Checking, is UpdateUiState.Downloading -> {
-                    // Butonsuz — işlem sürerken kullanıcı tekrar TETİKLEMESİN.
+                is UpdateUiState.DownloadingPatch, is UpdateUiState.DownloadingFull,
+                is UpdateUiState.ApplyingPatch, UpdateUiState.Verifying -> {
+                    // Aktif işlem sırasında AYRI bir "İptal" butonu var
+                    // (dismissButton) — burada tekrar tetikleyecek bir buton yok.
+                }
+                is UpdateUiState.Checking -> {
+                    // Butonsuz — kontrol sürerken kullanıcı tekrar TETİKLEMESİN.
                 }
             }
         },
         dismissButton = {
+            val isActive = state is UpdateUiState.DownloadingPatch || state is UpdateUiState.DownloadingFull ||
+                state is UpdateUiState.ApplyingPatch || state is UpdateUiState.Verifying
             TextButton(onClick = onDismiss) {
-                Text(if (state is UpdateUiState.ReadyToInstall) "Sonra" else "Kapat")
+                Text(
+                    when {
+                        isActive -> "İptal"
+                        state is UpdateUiState.ReadyToInstall -> "Sonra"
+                        else -> "Kapat"
+                    },
+                )
             }
         },
     )
+}
+
+/** [UpdateDialog]'un indirme/uygulama fazlarında ortak kullandığı gerçek
+ * yüzde + byte sayaçlı ilerleme satırı — önceden SADECE belirsiz
+ * ([CircularProgressIndicator]) bir spinner vardı, kullanıcı 58 MB'lık bir
+ * işlemin ne kadar sürdüğünü hiç göremiyordu. */
+@Composable
+private fun UpdateProgressRow(label: String, done: Long, total: Long) {
+    Column {
+        Text(label, style = MaterialTheme.typography.bodyMedium)
+        Spacer(modifier = Modifier.height(8.dp))
+        if (total > 0) {
+            LinearProgressIndicator(
+                progress = { (done.toFloat() / total.toFloat()).coerceIn(0f, 1f) },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                "${done / 1024 / 1024}MB / ${total / 1024 / 1024}MB",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+        }
+    }
 }
 
 /** Ayarlar satırında gösterilen kısa tema etiketi. */

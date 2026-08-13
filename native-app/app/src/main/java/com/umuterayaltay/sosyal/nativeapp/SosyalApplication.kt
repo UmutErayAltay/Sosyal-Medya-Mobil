@@ -6,11 +6,16 @@ import coil.ImageLoader
 import coil.ImageLoaderFactory
 import coil.decode.GifDecoder
 import coil.decode.ImageDecoderDecoder
+import com.umuterayaltay.sosyal.nativeapp.update.UpdateStorage
 
 class SosyalApplication : Application(), ImageLoaderFactory {
     override fun onCreate() {
         super.onCreate()
         ServiceLocator.init(this)
+        // Delta güncelleme planı: bir önceki kurulumdan/yarım kalan bir
+        // indirmeden kalan APK/yama artıklarını temizle — hedef henüz
+        // bilinmediği için (checkForUpdate henüz çağrılmadı) HEPSİ silinir.
+        UpdateStorage.cleanStale(this)
     }
 
     // 2026-08-08 (kullanıcı raporu: "gifler hareket etmiyor") — Coil'in

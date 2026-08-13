@@ -17,6 +17,15 @@ local.properties
 *.log
 manifest-checksum.txt
 
+# Delta güncelleme (release.ps1) çıktıları — APK'yla AYNI mantık: repo
+# ağacında değil, GitHub Releases'te (patch-*.zst, update-manifest.json,
+# native-app/dist/history/*.apk yayın öncesi yerel önbellek).
+native-app/dist/
+# İkili/jar araçları — SHA-256 ile pinlenip release.ps1 tarafından
+# doğrulanıyor, tekrar üretilebilir (indirme kaynakları tools/release.ps1
+# yorumlarında), commit edilmeye gerek yok.
+native-app/tools/.cache/
+
 # IDE
 .idea/
 *.iml

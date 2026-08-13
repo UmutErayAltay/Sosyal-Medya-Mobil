@@ -27,6 +27,19 @@ android {
         versionName = "0.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // Delta güncelleme planı Aşama 1a: gerçek telefonların hiçbiri
+        // x86/x86_64 kullanmıyor ama debug APK'nın ~%52'si (54 MB) bu iki
+        // ABI'nin native kütüphaneleri (WebRTC/LiveKit) — Aşama 0'da ölçüldü.
+        // `splits` DEĞİL (çıktı dosya adını app-arm64-v8a-debug.apk yapıp
+        // release.ps1'in elle akışını bozardı) — bayrak YOKKEN (emülatör/
+        // geliştirme) 4 ABI'nin hepsi üretilmeye devam eder, SADECE
+        // `-PreleaseAbi=arm64-v8a` ile çağrılınca (release.ps1) tek ABI'ye
+        // düşer. 122 MB -> ~58 MB (yayın APK'sı), dex'in DEFLATE'li kalmasına
+        // rağmen (dex-STORED'a GEREK YOK, bkz. Aşama 0 ölçümü).
+        (project.findProperty("releaseAbi") as String?)?.let { abi ->
+            ndk { abiFilters += abi }
+        }
     }
 
     buildTypes {
@@ -222,6 +235,28 @@ dependencies {
     // remember+DisposableEffect(release) ile AYNI, sadece PlayerView yerine
     // YouTubePlayerView.
     implementation("com.pierfrancescosoffritti.androidyoutubeplayer:core:13.0.0")
+
+    // Delta (ikili yama) uygulama içi güncelleme — release.ps1 gerçek
+    // `zstd.exe` CLI'siyle `--patch-from` (ZSTD_CCtx_refPrefix) yaması
+    // üretir, cihaz da AYNI native fonksiyonu (ZSTD_DCtx_refPrefix)
+    // çağırmalı. Bu Java API'sinde YOK — zstd-jni'nin ZstdInputStream.
+    // setDict()/ZstdCompressCtx.loadDict() metotları BAŞKA bir native
+    // fonksiyona (ZSTD_DCtx_loadDictionary, "sözlük" modu) denk geliyor ve
+    // gerçek APK'larda ~700× daha kötü yama boyutu veriyor (ölçüldü, bkz.
+    // update/ZstdRefPrefix.kt KDoc'u ve .context/active_context.md). `@aar`
+    // ZORUNLU — aynı GAV altında Android .aar'ının yanında 6,4 MB'lık
+    // masaüstü .jar'ı da var, `@aar` olmadan Gradle onu çeker.
+    // 1.5.7-13 DEĞİL: o sürüm minCompileSdk=37 istiyor (proje compileSdk 36'da,
+    // AGP 8.9.1'in desteklediği tavan zaten 36) — derleme AAR metadata
+    // kontrolünde patlıyordu. 1.5.7-6 bu kısıtı taşımıyor VE arm64-v8a .so'sunda
+    // ihtiyaç duyulan tüm ZSTD_*refPrefix* fonksiyonları aynı şekilde dışa açık
+    // (ayrıca doğrulandı, pyelftools ile).
+    implementation("com.github.luben:zstd-jni:1.5.7-6@aar")
+    // JNA — zstd-jni'nin APK'ya zaten gömdüğü .so'nun içindeki, Java
+    // sarmalayıcının AÇMADIĞI ZSTD_DCtx_refPrefix'e doğrudan erişmek için
+    // (o .so'nun bu sembolü dışa açtığı `pyelftools` ile ELF .dynsym
+    // üzerinden doğrulandı — ek bir native/NDK derlemesi GEREKMİYOR).
+    implementation("net.java.dev.jna:jna:5.15.0@aar")
 
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
