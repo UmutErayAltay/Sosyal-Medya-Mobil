@@ -254,22 +254,33 @@ fun FeedScreen(
     }
 
     // Batch C3 (Akış kaydırma performansı — Instagram tarzı otomatik oynatma):
-    // hangi video "en görünür" (viewport merkezine en yakın) olduğu SADECE bu
-    // değer DEĞİŞTİĞİNDE hesaplanır (yukarıdaki loadMore ile AYNI dedupe
-    // deseni, her-frame ÇALIŞMAZ). PostCard.kt'deki PostVideoPlayer bu id'ye
-    // eşit olan post için gerçek bir ExoPlayer/PlayerView kurar, diğerleri
-    // statik poster kalır (bkz. FeedVideoPlayerPool sınıf yorumu).
+    // hangi video "en görünür" (viewport merkezine en yakın) olduğu.
+    //
+    // 2026-08-13 DÜZELTME (kullanıcı raporu: "gif, video postlarda kasma
+    // devam ediyor", ikinci telefonda da doğrulandı): önceki hâlde
+    // `distinctUntilChanged()` sadece SONUCU dedupe ediyordu — snapshotFlow
+    // LAMBDA'sının kendisi (içindeki `posts.firstOrNull { ... }` TÜM yüklü
+    // post listesinde DOĞRUSAL arama) `listState.layoutInfo` her
+    // değiştiğinde (yani kayma sırasında PRATİKTE HER FRAME'de) yeniden
+    // çalışıyordu — "her-frame ÇALIŞMAZ" yorumu YANLIŞTI. `posts` sayfalama
+    // ile büyüdükçe bu pahalı arama saniyede 60-120 kez ana thread'de
+    // tekrarlanıyordu. Düzeltme: ucuz kısım (en yakın item id'si,
+    // `visibleItemsInfo` üzerinde — küçük, birkaç öğe) snapshotFlow'da
+    // kalıyor VE `distinctUntilChanged()`e O tabi; pahalı `posts` araması
+    // artık SADECE en yakın id GERÇEKTEN değiştiğinde (collect bloğunda)
+    // çalışıyor — B1'deki loadMore deseniyle AYNI, doğru hâli.
     var activeVideoPostId by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(listState, posts) {
         snapshotFlow {
             val info = listState.layoutInfo
             if (info.visibleItemsInfo.isEmpty()) return@snapshotFlow null
             val center = (info.viewportStartOffset + info.viewportEndOffset) / 2
-            val nearestId = info.visibleItemsInfo
+            info.visibleItemsInfo
                 .minByOrNull { kotlin.math.abs((it.offset + it.size / 2) - center) }
                 ?.key as? String
-            posts.firstOrNull { it.id == nearestId && !it.videoUrl.isNullOrBlank() }?.id
-        }.distinctUntilChanged().collect { activeVideoPostId = it }
+        }.distinctUntilChanged().collect { nearestId ->
+            activeVideoPostId = posts.firstOrNull { it.id == nearestId && !it.videoUrl.isNullOrBlank() }?.id
+        }
     }
 
     // Batch C3 — uygulama ömrü boyunca duraklat/devam et: sekme arkaplana
