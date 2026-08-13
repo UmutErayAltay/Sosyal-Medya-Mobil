@@ -459,10 +459,18 @@ private fun UpdateDialog(viewModel: UpdateViewModel, onDismiss: () -> Unit) {
                                     "açıp geri dön, kurulum otomatik devam eder.",
                                 style = MaterialTheme.typography.bodyMedium,
                             )
+                            // 1 MB'ın altındaki tasarruflarda ${.. / 1MB} 0'a yuvarlanıp
+                            // anlamsız "0MB tasarruf edildi" gösteriyordu — küçük
+                            // yamalarda (bu güncellemenin kendisi gibi) KB'a düşer.
                             if (s.viaDelta && s.savedBytes > 0) {
                                 Spacer(modifier = Modifier.height(8.dp))
+                                val savedLabel = if (s.savedBytes >= 1024 * 1024) {
+                                    "${s.savedBytes / (1024 * 1024)}MB"
+                                } else {
+                                    "${s.savedBytes / 1024}KB"
+                                }
                                 Text(
-                                    "Bu güncellemede ${s.savedBytes / (1024 * 1024)}MB indirmeden tasarruf edildi.",
+                                    "Bu güncellemede $savedLabel indirmeden tasarruf edildi.",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.primary,
                                 )
