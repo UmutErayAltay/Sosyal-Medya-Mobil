@@ -270,6 +270,16 @@ fun FeedScreen(
     // artık SADECE en yakın id GERÇEKTEN değiştiğinde (collect bloğunda)
     // çalışıyor — B1'deki loadMore deseniyle AYNI, doğru hâli.
     var activeVideoPostId by remember { mutableStateOf<String?>(null) }
+    // 2026-08-13 (kullanıcı raporu: "gif, video postlarda ve animasyonlarda
+    // kasma var") — `activeVideoPostId` SADECE videolu postlar için
+    // dolduruluyordu; GIF'lerin video gibi "sadece en görünür olan oynasın"
+    // bir kısıtlaması HİÇ yoktu (PostCard'da hiçbir gating kodu bulunamadı) —
+    // viewport'ta aynı anda görünen HER GIF sürekli kare-kare yeniden çiziliyor
+    // ve animasyon çalışıyordu, kaydırma sırasında bu da gerçek bir maliyet.
+    // `activeMediaPostId` ham (video/GIF ayrımı yapmadan) en yakın post id'si
+    // — PostCard'daki GIF'ler bunun DIŞINDAYSA `Animatable.stop()` ile
+    // duraklatılıyor (bkz. PostCard.kt image carousel).
+    var activeMediaPostId by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(listState, posts) {
         snapshotFlow {
             val info = listState.layoutInfo
@@ -279,6 +289,7 @@ fun FeedScreen(
                 .minByOrNull { kotlin.math.abs((it.offset + it.size / 2) - center) }
                 ?.key as? String
         }.distinctUntilChanged().collect { nearestId ->
+            activeMediaPostId = nearestId
             activeVideoPostId = posts.firstOrNull { it.id == nearestId && !it.videoUrl.isNullOrBlank() }?.id
         }
     }
@@ -448,6 +459,7 @@ fun FeedScreen(
                                 onPinPost = { postId -> viewModel.togglePin(postId) },
                                 onUsernameClick = onNavigateToProfile,
                                 isActiveVideo = post.id == activeVideoPostId,
+                                isActiveMedia = post.id == activeMediaPostId,
                             )
                             if (index == 4 && suggestedUsers.isNotEmpty()) {
                                 SuggestedUsersRow(

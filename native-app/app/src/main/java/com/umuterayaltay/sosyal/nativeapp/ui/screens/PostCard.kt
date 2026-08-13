@@ -202,6 +202,13 @@ fun PostCard(
     // eder (o ekranlarda video her zaman statik poster olarak görünür, havuz
     // SADECE Feed'de aktif).
     isActiveVideo: Boolean = false,
+    // 2026-08-13 (kullanıcı raporu: "gif, video postlarda ve animasyonlarda
+    // kasma var") — hangi post viewport merkezine EN YAKIN olduğu, video/GIF
+    // ayrımı yapmadan (bkz. FeedScreen.kt activeMediaPostId). GIF içeren
+    // görsel carousel'de bu `false`sa animasyon `Animatable.stop()` ile
+    // duraklatılır — VARSAYILAN `true` (diğer ekranlar bu hesaplamayı
+    // yapmıyor, oralarda GIF'ler eskisi gibi her zaman oynar).
+    isActiveMedia: Boolean = true,
 ) {
     // 2026-08-09: video tam ekranı SADECE PostVideoPlayer'ın yanındaki küçük
     // ikonla açılır (bkz. aşağıdaki video bloğu yorumu) — fotoğraflarda artık
@@ -432,12 +439,35 @@ fun PostCard(
                             state = pagerState,
                             modifier = Modifier.matchParentSize(),
                         ) { page ->
+                            // 2026-08-13 (kullanıcı raporu: "gif postlarda
+                            // kasma var") — video (PostVideoPlayer) gibi bir
+                            // "sadece en görünür olan oynasın" kısıtlaması
+                            // GIF'lerde HİÇ yoktu: viewport'ta aynı anda
+                            // görünen HER GIF sürekli kare-kare yeniden
+                            // çiziliyordu. `onSuccess` ile yakalanan
+                            // android.graphics.drawable.Animatable (Coil'in
+                            // GIF/AnimatedImageDrawable çözücülerinin ürettiği
+                            // TÜM animasyonlu drawable'lar bunu implement
+                            // eder — statik görsellerde bu cast `null` olur,
+                            // no-op) SADECE bu post viewport merkezine en
+                            // yakınken VE pager'da bu sayfa görünürken
+                            // oynatılır, diğerleri ilk karede duraklar.
+                            var pageAnimatable by remember(images[page]) {
+                                mutableStateOf<android.graphics.drawable.Animatable?>(null)
+                            }
+                            val shouldAnimate = isActiveMedia && pagerState.currentPage == page
                             AsyncImage(
                                 model = images[page],
                                 contentDescription = null,
                                 contentScale = ContentScale.Fit,
                                 modifier = Modifier.fillMaxSize(),
+                                onSuccess = { state ->
+                                    pageAnimatable = state.result.drawable as? android.graphics.drawable.Animatable
+                                },
                             )
+                            LaunchedEffect(shouldAnimate, pageAnimatable) {
+                                if (shouldAnimate) pageAnimatable?.start() else pageAnimatable?.stop()
+                            }
                         }
                     }
                     if (images.size > 1) {
