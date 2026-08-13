@@ -129,6 +129,15 @@ try {
     $patchFiles = @()
     foreach ($base in $bases) {
         $baseSha = $base.BaseName
+        # $baseSha, history dosya adı için kullanılan 12 KARAKTERLİK KISALTMA
+        # (bkz. "== 8. history/ güncelle ==" — dosyalar "<sha12>.apk" olarak
+        # kaydediliyor). Cihaz TAM 64 karakterlik SHA-256 hesaplayıp
+        # karşılaştırıyor — manifest'e KISALTMA yazılırsa eşleşme HİÇBİR
+        # ZAMAN tutmaz ve delta sessizce hiç devreye girmez (gerçek yayında
+        # yaşandı, kullanıcı raporuyla bulundu). $baseFullSha SADECE
+        # manifest'in fromSha256 alanına yazılır; dosya adı okunabilirlik
+        # için kısaltmayla kalır.
+        $baseFullSha = Get-Sha256Hex $base.FullName
         $patchName = "patch-zstd-$baseSha.zst"
         $patchPath = Join-Path $DistDir $patchName
         Write-Host "  -> taban $baseSha ..."
@@ -158,7 +167,7 @@ try {
 
         $patchEntries += [ordered]@{
             codec      = $Codec
-            fromSha256 = $baseSha
+            fromSha256 = $baseFullSha
             toSha256   = $newSha
             asset      = $patchName
             size       = $patchSize
@@ -209,7 +218,7 @@ try {
     Write-Host "  APK: $([Math]::Round($newSize/1MB,1)) MB  sha256=$($newSha.Substring(0,12))"
     foreach ($e in $patchEntries) {
         $pct = [Math]::Round(100 - (100.0 * $e.size / $newSize), 1)
-        Write-Host "  yama <- $($e.fromSha256): $([Math]::Round($e.size/1KB,0)) KB (%$pct tasarruf)"
+        Write-Host "  yama <- $($e.fromSha256.Substring(0,12)): $([Math]::Round($e.size/1KB,0)) KB (%$pct tasarruf)"
     }
 } finally {
     Pop-Location
