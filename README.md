@@ -58,6 +58,7 @@ bağlanmak için bu dosya düzenlenir.
 ```
 native-app/
 ├── app/build.gradle.kts            # applicationId=com.umuterayaltay.sosyal.native
+├── tools/                          # release.ps1 (build->yama üret->cihaz kod yoluyla doğrula->yükle) + PatchVerify.java
 └── app/src/main/java/com/umuterayaltay/sosyal/nativeapp/
     ├── MainActivity.kt             # tek Activity, Compose Navigation ile tüm ekranlar
     ├── SosyalApplication.kt        # Application.onCreate() -> ServiceLocator.init()
@@ -71,6 +72,7 @@ native-app/
     ├── player/                     # Feed video oynatma havuzu (tek paylaşılan ExoPlayer)
     ├── service/                    # FcmService — push token yenileme + bildirim gösterme
     ├── webrtc/                     # WebRtcCallManager (1:1 arama medya katmanı)
+    ├── update/                     # delta (zstd --patch-from) uygulama içi güncelleme — ApkPatcher/Sha256/UpdateManifest/UpdateStorage/ZstdRefPrefix
     ├── navigation/                 # AppNavHost — tüm route tanımları
     ├── viewmodel/                  # her ekran için 1 ViewModel (StateFlow expose eder)
     └── ui/
@@ -97,7 +99,19 @@ native-app/
 
 ## Sürümler / Releases
 
-Play Store dışında dağıtılıyor — debug APK'lar bu reponun GitHub Releases
-sayfasına yükleniyor (örn. `native-v0.1.0`). Uygulama içi güncelleme kontrolü
-de aynı Releases API'sini kullanıp yeni bir sürüm bulunca APK'yı indirip
-kurdurabiliyor (`REQUEST_INSTALL_PACKAGES` izni bunun için gerekli).
+Play Store dışında dağıtılıyor — APK'lar bu reponun GitHub Releases sayfasına
+yükleniyor (örn. `native-v0.1.0`). Yayın APK'sı kalıcı olarak arm64-v8a'ya
+daraltılmıştır (122→58 MB, `-PreleaseAbi` bayrağıyla kapılı; dev/emülatör
+build'i etkilenmez).
+
+Uygulama içi güncelleme kontrolü aynı Releases API'sini kullanır, ama tam
+APK yerine önce **delta (ikili) yama** dener: zstd `--patch-from` ile mevcut
+sürümle yeni sürüm arasındaki fark indirilir (gerçek ölçümde tek satırlık
+bir değişiklik için ~300 KB). Cihaz tarafı, zstd-jni'nin APK'ya gömdüğü
+`.so`'nun `ZSTD_DCtx_refPrefix` fonksiyonuna JNA ile doğrudan bağlanır
+(NDK/C derlemesi gerekmez). İndirilen dosya SHA-256 ile doğrulanır, gerçek
+ilerleme göstergesi + iptal butonu vardır, ve delta uygulanamazsa görünür
+şekilde tam APK indirmeye düşülür. `REQUEST_INSTALL_PACKAGES` izni kuruluma
+gerekli. `native-app/tools/release.ps1` tüm yayın akışını (eski APK'yı
+yakala → build → yama üret → cihaz kod yoluyla doğrula → yükle) tek komuda
+toplar.
