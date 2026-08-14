@@ -27,7 +27,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Block
-import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.Edit
@@ -186,17 +185,6 @@ fun SettingsScreen(
                     updateViewModel.resetToIdle()
                     showUpdateDialog = true
                 },
-            )
-            // GEÇİCİ (2026-08-14) — Firebase Crashlytics'in uçtan uca gerçekten
-            // veri gönderdiğini doğrulamak için kasıtlı test çökmesi. Crash
-            // Crashlytics'e HEMEN gitmez — uygulama BİR SONRAKİ açılışında
-            // (çökme sonrası) rapor gönderilir, konsolda görünmesi birkaç
-            // dakika sürebilir. Doğrulama bitince BU SATIRLAR SİLİNECEK.
-            SettingsRow(
-                icon = Icons.Filled.BugReport,
-                label = "Test Çökmesi (Crashlytics doğrulama)",
-                tint = MaterialTheme.colorScheme.error,
-                onClick = { throw RuntimeException("Crashlytics test çökmesi — kasıtlı, doğrulama içindir") },
             )
 
             SettingsSectionHeader("Gizlilik ve Güvenlik")
