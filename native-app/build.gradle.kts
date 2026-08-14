@@ -21,4 +21,8 @@ plugins {
     // bilgilerini (gen-lang-client-07070261-4a9fa) derleme zamanında okuyup
     // BuildConfig/kaynaklara enjekte eden Gradle eklentisi.
     id("com.google.gms.google-services") version "4.4.2" apply false
+    // 2026-08-14 (yayın öncesi denetim bulgusu: "çökme telemetrisi yok") —
+    // sürüm Google Maven'dan doğrulandı (tahmin edilmedi), FCM'nin zaten
+    // kullandığı AYNI Firebase projesine (google-services.json) bağlanıyor.
+    id("com.google.firebase.crashlytics") version "3.0.7" apply false
 }

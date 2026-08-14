@@ -6,6 +6,8 @@ plugins {
     // Faz 5 Dalga 4A: FCM push bildirimi — apply false YOK burada (kök
     // build.gradle.kts'teki tersine), asıl uygulama BU modülde gerçekleşir.
     id("com.google.gms.google-services")
+    // 2026-08-14: Crashlytics — google-services.json ZATEN yerinde (FCM için).
+    id("com.google.firebase.crashlytics")
 }
 
 android {
@@ -182,6 +184,15 @@ dependencies {
     // numarası YAZILMAZ — BOM'un garantisi bu).
     implementation(platform("com.google.firebase:firebase-bom:33.7.0"))
     implementation("com.google.firebase:firebase-messaging-ktx")
+    // 2026-08-14 (yayın öncesi denetim: "çökme telemetrisi yok, bir kullanıcının
+    // telefonunda çökme olsa ASLA öğrenilemez") — AYNI Firebase projesine
+    // (google-services.json zaten yerinde) bağlanıyor, ek konsol kurulumu
+    // gerekmiyor. `-ktx` DEĞİL: Firebase KTX modülleri ana pakete taşındı,
+    // ayrı `-ktx` artifact'i artık eski/donmuş sürümde kalıyor (Google Maven'dan
+    // doğrulandı: firebase-crashlytics-ktx en son 19.4.4'te donmuş, ana paket
+    // 20.1.0'a kadar ilerlemiş — BOM ikisini de yönetiyor ama ana paket doğru
+    // seçim).
+    implementation("com.google.firebase:firebase-crashlytics")
 
     // Grup sesli/görüntülü arama (native görev — LiveKit) — backend zaten hazır
     // (app/api_v1/messaging.py api_call_token(), commit 5a03122): POST
