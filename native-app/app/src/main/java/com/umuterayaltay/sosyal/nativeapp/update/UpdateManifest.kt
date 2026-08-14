@@ -44,10 +44,22 @@ private val gson = Gson()
 /** Bozuk/eksik JSON'da exception fırlatmak yerine `null` döner — çağıran
  * taraf (bkz. UpdateRepository) bunu "manifest yok" gibi ele alıp bugünkü
  * (manifestsiz) davranışa düşer. */
-@Suppress("SENSELESS_COMPARISON") // Gson reflection'ı Kotlin'in null-safety'sini es geçebilir — eksik "apk" alanı gerçekten null bırakılabilir.
+@Suppress("SENSELESS_COMPARISON") // Gson reflection'ı Kotlin'in null-safety'sini es geçebilir — eksik "apk"/"patches" alanı gerçekten null bırakılabilir.
 fun parseUpdateManifest(json: String): UpdateManifestDto? = try {
     val dto = gson.fromJson(json, UpdateManifestDto::class.java)
-    if (dto?.schema == 1 && dto.apk != null) dto else null
+    if (dto?.schema == 1 && dto.apk != null) {
+        // Gson, Kotlin'in `patches: List<...> = emptyList()` VARSAYILANINI
+        // JSON'da alan HİÇ YOKSA (veya `null` ise) UYGULAMIYOR — reflection
+        // ile inşa edip alanı boş bırakıyor, non-null tipe rağmen gerçek
+        // çalışma zamanı null'u üretiyor. Bir birim testi bunu YAKALADI
+        // (patches alanı olmadan manifest parse edilince .patches.size çağrısı
+        // NullPointerException fırlattı) — çağıran taraf (UpdateRepository)
+        // `manifest.patches.firstOrNull{}` diye güvenle yazabilsin diye burada
+        // savunmacı olarak boş listeye çevriliyor.
+        if (dto.patches == null) dto.copy(patches = emptyList()) else dto
+    } else {
+        null
+    }
 } catch (e: JsonSyntaxException) {
     null
 }
