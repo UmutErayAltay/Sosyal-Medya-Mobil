@@ -6,4 +6,9 @@
          güvenlik sorunu değil. Credential Manager (GoogleSignInHelper.kt) bunu
          GetSignInWithGoogleOption'a serverClientId olarak geçirir. -->
     <string name="google_web_client_id" translatable="false">982859722610-525n7ebbavn0dubrmgm0ksnvkgs52j8u.apps.googleusercontent.com</string>
+    <!-- App Shortcuts (2026-08-21, res/xml/shortcuts.xml) -->
+    <string name="shortcut_new_post_short">Yeni Gönderi</string>
+    <string name="shortcut_new_post_long">Yeni gönderi paylaş</string>
+    <string name="shortcut_notifications_short">Bildirimler</string>
+    <string name="shortcut_notifications_long">Bildirimleri görüntüle</string>
 </resources>

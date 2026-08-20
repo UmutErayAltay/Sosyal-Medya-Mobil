@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Ana ekran widget'ı (2026-08-21) — RemoteViews, tek amaçlı basit bir kart:
+     app ikonu+adı + "Yeni Gönderi" butonu. Dinamik veri (ör. okunmamış
+     bildirim sayısı) BİLİNÇLİ olarak YOK — periyodik güncelleme (WorkManager
+     + AppWidgetManager.updateAppWidget döngüsü) ayrı, daha büyük bir iş;
+     bu turun kapsamı SADECE "hızlı gönderi paylaşma kısayolu". -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_background"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <ImageView
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:contentDescription="@string/app_name"
+            android:src="@mipmap/ic_launcher" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:text="@string/app_name"
+            android:textColor="@color/widget_text"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/widget_new_post_button"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:background="@drawable/widget_button_background"
+        android:paddingStart="16dp"
+        android:paddingTop="8dp"
+        android:paddingEnd="16dp"
+        android:paddingBottom="8dp"
+        android:text="@string/shortcut_new_post_short"
+        android:textColor="@color/widget_button_text"
+        android:textSize="13sp"
+        android:textStyle="bold" />
+</LinearLayout>

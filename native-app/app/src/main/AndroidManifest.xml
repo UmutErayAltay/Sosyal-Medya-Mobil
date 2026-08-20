@@ -104,7 +104,35 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="image/*" />
             </intent-filter>
+
+            <!-- App Shortcuts (2026-08-21) — launcher ikonuna uzun basınca
+                 çıkan menü, bkz. res/xml/shortcuts.xml + MainActivity.consumeDeepLinkRoute()
+                 (App Links'teki AYNI mekanizmayı, farklı bir extra ile reuse eder). -->
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
         </activity>
+
+        <!-- Ana ekran widget'ı (2026-08-21) — bkz. widget/SosyalAppWidgetProvider.kt +
+             res/xml/app_widget_info.xml. exported=true ZORUNLU (FcmService'in
+             AKSİNE) — APPWIDGET_UPDATE broadcast'i sistemin/launcher'ın KENDİ
+             process'inden (BAŞKA bir uygulama/UID) gelir, exported=false ile
+             hiç TESLİM EDİLMEZ, widget sessizce hiç güncellenmez. Sistem zaten
+             bu broadcast'i SADECE kendi gönderdiği için (üçüncü parti bir
+             uygulama keyfi APPWIDGET_UPDATE göndermez/gönderse de anlamsız)
+             ek bir izin/permission kontrolü GEREKMİYOR. RECEIVE_BOOT_COMPLETED
+             de GEREKMİYOR (updatePeriodMillis="0" — sadece widget eklendiğinde
+             TEK SEFER onUpdate() çağrılır, cihaz yeniden başlatmada değil). -->
+        <receiver
+            android:name=".widget.SosyalAppWidgetProvider"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/app_widget_info" />
+        </receiver>
 
         <!-- Faz 5 Dalga 4A: FCM push bildirimi — onNewToken/onMessageReceived
              burada işlenir (bkz. service/FcmService.kt). -->

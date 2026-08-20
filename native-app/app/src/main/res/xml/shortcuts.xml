@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    App Shortcuts (2026-08-21) — launcher ikonuna uzun basınca çıkan menü.
+    Sadece MainActivity'nin App Links intent-filter'ıyla AYNI target'a
+    (ACTION_VIEW), farklı bir "shortcut_route" extra'sıyla gönderir — bkz.
+    MainActivity.consumeDeepLinkRoute() (App Links'in Uri→route çevirimiyle
+    AYNI mekanizmayı reuse eder). SADECE iki hedef: "Mesajlar" gibi
+    MainScaffold'un bottom-nav SEKMESİ olan (ayrı bir NavHost route'u
+    OLMAYAN) hedefler BİLİNÇLİ olarak dahil edilmedi — ekstra tab-seçim
+    state'i taşımak gerektirirdi, bu turun kapsamı dışı.
+-->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="new_post"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/shortcut_new_post_short"
+        android:shortcutLongLabel="@string/shortcut_new_post_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.umuterayaltay.sosyal.native"
+            android:targetClass="com.umuterayaltay.sosyal.nativeapp.MainActivity">
+            <extra android:name="shortcut_route" android:value="createPost" />
+        </intent>
+    </shortcut>
+    <shortcut
+        android:shortcutId="notifications"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/shortcut_notifications_short"
+        android:shortcutLongLabel="@string/shortcut_notifications_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.umuterayaltay.sosyal.native"
+            android:targetClass="com.umuterayaltay.sosyal.nativeapp.MainActivity">
+            <extra android:name="shortcut_route" android:value="notifications" />
+        </intent>
+    </shortcut>
+</shortcuts>

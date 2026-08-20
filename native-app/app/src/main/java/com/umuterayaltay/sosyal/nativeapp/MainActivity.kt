@@ -31,6 +31,12 @@ import com.umuterayaltay.sosyal.nativeapp.ui.screens.AppLockScreen
 import com.umuterayaltay.sosyal.nativeapp.ui.theme.SosyalNativeTheme
 import kotlinx.coroutines.launch
 
+// App Shortcuts (2026-08-21) — res/xml/shortcuts.xml'in <extra> etiketiyle
+// AYNI anahtar/değerler (elle senkron tutulmalı, ikisi de derleme zamanı
+// tip-kontrolünden GEÇMİYOR).
+private const val EXTRA_SHORTCUT_ROUTE = "shortcut_route"
+private val ALLOWED_SHORTCUT_ROUTES = setOf("createPost", "notifications")
+
 /** Share-target (2026-08-21) — Android paylaş menüsünden gelen içerik.
  * `text` (EXTRA_TEXT) ve `imageUri` (EXTRA_STREAM, image mimeType'ı) AYRI
  * intent-filter'lardan gelir ama ikisi de AYNI şekilde CreatePostScreen'i
@@ -168,8 +174,20 @@ class MainActivity : FragmentActivity() {
      * BİLEREK null'a set edilir — çağıran taraf (onCreate/onNewIntent) AYNI
      * Intent nesnesini bir config change'de (döndürme) TEKRAR görebilir,
      * data temizlenmezse deep link'e HER SEFERİNDE yeniden navigate edilirdi
-     * (aynı postu üst üste yığma bug'ı). */
+     * (aynı postu üst üste yığma bug'ı).
+     *
+     * App Shortcuts (2026-08-21, res/xml/shortcuts.xml) — AYNI fonksiyonu
+     * reuse eder, ama route bir Uri'den TÜRETİLMİYOR, doğrudan "shortcut_route"
+     * extra'sında geliyor (App Links'in target'ı da AYNI MainActivity,
+     * action=VIEW). Extra DIŞ KAYNAKLI sayılır (MainActivity exported=true —
+     * teorik olarak başka bir uygulama da bu extra'yı taklit edebilir), bu
+     * yüzden ham string'e KÖRÜ KÖRÜNE navigate EDİLMEZ — sadece shortcuts.xml'in
+     * KENDİ tanımladığı iki değerden biriyse (allowlist) kabul edilir. */
     private fun consumeDeepLinkRoute(intent: Intent?): String? {
+        intent?.getStringExtra(EXTRA_SHORTCUT_ROUTE)?.let { shortcutRoute ->
+            intent.removeExtra(EXTRA_SHORTCUT_ROUTE)
+            if (shortcutRoute in ALLOWED_SHORTCUT_ROUTES) return shortcutRoute
+        }
         if (intent?.action != Intent.ACTION_VIEW) return null
         val uri = intent.data ?: return null
         val segments = uri.pathSegments

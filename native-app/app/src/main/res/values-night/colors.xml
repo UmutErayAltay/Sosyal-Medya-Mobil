@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Ana ekran widget'ının koyu tema varyantı (2026-08-21) — SADECE widget_*
+     renkleri override edilir (bkz. values/colors.xml yorumu), diğer sistem
+     temasıyla (values-night başka bir şey İÇERMİYOR bu projede) ilgisi yok.
+     Not: bu, uygulama İÇİNDEKİ Ayarlar > Tema seçimini DEĞİL, widget'ın
+     bulunduğu ana ekranın SİSTEM (OS) temasını takip eder — RemoteViews'ün
+     kendi sınırı, ThemePreferenceStore'a erişemiyor. -->
+<resources>
+    <color name="widget_background">#2A241F</color>
+    <color name="widget_text">#F0EBE3</color>
+    <color name="widget_button">#FF7A5C</color>
+    <color name="widget_button_text">#1C1815</color>
+</resources>

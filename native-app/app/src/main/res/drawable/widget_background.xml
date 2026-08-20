@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Widget arka planı (2026-08-21) — RemoteViews modern Compose temasının
+     (SosyalNativeTheme) renk token'larını KULLANAMAZ (ayrı bir render
+     süreci, Compose bağlamı yok), bu yüzden sabit bir renk çifti (açık/koyu
+     qualifier'lı iki dosya, bkz. values-night/) — colors.xml'deki
+     card/coral marka renklerine YAKIN ama BİREBİR AYNI değil. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <corners android:radius="16dp" />
+    <solid android:color="@color/widget_background" />
+</shape>

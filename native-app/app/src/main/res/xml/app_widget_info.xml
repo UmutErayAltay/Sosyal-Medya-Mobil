@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Ana ekran widget'ı meta verisi (2026-08-21) — updatePeriodMillis=0:
+     dinamik veri YOK (bkz. widget_layout.xml yorumu), periyodik güncelleme
+     GEREKMİYOR, sadece kullanıcı ekrana eklerken TEK SEFER onUpdate() çağrılır. -->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="110dp"
+    android:minHeight="70dp"
+    android:targetCellWidth="2"
+    android:targetCellHeight="1"
+    android:updatePeriodMillis="0"
+    android:initialLayout="@layout/widget_layout"
+    android:resizeMode="horizontal|vertical"
+    android:widgetCategory="home_screen"
+    android:previewImage="@mipmap/ic_launcher" />
