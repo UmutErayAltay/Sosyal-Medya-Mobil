@@ -118,6 +118,13 @@ dependencies {
     implementation("androidx.camera:camera-view:$cameraxVersion")
     implementation("androidx.camera:camera-video:$cameraxVersion")
 
+    // Uygulama kilidi (2026-08-21) — soğuk başlangıçta biyometrik/PIN
+    // doğrulama isteğe bağlı (Ayarlar'dan açılır). 1.1.0 son stabil sürüm
+    // (1.2.x hâlâ alpha) — BiometricPrompt zaten cihazın KENDİ ekran kilidi
+    // (PIN/desen/parmak izi/yüz) fallback'ini yönetir, ayrı bir PIN ekranı
+    // İCAT EDİLMEDİ.
+    implementation("androidx.biometric:biometric:1.1.0")
+
     // Ağ katmanı — Retrofit2 + OkHttp + Gson (kotlinx.serialization DEĞİL, spesifikasyon gereği)
     implementation("com.squareup.retrofit2:retrofit:2.11.0")
     implementation("com.squareup.retrofit2:converter-gson:2.11.0")

@@ -1,7 +1,9 @@
 package com.umuterayaltay.sosyal.nativeapp.ui.screens
 
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.biometric.BiometricManager
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
@@ -32,6 +34,7 @@ import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.Drafts
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.PersonOff
 import androidx.compose.material.icons.filled.Security
@@ -50,6 +53,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -113,6 +117,8 @@ fun SettingsScreen(
     var password by remember { mutableStateOf("") }
     var showThemeDialog by remember { mutableStateOf(false) }
     val themeMode by ServiceLocator.themePreferenceStore.themeMode.collectAsState()
+    val appLockEnabled by ServiceLocator.appLockPreferenceStore.enabled.collectAsState()
+    val settingsContext = LocalContext.current
 
     // 2026-08-09: uygulama içi güncelleme (kullanıcı isteği: "her seferinde
     // elle indirip kurmak yerine uygulama içinden güncelleme") — kendi
@@ -209,6 +215,36 @@ fun SettingsScreen(
                 icon = Icons.Filled.Smartphone,
                 label = "Aktif Oturumlar",
                 onClick = onNavigateToActiveSessions,
+            )
+            // Uygulama kilidi (2026-08-21) — varsayılan KAPALI (bkz.
+            // AppLockPreferenceStore yorumu). Açılırken cihazın GERÇEKTEN
+            // biyometri/PIN kurulu olup olmadığı kontrol edilir — yoksa
+            // kullanıcı kendini KİLİTLEYİP açamayacağı bir duruma düşürmesin
+            // diye toggle AÇILMAZ, açıklayıcı bir Toast gösterilir.
+            SettingsToggleRow(
+                icon = Icons.Filled.Lock,
+                label = "Uygulama Kilidi",
+                description = "Uygulamayı her açtığında kimlik doğrulaması iste",
+                checked = appLockEnabled,
+                onCheckedChange = { checked ->
+                    if (checked) {
+                        val canAuthenticate = BiometricManager.from(settingsContext).canAuthenticate(
+                            BiometricManager.Authenticators.BIOMETRIC_STRONG or
+                                BiometricManager.Authenticators.DEVICE_CREDENTIAL,
+                        )
+                        if (canAuthenticate == BiometricManager.BIOMETRIC_SUCCESS) {
+                            ServiceLocator.appLockPreferenceStore.setEnabled(true)
+                        } else {
+                            Toast.makeText(
+                                settingsContext,
+                                "Cihazında biyometrik/PIN kilit kurulu değil",
+                                Toast.LENGTH_LONG,
+                            ).show()
+                        }
+                    } else {
+                        ServiceLocator.appLockPreferenceStore.setEnabled(false)
+                    }
+                },
             )
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -663,5 +699,49 @@ private fun SettingsRow(
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+    }
+}
+
+/** SettingsRow'un aç/kapa (Switch) varyantı — Uygulama Kilidi (2026-08-21)
+ * için, NotificationPreferencesScreen'deki satır+açıklama+Switch deseniyle
+ * TUTARLI (bkz. o dosya). Tıklanabilir alan SATIRIN TAMAMI (sadece Switch
+ * değil) — hedef büyütme, standart Material pratiği. */
+@Composable
+private fun SettingsToggleRow(
+    icon: ImageVector,
+    label: String,
+    description: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onCheckedChange(!checked) }
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(36.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.surfaceVariant),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(imageVector = icon, contentDescription = null, modifier = Modifier.size(20.dp))
+        }
+        Column(
+            modifier = Modifier
+                .padding(start = 16.dp)
+                .weight(1f),
+        ) {
+            Text(text = label, style = MaterialTheme.typography.bodyLarge)
+            Text(
+                text = description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }
