@@ -3,6 +3,10 @@ package com.umuterayaltay.sosyal.nativeapp.ui.screens
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Matrix
+import android.media.ExifInterface
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -128,10 +132,13 @@ import com.umuterayaltay.sosyal.nativeapp.ui.components.MediaPickerSheet
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.StoryCreateEvent
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.StoryCreateViewModel
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.StoryOverlayElementState
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.FileOutputStream
 
 private data class StoryVisibilityOption(val value: String, val label: String, val icon: ImageVector)
 
@@ -517,12 +524,31 @@ private fun CameraPreviewAndShutter(
         }
         val file = createStoryMediaFile(context, ".jpg")
         val outputOptions = ImageCapture.OutputFileOptions.Builder(file).build()
+        val capturedWithFrontCamera = lensFacing == CameraSelector.LENS_FACING_FRONT
         capture.takePicture(
             outputOptions,
             ContextCompat.getMainExecutor(context),
             object : ImageCapture.OnImageSavedCallback {
                 override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
-                    onImageCaptured(uriForStoryFile(context, file))
+                    // Görüntülü aramalarda düzelttiğimiz AYNI sorun (bkz.
+                    // OneOnOneCallScreen.kt "gerçek aynadaki gibi" yorumu):
+                    // ön kamerada OS/Camera2 katmanı doğal olarak aynalanmış
+                    // görüntü üretiyor — PreviewView bunu göstererek çekim
+                    // sırasında "gerçek ayna" hissini korusun diye BİLEREK
+                    // dokunulmuyor, ama KAYDEDİLEN fotoğraf aynı aynalı hâlde
+                    // kalırsa (kullanıcı raporu) üzerindeki yazı/asimetri ters
+                    // çıkıyor. Çözüm AYNI ilke: önizleme aynalı kalır, sadece
+                    // kaydedilen dosya çekimden SONRA gerçek yönüne çevrilir.
+                    if (capturedWithFrontCamera) {
+                        flashScope.launch(Dispatchers.IO) {
+                            unmirrorPhotoFile(file)
+                            withContext(Dispatchers.Main) {
+                                onImageCaptured(uriForStoryFile(context, file))
+                            }
+                        }
+                    } else {
+                        onImageCaptured(uriForStoryFile(context, file))
+                    }
                 }
 
                 override fun onError(exception: ImageCaptureException) {
@@ -705,6 +731,41 @@ private fun createStoryMediaFile(context: Context, extension: String): File {
 
 private fun uriForStoryFile(context: Context, file: File): Uri =
     FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+
+/**
+ * Ön kamerayla çekilen fotoğrafı yatayda çevirip dosyayı YERİNDE üzerine
+ * yazar — CameraX'in ImageCapture çıktısı, PreviewView'in gösterdiği aynalı
+ * önizlemenin AKSİNE, sensörün doğal (aynalı) yönünde kaydediyor. EXIF
+ * `ORIENTATION` etiketi önce okunup bitmap'e döndürme olarak PİŞİRİLİYOR
+ * (aksi halde yeniden sıkıştırılan JPEG'in orijinal EXIF'i kaybolunca
+ * fotoğraf yamuk/yan çıkar). Herhangi bir adımda hata olursa orijinal (hâlâ
+ * kullanılabilir, sadece aynalı) dosya olduğu gibi kalır — çekim akışı
+ * kırılmaz (bkz. onError'daki AYNI "sessizce yut" gerekçesi).
+ */
+private fun unmirrorPhotoFile(file: File) {
+    try {
+        val exif = ExifInterface(file.absolutePath)
+        val orientation = exif.getAttributeInt(
+            ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL,
+        )
+        val original = BitmapFactory.decodeFile(file.absolutePath) ?: return
+        val matrix = Matrix()
+        when (orientation) {
+            ExifInterface.ORIENTATION_ROTATE_90 -> matrix.postRotate(90f)
+            ExifInterface.ORIENTATION_ROTATE_180 -> matrix.postRotate(180f)
+            ExifInterface.ORIENTATION_ROTATE_270 -> matrix.postRotate(270f)
+        }
+        matrix.postScale(-1f, 1f)
+        val flipped = Bitmap.createBitmap(original, 0, 0, original.width, original.height, matrix, true)
+        FileOutputStream(file).use { out ->
+            flipped.compress(Bitmap.CompressFormat.JPEG, 92, out)
+        }
+        if (flipped !== original) original.recycle()
+        flipped.recycle()
+    } catch (_: Exception) {
+        // Yut — orijinal (aynalı) dosya kalır, kullanıcı yine de bir fotoğraf alır.
+    }
+}
 
 /**
  * Form adımı — MEVCUT caption/görünürlük/anket editörü (eski tek-adımlı
