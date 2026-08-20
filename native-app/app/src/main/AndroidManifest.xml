@@ -41,11 +41,46 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:launchMode="singleTask"
             android:theme="@style/Theme.SosyalNative"
             android:label="@string/app_name">
+            <!-- launchMode="singleTask" (2026-08-21, App Links'in GEREKTİRDİĞİ):
+                 uygulama TEK Activity (tüm ekranlar Compose Navigation ile
+                 AYNI MainActivity içinde) — varsayılan "standard" modda
+                 uygulama AÇIKKEN bir link tıklanınca Android onNewIntent()
+                 ÇAĞIRMAZ, ÜSTÜNE İKİNCİ bir MainActivity örneği yığar (geri
+                 tuşu garip davranır, iki ayrı NavHost/state canlı kalır).
+                 singleTask VARSA örneği ÖNE getirip onNewIntent() çağırır —
+                 bkz. MainActivity.onNewIntent(). -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <!-- App Links (2026-08-21) — paylaşılan bir post/profil/hashtag
+                 linki artık tarayıcıya DÜŞMEDEN doğrudan uygulamada açılır.
+                 android:autoVerify="true" Android'e kurulumda/ilk açılışta
+                 /.well-known/assetlinks.json'ı (app/__init__.py assetlinks(),
+                 sosyal-medya reposu) sorgulatıp bu paketin (applicationId +
+                 imzalayan sertifikanın SHA-256'sı) o domain için GERÇEKTEN
+                 yetkili olduğunu doğrular — doğrulama tutmazsa (ör. imzalama
+                 anahtarı değişirse, bkz. assetlinks() içindeki AYNI uyarı)
+                 Android SESSİZCE eski davranışa (seçim diyaloğu/tarayıcı)
+                 düşer, kırılma GÖRÜNMEZ. Tek `<intent-filter>` içindeki BİRDEN
+                 FAZLA `<data>` etiketi Android'de birleşir (host+scheme TEK
+                 elemanda, path'ler AYRI elemanlarda) — bu STANDART desen,
+                 üçünü ayrı intent-filter'lara BÖLMEK gerekmez. İşlenmeyen
+                 (kapsam dışı) bir path'e (ör. /admin/*) gelen link BİLEREK
+                 dahil edilmedi — sadece native'in KARŞILIĞI olan üç yol
+                 (post/profil/hashtag, bkz. AppNavHost.kt handleDeepLink()). -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="sosyalmedyadeneme.onrender.com" />
+                <data android:pathPrefix="/post/" />
+                <data android:pathPrefix="/u/" />
+                <data android:pathPrefix="/hashtag/" />
             </intent-filter>
         </activity>
 

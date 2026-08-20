@@ -1,6 +1,7 @@
 package com.umuterayaltay.sosyal.nativeapp
 
 import android.Manifest
+import android.content.Intent
 import android.graphics.Color as AndroidColor
 import android.os.Build
 import android.os.Bundle
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.lifecycleScope
 import com.google.firebase.messaging.FirebaseMessaging
@@ -32,8 +34,16 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.RequestPermission()
     ) { /* sonucu görmezden gel — kullanıcı reddederse sessizce devam */ }
 
+    // App Links (2026-08-21) — Compose state, AppNavHost'a geçirilir (bkz.
+    // routeForDeepLink()). mutableStateOf (rememberSaveable DEĞİL) BİLEREK:
+    // bir config change'de (ör. döndürme) Activity yeniden oluşur, onCreate()
+    // AŞAĞIDA intent'ten yeniden türetir — Intent zaten Android tarafından
+    // recreation boyunca KORUNUYOR (setIntent ile güncellenen AYNI nesne).
+    private val pendingDeepLinkRoute = mutableStateOf<String?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        pendingDeepLinkRoute.value = consumeDeepLinkRoute(intent)
         requestNotificationPermissionIfNeeded()
         registerFcmTokenIfLoggedIn()
         // enableEdgeToEdge()'in VARSAYILANI (parametresiz) status/navigation
@@ -60,10 +70,24 @@ class MainActivity : ComponentActivity() {
             }
             SosyalNativeTheme(darkTheme = darkTheme) {
                 Surface(modifier = Modifier.fillMaxSize()) {
-                    AppNavHost()
+                    val deepLinkRoute by pendingDeepLinkRoute
+                    AppNavHost(
+                        pendingDeepLinkRoute = deepLinkRoute,
+                        onDeepLinkConsumed = { pendingDeepLinkRoute.value = null },
+                    )
                 }
             }
         }
+    }
+
+    /** Uygulama zaten açıkken (sıcak başlangıç) bir link tıklanırsa Android
+     * onCreate()'i TEKRAR çağırmaz, bu callback'i çağırır — soğuk başlangıçla
+     * (onCreate) AYNI tüketim mantığı burada da uygulanır. */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        val route = consumeDeepLinkRoute(intent)
+        setIntent(intent)
+        if (route != null) pendingDeepLinkRoute.value = route
     }
 
     private fun requestNotificationPermissionIfNeeded() {
@@ -85,5 +109,32 @@ class MainActivity : ComponentActivity() {
                 ServiceLocator.pushRepository.registerToken(token)
             }
         }
+    }
+
+    /** App Links (2026-08-21) — gelen Intent'in Uri'sini (AndroidManifest.xml'deki
+     * autoVerify intent-filter'ının EŞLEŞTİRDİĞİ, assetlinks.json ile doğrulanmış
+     * https://sosyalmedyadeneme.onrender.com/... linki) AppNavHost route'una
+     * çevirir — SADECE üç yol destekleniyor (web'in `/post/<id>`, `/u/<username>`,
+     * `/hashtag/<tag>` route'larıyla BİREBİR, native'in KARŞILIĞI olan
+     * "postDetail/{id}"/"profile/{username}"/"hashtag/{tag}" route'ları — bkz.
+     * AppNavHost.kt). Eşleşmeyen/eksik bir link (ör. tek path segment'i,
+     * kapsam dışı bir yol) null döner — uygulama normal soğuk-başlangıç
+     * davranışına (ROUTE_MAIN/ROUTE_LOGIN) düşer, kırılma YOK. `intent.data`
+     * BİLEREK null'a set edilir — çağıran taraf (onCreate/onNewIntent) AYNI
+     * Intent nesnesini bir config change'de (döndürme) TEKRAR görebilir,
+     * data temizlenmezse deep link'e HER SEFERİNDE yeniden navigate edilirdi
+     * (aynı postu üst üste yığma bug'ı). */
+    private fun consumeDeepLinkRoute(intent: Intent?): String? {
+        if (intent?.action != Intent.ACTION_VIEW) return null
+        val uri = intent.data ?: return null
+        val segments = uri.pathSegments
+        val route = when {
+            segments.size >= 2 && segments[0] == "post" -> "postDetail/${segments[1]}"
+            segments.size >= 2 && segments[0] == "u" -> "profile/${segments[1]}"
+            segments.size >= 2 && segments[0] == "hashtag" -> "hashtag/${segments[1]}"
+            else -> null
+        }
+        if (route != null) intent.data = null
+        return route
     }
 }

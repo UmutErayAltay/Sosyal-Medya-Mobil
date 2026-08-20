@@ -179,9 +179,28 @@ private const val ROUTE_MAIN = "main"
  * ikonundan erişilir, bir etikete tıklanınca "hashtag/{tag}"e gider.
  */
 @Composable
-fun AppNavHost() {
+fun AppNavHost(
+    // App Links (2026-08-21) — MainActivity gelen bir https://sosyalmedyadeneme.
+    // onrender.com/post|u|hashtag/... linkini bir route string'ine çevirip
+    // buraya geçirir (bkz. MainActivity.routeForDeepLink()). SADECE oturum
+    // açıksa uygulanır — MVP kararı: kullanıcı giriş yapmamışken bir link
+    // tıklarsa deep link BİLİNÇLİ olarak DÜŞÜRÜLÜR (post detay/profil zaten
+    // Bearer token gerektiriyor), login sonrası "linkte kaldığı yere devam
+    // et" AYRI bir iş — bkz. onDeepLinkConsumed (State Activity'de tutulduğu
+    // için tüketilince BİR KEZ temizlenmeli, aksi halde her recomposition'da
+    // TEKRAR navigate edilir).
+    pendingDeepLinkRoute: String? = null,
+    onDeepLinkConsumed: () -> Unit = {},
+) {
     val navController = rememberNavController()
     val startDestination = if (ServiceLocator.authRepository.isLoggedIn()) ROUTE_MAIN else ROUTE_LOGIN
+
+    LaunchedEffect(pendingDeepLinkRoute) {
+        if (pendingDeepLinkRoute != null && ServiceLocator.authRepository.isLoggedIn()) {
+            navController.navigate(pendingDeepLinkRoute)
+        }
+        if (pendingDeepLinkRoute != null) onDeepLinkConsumed()
+    }
 
     // 1:1 sesli/görüntülü arama (native görev — WebRTC + Supabase Realtime
     // broadcast, LiveKit grup aramasından TAMAMEN AYRI): `calls:<meId>`
