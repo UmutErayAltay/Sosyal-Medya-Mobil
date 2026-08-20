@@ -17,7 +17,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 sealed class CreatePostEvent {
-    data object Success : CreatePostEvent()
+    // 2026-08-21 (taslak): [savedAsDraft] ekranın "Paylaşıldı" mı "Taslak
+    // kaydedildi" mi göstereceğini ayırt etmesi için.
+    data class Success(val savedAsDraft: Boolean) : CreatePostEvent()
     data object SessionExpired : CreatePostEvent()
 }
 
@@ -202,7 +204,7 @@ class CreatePostViewModel : ViewModel() {
     /** [context] SADECE seçilen görsel/video Uri'sinin byte'larını/mime tipini
      * okumak için gerekiyor (ContentResolver) — ViewModel Context'i SAKLAMAZ,
      * sadece bu tek çağrı sırasında kullanır. */
-    fun submit(context: Context) {
+    fun submit(context: Context, saveAsDraft: Boolean = false) {
         if (_submitting.value) return
         val text = _content.value.trim()
         val imageUris = _selectedImageUris.value
@@ -303,9 +305,10 @@ class CreatePostViewModel : ViewModel() {
                     isReel = _isReel.value,
                     gifUrl = gifUrl,
                     pollOptions = filledPollOptions,
+                    saveAsDraft = saveAsDraft,
                 )
             ) {
-                is CreatePostResult.Success -> _events.emit(CreatePostEvent.Success)
+                is CreatePostResult.Success -> _events.emit(CreatePostEvent.Success(saveAsDraft))
                 is CreatePostResult.Error -> {
                     if (result.code == "unauthorized") {
                         tokenStore.clearToken()

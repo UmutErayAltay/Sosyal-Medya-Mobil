@@ -29,6 +29,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.automirrored.filled.Logout
+import androidx.compose.material.icons.filled.Drafts
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Notifications
@@ -99,6 +100,7 @@ fun SettingsScreen(
     onNavigateToTwoFactor: () -> Unit,
     onNavigateToBlockedUsers: () -> Unit,
     onNavigateToActiveSessions: () -> Unit,
+    onNavigateToDrafts: () -> Unit,
     onDeactivated: () -> Unit,
     onLoggedOut: () -> Unit,
     onSessionExpired: () -> Unit,
@@ -168,6 +170,11 @@ fun SettingsScreen(
                 icon = Icons.Filled.Stars,
                 label = "Yakın Arkadaşlar",
                 onClick = onNavigateToCloseFriends,
+            )
+            SettingsRow(
+                icon = Icons.Filled.Drafts,
+                label = "Taslaklarım",
+                onClick = onNavigateToDrafts,
             )
 
             SettingsSectionHeader("Görünüm")

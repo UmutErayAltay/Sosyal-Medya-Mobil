@@ -53,6 +53,7 @@ import com.umuterayaltay.sosyal.nativeapp.ui.screens.CallScreen
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.CloseFriendsScreen
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.ConversationScreen
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.CreatePostScreen
+import com.umuterayaltay.sosyal.nativeapp.ui.screens.DraftsScreen
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.EditProfileScreen
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.FollowListScreen
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.FollowRequestsScreen
@@ -559,6 +560,7 @@ fun AppNavHost() {
                 onNavigateToTwoFactor = { navController.navigate("twoFactor") },
                 onNavigateToBlockedUsers = { navController.navigate("blockedUsers") },
                 onNavigateToActiveSessions = { navController.navigate("activeSessions") },
+                onNavigateToDrafts = { navController.navigate("drafts") },
                 onDeactivated = {
                     // onSessionExpired ile AYNI navigasyon hedefi - kullanıcı burada
                     // BİLEREK çıktı, oturumu dışarıdan geçersizleşmedi (bkz. yukarıdaki
@@ -637,6 +639,19 @@ fun AppNavHost() {
         }
         composable("activeSessions") {
             ActiveSessionsScreen(
+                onNavigateBack = { navController.navigateUp() },
+                onSessionExpired = {
+                    navController.navigate(ROUTE_LOGIN) {
+                        popUpTo(ROUTE_MAIN) { inclusive = true }
+                    }
+                },
+            )
+        }
+        // "drafts" - "blockedUsers"/"activeSessions" ile AYNI basit PUSH
+        // deseniyle "settings"in "Taslaklarım" satırından erişilir (2026-08-21,
+        // web'in drafts_list()/publish_draft()'ünün native karşılığı).
+        composable("drafts") {
+            DraftsScreen(
                 onNavigateBack = { navController.navigateUp() },
                 onSessionExpired = {
                     navController.navigate(ROUTE_LOGIN) {

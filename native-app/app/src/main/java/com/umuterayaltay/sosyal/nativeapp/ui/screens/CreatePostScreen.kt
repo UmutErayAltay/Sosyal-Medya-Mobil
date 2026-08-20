@@ -1,5 +1,6 @@
 package com.umuterayaltay.sosyal.nativeapp.ui.screens
 
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -127,7 +128,12 @@ fun CreatePostScreen(
     LaunchedEffect(Unit) {
         viewModel.events.collect { event ->
             when (event) {
-                is CreatePostEvent.Success -> onPostCreated()
+                is CreatePostEvent.Success -> {
+                    if (event.savedAsDraft) {
+                        Toast.makeText(context, "Taslak kaydedildi", Toast.LENGTH_SHORT).show()
+                    }
+                    onPostCreated()
+                }
                 is CreatePostEvent.SessionExpired -> onSessionExpired()
             }
         }
@@ -182,6 +188,16 @@ fun CreatePostScreen(
                             strokeWidth = 2.dp,
                         )
                     } else {
+                        // 2026-08-21 (taslak): web'in create_post()'undaki AYNI
+                        // iki-buton mantığı (action=draft vs normal submit) —
+                        // reel'de taslak anlamsız (bkz. reels.py'nin is_reel
+                        // filtresi hiçbir zaman is_draft=true postu göstermez,
+                        // yayınlanana kadar reel de "yokmuş" gibi davranır, bu
+                        // yüzden reel iken de gösterilmeye devam eder, ayrı bir
+                        // kısıt İCAT EDİLMEDİ).
+                        TextButton(onClick = { viewModel.submit(context, saveAsDraft = true) }, enabled = canSubmit) {
+                            Text("Taslak Kaydet")
+                        }
                         TextButton(onClick = { viewModel.submit(context) }, enabled = canSubmit) {
                             Text("Paylaş")
                         }

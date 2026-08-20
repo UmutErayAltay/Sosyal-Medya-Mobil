@@ -715,13 +715,30 @@ data class AddCommentResponse(
     val error: String? = null,
 )
 
-// ---- Post oluşturma (app/api_v1.py api_create_post() — Faz 4, native Android
-// içerik-oluşturma. BİLİNÇLİ SINIR: çoklu görsel/video/GIF/anket/taslak/konum
-// YOK — sadece metin + TEK opsiyonel görsel + görünürlük.) ----
+// ---- Post oluşturma (app/api_v1/interactions.py api_create_post() — Faz 4,
+// native Android içerik-oluşturma; bu yorum defalarca eskimiş bulundu, artık
+// GÜNCEL: metin + çoklu görsel + video/reel + görünürlük + GIF + anket + taslak
+// (2026-08-21) hepsi var. BİLİNÇLİ SINIR (hâlâ geçerli): post PLANLAMA
+// (scheduled_at) ve konum YOK. ----
 
 /** POST /api/v1/posts (multipart/form-data) yanıtı — PostDto ile AYNI şekil. */
 data class CreatePostResponse(
     val post: PostDto? = null,
+    val error: String? = null,
+)
+
+// ---- Taslaklar (app/api_v1/interactions.py api_list_drafts()/
+// api_publish_draft(), 2026-08-21) ----
+
+/** GET /api/v1/drafts yanıtı — PostDto ile AYNI şekil (feed'in embedded
+ * count'lu post şekli, sadece is_draft=true filtreli). */
+data class DraftsResponse(
+    val drafts: List<PostDto>? = null,
+)
+
+/** POST /api/v1/drafts/{id}/publish yanıtı. */
+data class PublishDraftResponse(
+    val ok: Boolean = false,
     val error: String? = null,
 )
 

@@ -55,6 +55,17 @@ sealed class DeletePostResult {
     data class Error(val code: String?) : DeletePostResult()
 }
 
+// Taslaklar (2026-08-21) — CreatePostResult/DeletePostResult ile AYNI desen.
+sealed class DraftsResult {
+    data class Success(val drafts: List<Post>) : DraftsResult()
+    data class Error(val code: String?) : DraftsResult()
+}
+
+sealed class PublishDraftResult {
+    object Success : PublishDraftResult()
+    data class Error(val code: String?) : PublishDraftResult()
+}
+
 sealed class ToggleArchiveResult {
     data class Success(val isArchived: Boolean) : ToggleArchiveResult()
     data class Error(val code: String?) : ToggleArchiveResult()
@@ -194,6 +205,10 @@ class InteractionsRepository(
         isReel: Boolean = false,
         gifUrl: String? = null,
         pollOptions: List<String> = emptyList(),
+        // 2026-08-21 (taslak): true iken backend action="draft" alır, post
+        // is_draft=true kaydedilir (feed/keşfet/hashtag'te GÖRÜNMEZ), hashtag
+        // senkronu/mention bildirimi publishDraft()'a kadar ERTELENİR.
+        saveAsDraft: Boolean = false,
     ): CreatePostResult = withContext(Dispatchers.IO) {
         try {
             val contentBody: RequestBody = content.toRequestBody("text/plain".toMediaTypeOrNull())
@@ -224,10 +239,15 @@ class InteractionsRepository(
                 ?.toRequestBody("text/plain".toMediaTypeOrNull())
             val pollOption4Body: RequestBody? = pollOptions.getOrNull(3)
                 ?.toRequestBody("text/plain".toMediaTypeOrNull())
+            val actionBody: RequestBody? = if (saveAsDraft) {
+                "draft".toRequestBody("text/plain".toMediaTypeOrNull())
+            } else {
+                null
+            }
 
             val response = interactionsApi.createPost(
                 contentBody, visibilityBody, imageParts, videoPart, isReelBody, gifUrlBody,
-                pollOption1Body, pollOption2Body, pollOption3Body, pollOption4Body,
+                pollOption1Body, pollOption2Body, pollOption3Body, pollOption4Body, actionBody,
             )
             val body = response.body()
             val post = body?.post
@@ -240,6 +260,40 @@ class InteractionsRepository(
             CreatePostResult.Error("network_error")
         } catch (e: Exception) {
             CreatePostResult.Error("unknown_error")
+        }
+    }
+
+    /** GET /api/v1/drafts — kendi taslaklarım, en yeniden eskiye. */
+    suspend fun getDrafts(): DraftsResult = withContext(Dispatchers.IO) {
+        try {
+            val response = interactionsApi.getDrafts()
+            val body = response.body()
+            if (response.isSuccessful && body != null) {
+                DraftsResult.Success(body.drafts.orEmpty().map { it.toDomain() })
+            } else {
+                DraftsResult.Error(RetrofitClient.parseErrorCode(response))
+            }
+        } catch (e: IOException) {
+            DraftsResult.Error("network_error")
+        } catch (e: Exception) {
+            DraftsResult.Error("unknown_error")
+        }
+    }
+
+    /** POST /api/v1/drafts/{id}/publish — taslağı yayınlar. */
+    suspend fun publishDraft(postId: String): PublishDraftResult = withContext(Dispatchers.IO) {
+        try {
+            val response = interactionsApi.publishDraft(postId)
+            val body = response.body()
+            if (response.isSuccessful && body?.ok == true) {
+                PublishDraftResult.Success
+            } else {
+                PublishDraftResult.Error(body?.error ?: RetrofitClient.parseErrorCode(response))
+            }
+        } catch (e: IOException) {
+            PublishDraftResult.Error("network_error")
+        } catch (e: Exception) {
+            PublishDraftResult.Error("unknown_error")
         }
     }
 

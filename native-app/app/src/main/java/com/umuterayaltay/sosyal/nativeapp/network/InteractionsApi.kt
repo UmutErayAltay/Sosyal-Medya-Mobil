@@ -53,6 +53,12 @@ interface InteractionsApi {
     // create_post()'undaki AYNI sözleşme: request.form.get(f"poll_option_{i}")
     // ile birebir isim eşleşmesi, en az 2 dolu seçenek "anket var" sayılır,
     // görsel/video ile mutually-exclusive DEĞİL (GIF'in aksine birlikte olabilir).
+    // `action` (2026-08-21, taslak) — backend'de request.form.get("action", "")
+    // == "draft" kontrolü, gönderilmezse/başka bir değerse normal (taslak
+    // olmayan) yayın davranışı DEĞİŞMEZ. Abstract interface metodunda
+    // varsayılan parametre desteklenmediği için (bkz. dosyanın üstündeki AYNI
+    // uyarı) NULLABLE ama varsayılansız — mevcut normal-yayın çağıranları
+    // (CreatePostViewModel) `action = null` geçmeye güncellendi.
     @Multipart
     @POST("posts")
     suspend fun createPost(
@@ -66,7 +72,16 @@ interface InteractionsApi {
         @Part("poll_option_2") pollOption2: RequestBody?,
         @Part("poll_option_3") pollOption3: RequestBody?,
         @Part("poll_option_4") pollOption4: RequestBody?,
+        @Part("action") action: RequestBody?,
     ): Response<CreatePostResponse>
+
+    // Taslaklar (2026-08-21) — app/api_v1/interactions.py api_list_drafts()/
+    // api_publish_draft() ile birebir, bkz. ApiModels.kt DTO yorumları.
+    @GET("drafts")
+    suspend fun getDrafts(): Response<DraftsResponse>
+
+    @POST("drafts/{id}/publish")
+    suspend fun publishDraft(@Path("id") postId: String): Response<PublishDraftResponse>
 
     // Post yönetimi (sahibinin kendi postuna uyguladığı yaşam döngüsü
     // işlemleri) — app/api_v1/posts.py ile birebir, bkz. ApiModels.kt DTO
