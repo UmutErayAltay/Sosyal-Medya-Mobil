@@ -1,5 +1,6 @@
 package com.umuterayaltay.sosyal.nativeapp.ui.screens
 
+import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -103,6 +104,15 @@ fun CreatePostScreen(
     onNavigateBack: () -> Unit,
     onPostCreated: () -> Unit,
     onSessionExpired: () -> Unit,
+    // Share-target (2026-08-21) — Android paylaş menüsünden gelen metin/görsel
+    // (bkz. AppNavHost.kt composable("createPost")). SADECE ilk composition'da
+    // BİR KEZ uygulanır (bkz. aşağıdaki LaunchedEffect(Unit)) — sonra
+    // [onShareContentConsumed] çağrılıp outer state temizlenir, aksi halde
+    // kullanıcı içeriği SİLİP yeniden yazsa bile her recomposition'da eski
+    // paylaşılan metin GERİ gelirdi.
+    initialText: String? = null,
+    initialImageUri: Uri? = null,
+    onShareContentConsumed: () -> Unit = {},
     viewModel: CreatePostViewModel = viewModel(),
 ) {
     val context = LocalContext.current
@@ -124,6 +134,12 @@ fun CreatePostScreen(
     // BİLİNÇLİ olarak no-op bırakıldı, sekme gizlenmedi (bileşene dokunulmadı).
     var showMediaPicker by remember { mutableStateOf(false) }
     val mediaPickerSheetState = rememberModalBottomSheetState()
+
+    LaunchedEffect(Unit) {
+        if (initialText != null) viewModel.onContentChange(initialText)
+        if (initialImageUri != null) viewModel.onImagesSelected(listOf(initialImageUri))
+        if (initialText != null || initialImageUri != null) onShareContentConsumed()
+    }
 
     LaunchedEffect(Unit) {
         viewModel.events.collect { event ->

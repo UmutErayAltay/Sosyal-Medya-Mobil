@@ -42,6 +42,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import coil.compose.AsyncImage
+import com.umuterayaltay.sosyal.nativeapp.PendingShareContent
 import com.umuterayaltay.sosyal.nativeapp.ServiceLocator
 import com.umuterayaltay.sosyal.nativeapp.repository.CallPhase
 import com.umuterayaltay.sosyal.nativeapp.ui.screens.OneOnOneCallScreen
@@ -191,6 +192,13 @@ fun AppNavHost(
     // TEKRAR navigate edilir).
     pendingDeepLinkRoute: String? = null,
     onDeepLinkConsumed: () -> Unit = {},
+    // Share-target (2026-08-21) — pendingDeepLinkRoute ile AYNI desen: Android
+    // paylaş menüsünden gelen metin/görsel varsa "createPost"a navigate edilir,
+    // GERÇEK içerik composable("createPost") bloğunda outer scope'tan
+    // (closure) okunur — NavController route'ları üzerinden ayrı bir
+    // argüman TAŞIMA GEREKMEZ (bkz. aşağıdaki composable("createPost")).
+    pendingShareContent: PendingShareContent? = null,
+    onShareConsumed: () -> Unit = {},
 ) {
     val navController = rememberNavController()
     val startDestination = if (ServiceLocator.authRepository.isLoggedIn()) ROUTE_MAIN else ROUTE_LOGIN
@@ -200,6 +208,17 @@ fun AppNavHost(
             navController.navigate(pendingDeepLinkRoute)
         }
         if (pendingDeepLinkRoute != null) onDeepLinkConsumed()
+    }
+
+    LaunchedEffect(pendingShareContent) {
+        if (pendingShareContent != null && ServiceLocator.authRepository.isLoggedIn()) {
+            navController.navigate("createPost")
+        }
+        // onShareConsumed BURADA çağrılmıyor — composable("createPost") bloğu
+        // içeriği GERÇEKTEN ViewModel'e uyguladıktan SONRA tüketir (bkz.
+        // CreatePostScreen'in initialText/initialImageUri LaunchedEffect'i),
+        // aksi halde navigate() ile o composable'ın kompoze olması arasındaki
+        // yarışta içerik kaybolabilirdi.
     }
 
     // 1:1 sesli/görüntülü arama (native görev — WebRTC + Supabase Realtime
@@ -556,9 +575,12 @@ fun AppNavHost(
                 // 2026-08-09 (kullanıcı isteği: "post paylaşınca sayfayı
                 // yenilememe gerek kalmadan ana sayfada da görmek istiyorum")
                 // — "storyCreate"in AYNI savedStateHandle deseni (bkz. onStoryCreated
-                // yorumu): "createPost" SADECE MainScaffold'un Feed sekmesinden
-                // (onNewPostClick) erişildiği için previousBackStackEntry HER
-                // ZAMAN ROUTE_MAIN'in kendisi.
+                // yorumu): "createPost" MainScaffold'un Feed sekmesinden
+                // (onNewPostClick) VEYA share-target'tan (2026-08-21, bkz.
+                // yukarıdaki pendingShareContent LaunchedEffect'i) erişilir,
+                // İKİSİNDE de previousBackStackEntry HER ZAMAN ROUTE_MAIN'in
+                // kendisi (share-target navigate'i de startDestination ZATEN
+                // ROUTE_MAIN iken tetiklenir, bkz. o effect'in isLoggedIn() koşulu).
                 onPostCreated = {
                     navController.previousBackStackEntry?.savedStateHandle?.set("post_created", true)
                     navController.navigateUp()
@@ -568,6 +590,14 @@ fun AppNavHost(
                         popUpTo(ROUTE_MAIN) { inclusive = true }
                     }
                 },
+                // Share-target (2026-08-21) — outer AppNavHost() parametresinden
+                // closure ile okunur, NavController route argümanı DEĞİL.
+                // CreatePostScreen içeriği ViewModel'e uyguladıktan SONRA
+                // onShareContentConsumed() çağırır (composable her recompose'da
+                // AYNI initialText'i TEKRAR uygulamasın diye).
+                initialText = pendingShareContent?.text,
+                initialImageUri = pendingShareContent?.imageUri,
+                onShareContentConsumed = onShareConsumed,
             )
         }
         composable("settings") {

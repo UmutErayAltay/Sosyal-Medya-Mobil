@@ -3,6 +3,7 @@ package com.umuterayaltay.sosyal.nativeapp
 import android.Manifest
 import android.content.Intent
 import android.graphics.Color as AndroidColor
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -24,6 +25,12 @@ import com.umuterayaltay.sosyal.nativeapp.navigation.AppNavHost
 import com.umuterayaltay.sosyal.nativeapp.ui.theme.SosyalNativeTheme
 import kotlinx.coroutines.launch
 
+/** Share-target (2026-08-21) — Android paylaş menüsünden gelen içerik.
+ * `text` (EXTRA_TEXT) ve `imageUri` (EXTRA_STREAM, image mimeType'ı) AYRI
+ * intent-filter'lardan gelir ama ikisi de AYNI şekilde CreatePostScreen'i
+ * önceden-doldurulmuş açar (bkz. MainActivity.consumeShareIntent()). */
+data class PendingShareContent(val text: String?, val imageUri: Uri?)
+
 class MainActivity : ComponentActivity() {
 
     // Android 13+/API 33'te bildirim gösterebilmek için runtime izin şart
@@ -41,9 +48,15 @@ class MainActivity : ComponentActivity() {
     // recreation boyunca KORUNUYOR (setIntent ile güncellenen AYNI nesne).
     private val pendingDeepLinkRoute = mutableStateOf<String?>(null)
 
+    // Share-target (2026-08-21) — pendingDeepLinkRoute ile AYNI desen/gerekçe
+    // (bkz. yukarıdaki yorum) — AYRI tutuldu, ikisi AYNI anda gelemez (biri
+    // ACTION_VIEW biri ACTION_SEND).
+    private val pendingShareContent = mutableStateOf<PendingShareContent?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         pendingDeepLinkRoute.value = consumeDeepLinkRoute(intent)
+        pendingShareContent.value = consumeShareIntent(intent)
         requestNotificationPermissionIfNeeded()
         registerFcmTokenIfLoggedIn()
         // enableEdgeToEdge()'in VARSAYILANI (parametresiz) status/navigation
@@ -71,9 +84,12 @@ class MainActivity : ComponentActivity() {
             SosyalNativeTheme(darkTheme = darkTheme) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     val deepLinkRoute by pendingDeepLinkRoute
+                    val shareContent by pendingShareContent
                     AppNavHost(
                         pendingDeepLinkRoute = deepLinkRoute,
                         onDeepLinkConsumed = { pendingDeepLinkRoute.value = null },
+                        pendingShareContent = shareContent,
+                        onShareConsumed = { pendingShareContent.value = null },
                     )
                 }
             }
@@ -86,8 +102,10 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         val route = consumeDeepLinkRoute(intent)
+        val share = consumeShareIntent(intent)
         setIntent(intent)
         if (route != null) pendingDeepLinkRoute.value = route
+        if (share != null) pendingShareContent.value = share
     }
 
     private fun requestNotificationPermissionIfNeeded() {
@@ -136,5 +154,29 @@ class MainActivity : ComponentActivity() {
         }
         if (route != null) intent.data = null
         return route
+    }
+
+    /** Share-target (2026-08-21) — AndroidManifest.xml'deki iki SEND
+     * intent-filter'ının (text/plain, image mime tipi) karşılığı. `EXTRA_STREAM`
+     * (`@Suppress` GEREKMEZ — `getParcelableExtra` API 33+'ta deprecated
+     * ama minSdk'de hâlâ ana yol, TIRAMISU dalı ayrıca ele alınıyor).
+     * ACTION_SEND DIŞINDAKİ (ör. normal VIEW/MAIN) bir intent'te null döner
+     * — consumeDeepLinkRoute()'la AYNI "eşleşmezse sessizce yok say" ilkesi. */
+    private fun consumeShareIntent(intent: Intent?): PendingShareContent? {
+        if (intent?.action != Intent.ACTION_SEND) return null
+        val text = intent.getStringExtra(Intent.EXTRA_TEXT)
+        val imageUri = if (intent.type?.startsWith("image/") == true) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+            } else {
+                @Suppress("DEPRECATION")
+                intent.getParcelableExtra(Intent.EXTRA_STREAM)
+            }
+        } else {
+            null
+        }
+        if (text.isNullOrBlank() && imageUri == null) return null
+        intent.action = null
+        return PendingShareContent(text = text?.takeIf { it.isNotBlank() }, imageUri = imageUri)
     }
 }

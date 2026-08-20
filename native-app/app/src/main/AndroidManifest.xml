@@ -82,6 +82,28 @@
                 <data android:pathPrefix="/u/" />
                 <data android:pathPrefix="/hashtag/" />
             </intent-filter>
+
+            <!-- Share-target (2026-08-21) — Android'in paylaş menüsünden
+                 ("Diğer uygulamalarla paylaş") bir metin/link veya TEK görsel
+                 doğrudan bu uygulamanın yeni-gönderi ekranına gelebilsin diye.
+                 İki AYRI intent-filter GEREKİR (bkz. MainActivity.consumeShareIntent()
+                 — text/plain EXTRA_TEXT okur, image/* EXTRA_STREAM okur, TEK
+                 bir filtrede iki mimeType'ı birleştirmek Android'de belirsiz
+                 eşleşmeye yol açar). SEND_MULTIPLE (çoklu görsel paylaşımı)
+                 BİLİNÇLİ olarak kapsam dışı — CreatePostScreen zaten TEK
+                 seçimle test edilen bir akışa `onImagesSelected(listOf(uri))`
+                 ile bağlanıyor, çoklu paylaşılan görsel gelirse SADECE
+                 ilki kullanılır (ayrı bir SEND_MULTIPLE dalı İCAT EDİLMEDİ). -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+            </intent-filter>
         </activity>
 
         <!-- Faz 5 Dalga 4A: FCM push bildirimi — onNewToken/onMessageReceived
