@@ -16,6 +16,12 @@
          özellik. -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- 2026-08-21: arama (1:1/grup) sırasında ses çıkışı seçiminde (bkz.
+         AudioOutputButton.kt) Bluetooth cihazlarını LİSTELEYEBİLMEK için —
+         Android 12+/API 31'te runtime izin de gerekir (bkz. OneOnOneCallScreen.kt/
+         CallScreen.kt), izin YOKSA arama yine çalışır, sadece Bluetooth
+         listede görünmez (bloklayıcı DEĞİL, kamera/mikrofon gibi). -->
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <!-- 2026-08-09: uygulama içi güncelleme (Ayarlar > Uygulama Güncellemeleri) —
          Play Store DIŞINDA dağıtılan bir APK'yı kendi indirip kurdurabilmek için
          ZORUNLU (Android 8+/API 26'da "special permission", runtime dialog YOK —

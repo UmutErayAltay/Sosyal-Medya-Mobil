@@ -4,6 +4,7 @@ import android.Manifest
 import android.app.Activity
 import android.content.ContextWrapper
 import android.content.pm.PackageManager
+import android.os.Build
 import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -145,16 +146,35 @@ fun CallScreen(
                 PackageManager.PERMISSION_GRANTED,
         )
     }
+    // BLUETOOTH_CONNECT (2026-08-21) — OneOnOneCallScreen.kt'deki AYNI
+    // gerekçe/desen: AudioSwitchHandler bu izin OLMADAN Bluetooth cihazlarını
+    // listeleyemiyordu. hasAllPermissions'A DAHİL DEĞİL — reddedilirse arama
+    // yine başlar, sadece Bluetooth ses çıkışı listede görünmez.
+    var hasBluetoothPermission by remember {
+        mutableStateOf(
+            Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+                ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT) ==
+                    PackageManager.PERMISSION_GRANTED,
+        )
+    }
+    val permissionsToRequest = remember {
+        buildList {
+            add(Manifest.permission.CAMERA)
+            add(Manifest.permission.RECORD_AUDIO)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) add(Manifest.permission.BLUETOOTH_CONNECT)
+        }.toTypedArray()
+    }
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions(),
     ) { result ->
         hasCameraPermission = result[Manifest.permission.CAMERA] ?: hasCameraPermission
         hasAudioPermission = result[Manifest.permission.RECORD_AUDIO] ?: hasAudioPermission
+        hasBluetoothPermission = result[Manifest.permission.BLUETOOTH_CONNECT] ?: hasBluetoothPermission
     }
     val hasAllPermissions = hasCameraPermission && hasAudioPermission
     LaunchedEffect(Unit) {
-        if (!hasAllPermissions) {
-            permissionLauncher.launch(arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO))
+        if (!hasAllPermissions || !hasBluetoothPermission) {
+            permissionLauncher.launch(permissionsToRequest)
         }
     }
     LaunchedEffect(hasAllPermissions) {
@@ -182,9 +202,7 @@ fun CallScreen(
     ) {
         when {
             !hasAllPermissions -> PermissionRationale(
-                onRequestPermission = {
-                    permissionLauncher.launch(arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO))
-                },
+                onRequestPermission = { permissionLauncher.launch(permissionsToRequest) },
                 onClose = onNavigateBack,
             )
             state is CallUiState.Loading -> Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
