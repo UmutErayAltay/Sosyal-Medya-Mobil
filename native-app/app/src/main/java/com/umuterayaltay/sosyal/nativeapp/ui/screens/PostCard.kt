@@ -240,19 +240,13 @@ fun PostCard(
     val isBookmarked = bookmarkedOverride ?: post.bookmarkedByMe
 
     // 2026-08-08 (performans düzeltmesi): kartın KENDİ giriş animasyonu
-    // (fade+slide-up) kaldırıldı — çağıran ekranlar (FeedScreen/
-    // DiscoverScreen/ProfileScreen/HashtagScreen/TrendingScreen) ZATEN
-    // kendi seviyelerinde bir giriş animasyonu uyguluyordu (bkz.
-    // PostFeedStaggerReveal/StaggeredPostEntry), bu ikisi ÇİFT sarmalanıp
-    // hem gözle görülür "iki aşamalı" bir gecikme yaratıyordu hem de
-    // LazyColumn kaydırma sırasında composition'ı disposed/recompose
-    // ettiği için animasyon her scroll-geri-gelişte TEKRAR oynuyordu
-    // (önceki yorumdaki "composition canlı tutulduğu sürece tekrar
-    // tetiklenmez" varsayımı YANLIŞTI — LazyColumn görünür pencerenin
-    // dışına çıkan item'ları gerçekten disposed eder). Kullanıcı raporu:
-    // "uygulama kasıyor, yükleme çok yavaşladı". Tek animasyon artık
-    // SADECE çağıran taraftaki sarmalayıcıda ve sadece gerçekten YENİ
-    // post'larda oynuyor (bkz. o dosyalardaki seenKeys/isNew mantığı).
+    // (fade+slide-up) kaldırılmıştı — çağıran ekranlar (FeedScreen/
+    // DiscoverScreen/ProfileScreen/HashtagScreen/TrendingScreen) kendi
+    // seviyelerinde bir sarmalayıcı (PostFeedStaggerReveal/StaggeredPostEntry)
+    // ile giriş animasyonu uyguluyordu. 2026-08-21 (kullanıcı raporu: "postların
+    // gelme animasyonları gereksiz kasmaya neden oluyor") — o sarmalayıcılar da
+    // TÜMÜYLE KALDIRILDI, artık hiçbir seviyede post giriş animasyonu YOK.
+    // PostCard'a bu yüzden bilerek GERİ EKLENMEDİ.
     // Beğeni kalbi + kaydet ikonu için "spring pop" — Animatable ile elle
     // yönetildi (animateXAsState value-driven değil, HER tıklamada aynı
     // spring'i baştan oynatmak gerektiği için scope.launch + animateTo

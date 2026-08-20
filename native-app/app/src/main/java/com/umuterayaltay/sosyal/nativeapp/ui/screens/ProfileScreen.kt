@@ -528,8 +528,6 @@ private fun ProfileContent(
     // yuzden burada spesifikasyondaki "imageUrl != null || !imageUrls.isNullOrEmpty()"
     // kontrolunun SADECE imageUrl yarisi uygulanabildi (bkz. rapor sapmasi).
     val mediaPosts = remember(posts) { posts.filter { !it.imageUrl.isNullOrBlank() } }
-    // Performans düzeltmesi (bkz. FeedScreen.kt PostFeedStaggerReveal yorumu).
-    val seenPostKeys = remember { mutableSetOf<String>() }
 
     LazyColumn(
         state = listState,
@@ -644,30 +642,24 @@ private fun ProfileContent(
                     }
                 }
             } else {
-                itemsIndexed(currentPosts, key = { _, post -> "${selectedTab.name}_${post.id}" }) { index, post ->
-                    // Gorsel cila (animasyon turu): PostCard.kt'ye DOKUNMADAN,
-                    // sadece cagri yerinde stagger'li fade+slide giris - liste
-                    // ilk yuklendiginde/sekme degistiginde postlar art arda
-                    // hafif gecikmeyle belirir.
-                    StaggeredPostEntry(index = index, itemKey = "${selectedTab.name}_${post.id}", seenKeys = seenPostKeys) {
-                        PostCard(
-                            post = post,
-                            onLikeClick = onLikeClick,
-                            onCommentClick = onCommentClick,
-                            onHashtagClick = onHashtagClick,
-                            onPollVote = onPollVote,
-                            onMutePost = onMutePost,
-                            onBookmark = onBookmarkPost,
-                            onRepost = onRepost,
-                            onReport = onReport,
-                            onSessionExpired = onSessionExpired,
-                            isOwnPost = post.userId == currentUserId,
-                            onEditPost = onEditPost,
-                            onDeletePost = onDeletePost,
-                            onArchivePost = onArchivePost,
-                            onPinPost = onPinPost,
-                        )
-                    }
+                itemsIndexed(currentPosts, key = { _, post -> "${selectedTab.name}_${post.id}" }) { _, post ->
+                    PostCard(
+                        post = post,
+                        onLikeClick = onLikeClick,
+                        onCommentClick = onCommentClick,
+                        onHashtagClick = onHashtagClick,
+                        onPollVote = onPollVote,
+                        onMutePost = onMutePost,
+                        onBookmark = onBookmarkPost,
+                        onRepost = onRepost,
+                        onReport = onReport,
+                        onSessionExpired = onSessionExpired,
+                        isOwnPost = post.userId == currentUserId,
+                        onEditPost = onEditPost,
+                        onDeletePost = onDeletePost,
+                        onArchivePost = onArchivePost,
+                        onPinPost = onPinPost,
+                    )
                 }
             }
         }
@@ -1066,46 +1058,3 @@ private fun FollowActionButton(
     }
 }
 
-/**
- * FollowListScreen.kt/FollowRequestsScreen.kt'deki stagger-giris fikriyle
- * AYNI - PostCard.kt'ye DOKUNMADAN, sadece cagri yerinde index'e bagli KISA
- * bir gecikmeyle fade+slide giris uygular.
- *
- * 2026-08-08 (performans düzeltmesi — bkz. FeedScreen.kt PostFeedStaggerReveal
- * yorumu, AYNI kök neden): [seenKeys], LazyColumn'un scroll sırasında
- * composition'ı disposed/recompose ettiği durumlarda animasyonun TEKRAR
- * oynamasını engeller — çağıran taraf (ProfileScreen) bu Set'i ekranın/sekmenin
- * yaşam süresi boyunca `remember`'lar.
- *
- * 2026-08-12 (performans düzeltmesi turu — FeedScreen.kt'deki PostFeedStaggerReveal
- * B3 düzeltmesiyle AYNI şekil): bu fonksiyon `animationDone` hilesini hiç
- * kullanmadığı için FeedScreen'in dispose/yeniden-kurma bug'ını taşımıyordu,
- * AMA `AnimatedVisibility`'yi animasyon bittikten SONRA da SÜREKLİ monte
- * bırakıyordu — FeedScreen.kt:103-114'ün belgelediği AYNI pager-engelleme
- * sınıfı sorun (kalıcı AnimatedVisibility katmanı, PostCard'ın HorizontalPager'ıyla
- * LazyColumn arasında). Artık content() TEK bir kompozisyon grubundan çağrılıyor,
- * giriş efekti kompozisyonu hiç etkilemeyen bir DRAW-fazı animasyonu
- * (Animatable + graphicsLayer). `index < 8`: `loadMore` ile gelen sayfalanmış
- * postlar artık animasyon ALMAZ (FeedScreen.kt'deki AYNI gerekçe).
- */
-@Composable
-private fun StaggeredPostEntry(index: Int, itemKey: String, seenKeys: MutableSet<String>, content: @Composable () -> Unit) {
-    val isNew = remember(itemKey) { seenKeys.add(itemKey) && index < 8 }
-    if (!isNew) {
-        content()
-        return
-    }
-    val progress = remember { Animatable(0f) }
-    LaunchedEffect(Unit) {
-        delay(minOf(index, 8) * 40L)
-        progress.animateTo(1f, animationSpec = tween(durationMillis = 220))
-    }
-    Box(
-        modifier = Modifier.graphicsLayer {
-            alpha = progress.value
-            translationY = (1f - progress.value) * 24.dp.toPx()
-        },
-    ) {
-        content()
-    }
-}

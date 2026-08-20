@@ -1,8 +1,6 @@
 package com.umuterayaltay.sosyal.nativeapp.ui.screens
 
 import android.widget.Toast
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -50,7 +48,6 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
@@ -68,70 +65,7 @@ import com.umuterayaltay.sosyal.nativeapp.viewmodel.FeedUiState
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.FeedViewModel
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.StoryBarEvent
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.StoryBarViewModel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
-
-/**
- * Animasyon turu (2026-08-08, UI güzelleştirme çalışması 3. kısım) — liste
- * item'larının stagger'lı fade+slide-up girişi. FeedScreen/DiscoverScreen/
- * HashtagScreen/TrendingScreen'in LazyColumn item'larında PAYLAŞILAN
- * (`internal` görünürlük, AYNI paket — Kotlin'de top-level `private`
- * fonksiyonlar dosya sınırını aşamaz, bu yüzden AYRI AYRI KOPYALANMADI).
- *
- * 2026-08-08 (performans düzeltmesi — kullanıcı raporu "kasıyor, yükleme
- * çok yavaşladı"): İlk sürüm "composition canlı tutulduğu sürece tekrar
- * tetiklenmez" varsayıyordu — bu YANLIŞTI, LazyColumn görünür pencerenin
- * dışına kayan item'ları GERÇEKTEN disposed eder, geri kaydırınca fresh bir
- * composition kurulur ve animasyon HER seferinde yeniden oynardı (sürekli
- * kaydırmada gözle görülür "kasıma"). Artık çağıran ekran, kendi
- * `remember { mutableSetOf<String>() }` ile ekranın YAŞAM SÜRESİ boyunca
- * (composition dispose/recompose'dan ETKİLENMEYEN bir üst seviyede) hangi
- * key'lerin daha önce animasyonla girdiğini tutuyor — `seenKeys.add(key)`
- * SADECE gerçekten YENİ bir key'de `true` döner, aynı key ikinci kez
- * (scroll-geri-geliş) görüldüğünde animasyon TAMAMEN ATLANIR. `index` en
- * fazla 8 adıma SINIRLANIR (60ms adım = en fazla 480ms).
- *
- * 2026-08-12 (performans düzeltmesi turu, kök neden #3 — bkz.
- * shimmering-zooming-petal.md B3): ÖNCEKİ sürüm `content()`'i ÜÇ farklı
- * kompozisyon grubundan çağırıyordu (isNew==false erken dönüş / AnimatedVisibility
- * içinde / animationDone==true sonrası) — `animationDone` true olunca
- * AnimatedVisibility SÖKÜLÜP content() FARKLI bir grup kimliğinde tekrar
- * çağrılıyordu, Compose state'i taşıyamayıp TÜM PostCard alt ağacını (ExoPlayer,
- * HorizontalPager, LinkPreviewCard state'i) dispose edip ~220ms sonra BAŞTAN
- * kuruyordu — tam da scroll fling'i sırasında. Artık content() TEK bir yerden,
- * hep AYNI kompozisyon grubundan çağrılıyor; giriş efekti kompozisyonu hiç
- * etkilemeyen bir DRAW-fazı animasyonu (Animatable + graphicsLayer) — bu yüzden
- * hiçbir alt state kaybolmuyor. `isNew`'e eklenen `index < 8` koşulu:
- * `loadMore` ile gelen sayfalanmış postlar artık animasyon ALMAZ (kullanıcı
- * hâlâ fling yaparken en fazla 480ms sonra beliren bir gecikme, asıl niyeti
- * — "ilk ekran dolusu şık girsin" — bozan bir yan etkiydi).
- */
-@Composable
-internal fun PostFeedStaggerReveal(
-    index: Int,
-    itemKey: String,
-    seenKeys: MutableSet<String>,
-    content: @Composable () -> Unit,
-) {
-    val isNew = remember(itemKey) { seenKeys.add(itemKey) && index < 8 }
-    if (!isNew) {
-        content()
-        return
-    }
-    val progress = remember { Animatable(0f) }
-    LaunchedEffect(Unit) {
-        delay(index.coerceIn(0, 8) * 60L)
-        progress.animateTo(1f, animationSpec = tween(durationMillis = 220))
-    }
-    Box(
-        modifier = Modifier.graphicsLayer {
-            alpha = progress.value
-            translationY = (1f - progress.value) * 24.dp.toPx()
-        },
-    ) {
-        content()
-    }
-}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -180,10 +114,6 @@ fun FeedScreen(
     val suggestedUsers by viewModel.suggestedUsers.collectAsState()
     val currentUserId by viewModel.currentUserId.collectAsState()
     val context = LocalContext.current
-    // Performans düzeltmesi (bkz. PostFeedStaggerReveal yorumu) — bu ekranın
-    // yaşam süresi boyunca hangi post'ların zaten giriş animasyonuyla
-    // gösterildiğini tutar, scroll-geri-gelişte TEKRAR animasyon oynamasın.
-    val seenPostKeys = remember { mutableSetOf<String>() }
 
     LaunchedEffect(Unit) {
         viewModel.events.collect { event ->
@@ -451,7 +381,6 @@ fun FeedScreen(
                             }
                         },
                     ) { index, post ->
-                        PostFeedStaggerReveal(index = index, itemKey = post.id, seenKeys = seenPostKeys) {
                         Column {
                             PostCard(
                                 post = post,
@@ -480,7 +409,6 @@ fun FeedScreen(
                                     modifier = Modifier.padding(top = 12.dp),
                                 )
                             }
-                        }
                         }
                     }
                     // Madde 1: sonsuz kaydırma yükleme göstergesi — listenin SONUNDA,

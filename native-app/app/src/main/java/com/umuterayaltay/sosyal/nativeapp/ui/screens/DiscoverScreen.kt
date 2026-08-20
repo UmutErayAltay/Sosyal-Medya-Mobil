@@ -117,11 +117,6 @@ fun DiscoverScreen(
     }
 
     val listState = rememberLazyListState()
-    // Performans düzeltmesi (bkz. FeedScreen.kt PostFeedStaggerReveal yorumu)
-    // — ekranın yaşam süresi boyunca hangi satırların zaten giriş
-    // animasyonuyla gösterildiğini tutar, scroll-geri-gelişte animasyon
-    // TEKRAR oynamasın.
-    val seenKeys = remember { mutableSetOf<String>() }
     // Sonsuz kaydırma: son görünür öğe listenin sonuna yaklaşınca sonraki sayfa
     // istenir — loadMoreDiscover() zaten hasMore/loading guard'lı, tekrar tekrar
     // tetiklenmesi zararsız (early-return).
@@ -211,28 +206,23 @@ fun DiscoverScreen(
                         if (searchType == SearchType.All || searchType == SearchType.Users) {
                             if (searchUsers.isNotEmpty()) {
                                 item { SectionHeader("Kullanıcılar", count = searchUsers.size) }
-                                itemsIndexed(searchUsers, key = { _, it -> "user_${it.id}" }) { index, user ->
-                                    PostFeedStaggerReveal(index = index, itemKey = "user_${user.id}", seenKeys = seenKeys) {
-                                        UserResultRow(user, onClick = { user.username?.let(onUserClick) })
-                                    }
+                                itemsIndexed(searchUsers, key = { _, it -> "user_${it.id}" }) { _, user ->
+                                    UserResultRow(user, onClick = { user.username?.let(onUserClick) })
                                 }
                             }
                         }
                         if (searchType == SearchType.All || searchType == SearchType.Hashtags) {
                             if (searchHashtags.isNotEmpty()) {
                                 item { SectionHeader("Hashtag'ler", count = searchHashtags.size) }
-                                itemsIndexed(searchHashtags, key = { _, it -> "tag_${it.tag}" }) { index, tag ->
-                                    PostFeedStaggerReveal(index = index, itemKey = "tag_${tag.tag}", seenKeys = seenKeys) {
-                                        HashtagResultRow(tag, onClick = { onNavigateToHashtag(tag.tag) })
-                                    }
+                                itemsIndexed(searchHashtags, key = { _, it -> "tag_${it.tag}" }) { _, tag ->
+                                    HashtagResultRow(tag, onClick = { onNavigateToHashtag(tag.tag) })
                                 }
                             }
                         }
                         if (searchType == SearchType.All || searchType == SearchType.Posts) {
                             if (searchPosts.isNotEmpty()) {
                                 item { SectionHeader("Postlar", count = searchPosts.size) }
-                                itemsIndexed(searchPosts, key = { _, it -> "post_${it.id}" }) { index, post ->
-                                    PostFeedStaggerReveal(index = index, itemKey = "post_${post.id}", seenKeys = seenKeys) {
+                                itemsIndexed(searchPosts, key = { _, it -> "post_${it.id}" }) { _, post ->
                                     PostCard(
                                         post = post,
                                         onLikeClick = { viewModel.toggleLike(it.id) },
@@ -251,7 +241,6 @@ fun DiscoverScreen(
                                         onPinPost = { postId -> viewModel.togglePin(postId) },
                                         onUsernameClick = onUserClick,
                                     )
-                                    }
                                 }
                             }
                         }
@@ -307,8 +296,7 @@ fun DiscoverScreen(
                         }
                     }
                     else -> {
-                        itemsIndexed(discoverPosts, key = { _, it -> "discover_${it.id}" }) { index, post ->
-                            PostFeedStaggerReveal(index = index, itemKey = "discover_${post.id}", seenKeys = seenKeys) {
+                        itemsIndexed(discoverPosts, key = { _, it -> "discover_${it.id}" }) { _, post ->
                             PostCard(
                                 post = post,
                                 onLikeClick = { viewModel.toggleLike(it.id) },
@@ -327,7 +315,6 @@ fun DiscoverScreen(
                                 onPinPost = { postId -> viewModel.togglePin(postId) },
                                 onUsernameClick = onUserClick,
                             )
-                            }
                         }
                         item {
                             when {

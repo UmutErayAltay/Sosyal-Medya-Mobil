@@ -60,8 +60,6 @@ fun TrendingScreen(
     val tags by viewModel.tags.collectAsState()
     val loading by viewModel.loading.collectAsState()
     val error by viewModel.error.collectAsState()
-    // Performans düzeltmesi (bkz. FeedScreen.kt PostFeedStaggerReveal yorumu).
-    val seenTagKeys = remember { mutableSetOf<String>() }
 
     LaunchedEffect(Unit) {
         viewModel.events.collect { event ->
@@ -135,12 +133,10 @@ fun TrendingScreen(
                 contentPadding = PaddingValues(vertical = 8.dp),
             ) {
                 itemsIndexed(tags, key = { _, tag -> tag.tag }) { index, tag ->
-                    PostFeedStaggerReveal(index = index, itemKey = tag.tag, seenKeys = seenTagKeys) {
-                        Column {
-                            TrendingRow(rank = index + 1, tag = tag, onClick = { onNavigateToHashtag(tag.tag) })
-                            if (index < tags.lastIndex) {
-                                HorizontalDivider(modifier = Modifier.padding(start = 56.dp))
-                            }
+                    Column {
+                        TrendingRow(rank = index + 1, tag = tag, onClick = { onNavigateToHashtag(tag.tag) })
+                        if (index < tags.lastIndex) {
+                            HorizontalDivider(modifier = Modifier.padding(start = 56.dp))
                         }
                     }
                 }
