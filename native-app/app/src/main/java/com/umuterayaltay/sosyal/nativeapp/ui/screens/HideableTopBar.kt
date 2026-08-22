@@ -178,6 +178,22 @@ fun HideableTopBar(
 fun OverlayTopBar(
     visible: Boolean,
     modifier: Modifier = Modifier,
+    // 2026-08-22 (kullanıcı raporu, ekran görüntüsüyle doğrulandı: "geri
+    // butonu ve yanındaki isim bildirim panelinin/status bar'ın arkasında
+    // kalıyor") — aşağıdaki `-statusBarHeight` telafisi SADECE bu composable
+    // bir Scaffold'un (MainScaffold'unki gibi, `contentWindowInsets` ile
+    // status bar'ı ZATEN tüketen) İÇİNDE kullanıldığında doğru. ProfileScreen
+    // "profile/{username}" PUSH route'unda (AppNavHost'ta HİÇBİR Scaffold'a
+    // SARILMADAN doğrudan composable) ise HİÇBİR ŞEY status bar'ı önceden
+    // tüketmiyor — `ProfileScreen`'in kendi Box'ına AYRICA `statusBarsPadding()`
+    // eklemek İLK denemede YETMEDİ (muhtemelen Compose'un insets-consumption
+    // mekanizması bu composable'ın KENDİ `WindowInsets.statusBars` okumasını
+    // etkilemiyor — iki ayrı, bağımsız mekanizma). Bunun yerine DOĞRUDAN bu
+    // parametreyle telafiyi KOŞULLU hale getirmek daha güvenilir: `false`
+    // verilince telafi HİÇ uygulanmaz, bar zaten true-y=0'da kalır ve
+    // [TopBarSurface]'in KENDİ Spacer'ı status bar boşluğunu TEK BAŞINA (hiçbir
+    // ekstra offset'e gerek kalmadan) doğru açar.
+    hasAncestorStatusBarInset: Boolean = true,
     content: @Composable () -> Unit,
 ) {
     // KULLANICI RAPORU (5. tur) KÖK NEDEN: [MainScaffold]'un `Scaffold`'u bu
@@ -227,8 +243,9 @@ fun OverlayTopBar(
     // GETİRMEMEK için burada de aynı no-bounce spring kullanılıyor, sadece
     // tween'in doğrusal hissinden biraz daha akışkan bir ivme-yavaşlama
     // eğrisi katıyor.
+    val ancestorCorrection = if (hasAncestorStatusBarInset) statusBarHeight else 0.dp
     val offsetY by animateDpAsState(
-        targetValue = (if (visible) 0.dp else -TOP_BAR_HEIGHT - statusBarHeight) - statusBarHeight,
+        targetValue = (if (visible) 0.dp else -TOP_BAR_HEIGHT - statusBarHeight) - ancestorCorrection,
         animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow),
         label = "topBarOffsetY",
     )

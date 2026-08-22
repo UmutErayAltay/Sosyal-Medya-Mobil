@@ -17,7 +17,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -233,23 +232,22 @@ fun ProfileScreen(
     // katmanı (OverlayTopBar), içerik TOP_BAR_HEIGHT kadar SABİT üst boşluk
     // bırakır (bar'ın görünürlüğü bu boşluğu ETKİLEMEZ).
     //
-    // 2026-08-22 (kullanıcı raporu: "geri butonu ve yanındaki isim bildirim
-    // panelinin arkasında kalıyor") — kök neden, [OverlayTopBar]'ın kendi
-    // `-statusBarHeight` telafi offset'inin (bkz. o composable'ın yorumu)
-    // "bu ekranın Box'ı zaten bir Scaffold tarafından status bar kadar aşağı
-    // itilmiş" VARSAYIMINA dayanması. Bu varsayım SADECE alt-navigasyondaki
-    // "Profil" sekmesinde (MainScaffold'un Scaffold'u status bar'ı ZATEN
-    // tüketiyor) doğru — ProfileScreen'in AYRI bir kullanımı olan
-    // "profile/{username}" PUSH route'unda (AppNavHost'ta HİÇBİR Scaffold'a
-    // SARILMADAN doğrudan composable) hiçbir şey status bar'ı önceden
-    // tüketmiyor, bu yüzden OverlayTopBar'ın telafisi FAZLADAN bir
-    // statusBarHeight çıkarıp geri butonu/başlığı gerçek status bar
-    // bölgesine (ekranın GÖRÜNMEYEN kısmına) itiyordu. Bu PUSH route'un TEK
-    // ayırt edici sinyali `onNavigateBack != null` (KOK "Profil" sekmesi bunu
-    // hiç geçmiyor, bkz. MainScaffold.kt çağrı yeri yorumu) — SADECE o
-    // durumda `statusBarsPadding()` ile aynı telafi burada da sağlanıyor.
-    val statusBarPaddingModifier = if (onNavigateBack != null) Modifier.statusBarsPadding() else Modifier
-    Box(modifier = Modifier.fillMaxSize().then(statusBarPaddingModifier)) {
+    // 2026-08-22 (kullanıcı raporu, ekran görüntüsüyle doğrulandı: "geri
+    // butonu ve yanındaki isim bildirim panelinin/status bar'ın arkasında
+    // kalıyor") — kök neden, [OverlayTopBar]'ın kendi `-statusBarHeight`
+    // telafi offset'inin "bu ekranın Box'ı zaten bir Scaffold tarafından
+    // status bar kadar aşağı itilmiş" VARSAYIMINA dayanması. Bu varsayım
+    // SADECE alt-navigasyondaki "Profil" sekmesinde (MainScaffold'un
+    // Scaffold'u status bar'ı ZATEN tüketiyor) doğru — ProfileScreen'in AYRI
+    // bir kullanımı olan "profile/{username}" PUSH route'unda (AppNavHost'ta
+    // HİÇBİR Scaffold'a SARILMADAN doğrudan composable) hiçbir şey status
+    // bar'ı önceden tüketmiyor. İLK denemede bu Box'a `statusBarsPadding()`
+    // eklemek YETMEDİ (kullanıcı GERÇEK cihazda test etti, sorun AYNEN
+    // devam ediyordu) — o yaklaşım yerine telafiyi [OverlayTopBar]'ın KENDİ
+    // `hasAncestorStatusBarInset` parametresiyle KOŞULLU hale getirmek
+    // (aşağıdaki çağrı yerinde) daha güvenilir çıktı, bkz. o composable'ın
+    // güncellenmiş yorumu.
+    Box(modifier = Modifier.fillMaxSize()) {
         when {
             loading && profile == null -> FullScreenCenter { CircularProgressIndicator() }
 
@@ -322,6 +320,10 @@ fun ProfileScreen(
 
         OverlayTopBar(
             visible = isTopBarVisible,
+            // onNavigateBack != null == "profile/{username}" push route (bkz.
+            // yukarıdaki Box yorumu) — SADECE o durumda ata Scaffold YOK,
+            // telafi devre dışı bırakılıyor.
+            hasAncestorStatusBarInset = onNavigateBack == null,
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .fillMaxWidth(),
