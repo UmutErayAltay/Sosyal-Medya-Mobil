@@ -19,7 +19,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.core.app.NotificationManagerCompat
-import androidx.compose.foundation.text.ClickableText
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -98,6 +97,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -190,6 +190,15 @@ fun ConversationScreen(
     // devam eder. AppNavHost.kt'de PostDetailScreen'in ZATEN var olan
     // "postDetail/{postId}" route'una bağlanır.
     onNavigateToPostDetail: (String) -> Unit = {},
+    // 2026-08-21 (kullanıcı raporu: "mesajlarda karşı tarafın ismine
+    // tıklayınca karşı tarafın profiline gitsin") — VARSAYILAN DEĞERLİ,
+    // AYNI gerekçe. SADECE 1:1 sohbette anlamlı (grup sohbetinde "isim" grup
+    // adı, tek bir profil karşılığı yok) — bkz. aşağıdaki TopAppBar title
+    // Row'undaki clickable. `conversationInfo.name`, backend'de 1:1 sohbette
+    // ZATEN karşı tarafın username'i (bkz. app/api_v1/messaging.py
+    // conversation_detail() — "name": ... other_user.get("username") ...),
+    // bu yüzden AYRI bir alan/backend değişikliği GEREKMEDİ.
+    onNavigateToProfile: (String) -> Unit = {},
     // Grup sesli/görüntülü arama (native görev — LiveKit) — VARSAYILAN
     // DEĞERLİ ({}), onNavigateToPostDetail ile AYNI gerekçe (henüz
     // bağlanmamış çağrı yerleri değişmeden derlenmeye devam eder).
@@ -417,8 +426,13 @@ fun ConversationScreen(
                                 ),
                             )
                         } else {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                val info = conversationInfo
+                            val info = conversationInfo
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.clickable(enabled = info?.isGroup == false) {
+                                    info?.name?.let(onNavigateToProfile)
+                                },
+                            ) {
                                 if (!info?.avatarUrl.isNullOrBlank()) {
                                     AsyncImage(
                                         model = info?.avatarUrl,
@@ -1126,28 +1140,54 @@ private fun MessageBubble(
                             val annotatedContent = remember(message.content, linkColor) {
                                 buildUrlOnlyAnnotatedString(message.content, linkColor)
                             }
-                            ClickableText(
+                            // 2026-08-21 (kullanıcı raporu: "mesajın ortasına uzun
+                            // basınca seçenekler çıkmıyor, sadece köşelere basınca
+                            // çıkıyor") — kök neden: `ClickableText`'in KENDİ dahili
+                            // `pointerInput`'u metnin TÜM sınırları içindeki (sadece
+                            // harflerin üstü DEĞİL) her dokunuşu YAKALIYORDU — bu
+                            // yüzden dış `Card`'ın `combinedClickable.onLongClick`'i
+                            // (bkz. yukarıdaki bubble Card yorumu) metin alanının
+                            // ÜSTÜNDE asla tetiklenemiyordu, SADECE metnin dışındaki
+                            // (köşe/kenar) boşluklarda çalışıyordu. Düzeltme: düz
+                            // `Text` + kendi `pointerInput`'umuzda `detectTapGestures`
+                            // ile HEM tıklama (link) HEM uzun-basma (onLongPress) AYNI
+                            // gesture detector'da ele alınıyor — artık rekabet eden
+                            // iki ayrı dokunuş algılayıcı YOK.
+                            var textLayoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
+                            Text(
                                 text = annotatedContent,
                                 style = MaterialTheme.typography.bodyLarge.copy(color = contentColor),
-                                modifier = Modifier.padding(
-                                    top = if (replyTo != null || !imageUrl.isNullOrBlank() ||
-                                        !videoUrl.isNullOrBlank() || !stickerUrl.isNullOrBlank()
-                                    ) {
-                                        6.dp
-                                    } else {
-                                        0.dp
+                                modifier = Modifier
+                                    .padding(
+                                        top = if (replyTo != null || !imageUrl.isNullOrBlank() ||
+                                            !videoUrl.isNullOrBlank() || !stickerUrl.isNullOrBlank()
+                                        ) {
+                                            6.dp
+                                        } else {
+                                            0.dp
+                                        },
+                                    )
+                                    .pointerInput(annotatedContent, onLongPress) {
+                                        detectTapGestures(
+                                            onTap = { position ->
+                                                val offset = textLayoutResult
+                                                    ?.getOffsetForPosition(position) ?: return@detectTapGestures
+                                                annotatedContent.getStringAnnotations(
+                                                    tag = "url", start = offset, end = offset,
+                                                ).firstOrNull()?.let {
+                                                    try {
+                                                        linkContext.startActivity(
+                                                            Intent(Intent.ACTION_VIEW, Uri.parse(it.item)),
+                                                        )
+                                                    } catch (e: ActivityNotFoundException) {
+                                                        // Tarayıcı yok/açılamadı — kritik değil, sessizce geç.
+                                                    }
+                                                }
+                                            },
+                                            onLongPress = { onLongPress() },
+                                        )
                                     },
-                                ),
-                                onClick = { offset ->
-                                    annotatedContent.getStringAnnotations(tag = "url", start = offset, end = offset)
-                                        .firstOrNull()?.let {
-                                            try {
-                                                linkContext.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(it.item)))
-                                            } catch (e: ActivityNotFoundException) {
-                                                // Tarayıcı yok/açılamadı — kritik değil, sessizce geç.
-                                            }
-                                        }
-                                },
+                                onTextLayout = { textLayoutResult = it },
                             )
                             extractFirstUrl(message.content)?.let { url ->
                                 LinkPreviewCard(url = url, modifier = Modifier.padding(top = 4.dp))

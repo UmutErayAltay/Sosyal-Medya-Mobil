@@ -443,6 +443,10 @@ fun AppNavHost(
                 // yerleriyle AYNI desen, bkz. yukarıdaki "profile/{username}"
                 // composable'ındaki onNavigateToPostDetail).
                 onNavigateToPostDetail = { postId -> navController.navigate("postDetail/$postId") },
+                // 2026-08-21 (kullanıcı raporu: "mesajlarda karşı tarafın
+                // ismine tıklayınca profiline gitsin") — "profile/{username}"
+                // route'unun DİĞER tüm çağrı yerleriyle AYNI basit desen.
+                onNavigateToProfile = { username -> navController.navigate("profile/$username") },
                 // Grup sesli/görüntülü arama (native görev — LiveKit) —
                 // "conversation/{conversationId}" route'unun HEMEN yanında,
                 // AYNI conversationId argüman deseniyle tanımlı "call/
