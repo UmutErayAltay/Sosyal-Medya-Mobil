@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.provider.MediaStore
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -1468,15 +1469,28 @@ private fun ConversationInputBar(
     val cameraLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.TakePicture(),
     ) { success -> if (success) onImageSelected(pendingCameraUri) }
+    // Kullanıcı raporu: "fotoğraf çekiliyor, gönderme kısmına geliyor ama
+    // gönder dediğimde geri geliyor göndermiyor" — kök neden, sistem kamera
+    // uygulamasına bizim FileProvider Uri'mize YAZMA izni HİÇ verilmiyordu
+    // (provider `exported=false`, `TakePicture()` sözleşmesinin kendi
+    // `createIntent()`'i FLAG_GRANT_WRITE_URI_PERMISSION EKLEMİYOR). Bazı
+    // kamera uygulamaları bu durumda SESSİZCE hiçbir şey yazmadan RESULT_OK
+    // döndürüyor — TakePicture() `success=true` sanıyor, önizleme (Coil bizim
+    // KENDİ provider'ımızı okuduğu için) boş/placeholder gösterebiliyor veya
+    // hiç sorun yokmuş gibi duruyor, ama send() içinde openInputStream() boş/
+    // eksik dosyayla karşılaşıp mesajı sessizce başarısız sayıp (removeOptimisticMessage
+    // + restoreFailedSend) görseli composer'a GERİ koyuyordu. Çözüm: intent'i
+    // gerçekten alacak TÜM kamera uygulamalarına Uri'yi launch ETMEDEN ÖNCE
+    // elle grantUriPermission ile yazma izni veriliyor.
+    fun launchChatCamera() {
+        val uri = uriForChatCameraFile(context)
+        grantCameraUriPermission(context, uri)
+        pendingCameraUri = uri
+        cameraLauncher.launch(uri)
+    }
     val cameraPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
-    ) { granted ->
-        if (granted) {
-            val uri = uriForChatCameraFile(context)
-            pendingCameraUri = uri
-            cameraLauncher.launch(uri)
-        }
-    }
+    ) { granted -> if (granted) launchChatCamera() }
 
     // GIF/Sticker seçici (Faz 5 Dalga 3B) — görsel-ekle butonunun AKSİNE
     // önizleme YOK, MediaPickerSheet'te seçim yapılır yapılmaz sheet kapanır
@@ -1667,9 +1681,7 @@ private fun ConversationInputBar(
                         if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
                             PackageManager.PERMISSION_GRANTED
                         ) {
-                            val uri = uriForChatCameraFile(context)
-                            pendingCameraUri = uri
-                            cameraLauncher.launch(uri)
+                            launchChatCamera()
                         } else {
                             cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
                         }
@@ -1893,4 +1905,25 @@ private fun uriForChatCameraFile(context: Context): Uri {
     val dir = File(context.cacheDir, "chat_media").apply { mkdirs() }
     val file = File(dir, "chat_${System.currentTimeMillis()}.jpg")
     return FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+}
+
+/** `ACTION_IMAGE_CAPTURE`'ı çözebilecek TÜM kamera uygulamalarına, bizim
+ * FileProvider Uri'mize (provider `exported=false`) yazma/okuma izni verir —
+ * `ActivityResultContracts.TakePicture()`'ın kendi `createIntent()`'i BUNU
+ * OTOMATİK yapmaz, izin verilmeden bazı kamera uygulamaları SESSİZCE hiçbir
+ * şey yazmadan "başarılı" dönebiliyordu (kullanıcı raporu: fotoğraf sohbete
+ * eklendi gibi görünüyor ama Gönder'e basınca kayboluyordu). */
+private fun grantCameraUriPermission(context: Context, uri: Uri) {
+    val captureIntent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
+    val resolvedActivities = context.packageManager.queryIntentActivities(
+        captureIntent,
+        PackageManager.MATCH_DEFAULT_ONLY,
+    )
+    for (info in resolvedActivities) {
+        context.grantUriPermission(
+            info.activityInfo.packageName,
+            uri,
+            Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_READ_URI_PERMISSION,
+        )
+    }
 }

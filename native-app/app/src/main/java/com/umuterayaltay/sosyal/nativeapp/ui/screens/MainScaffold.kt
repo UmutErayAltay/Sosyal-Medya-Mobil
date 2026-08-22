@@ -112,7 +112,19 @@ fun MainScaffold(navController: NavHostController, onSessionExpired: () -> Unit)
         // var, diğer sekmelerde (Discover/Reels/Messages/Profile) YOK.
         floatingActionButton = {
             if (selectedTab == MainTab.Feed) {
-                FloatingActionButton(onClick = { navController.navigate("createPost") }) {
+                // Kullanıcı raporu: FAB'ın rengi MOR görünüyordu — kök neden,
+                // Theme.kt'deki LightColors/DarkColors'ın SADECE primary/secondary
+                // vb. temel renkleri override etmesi, primaryContainer/
+                // onPrimaryContainer'a HİÇ dokunmaması (varsayılan FAB TAM
+                // OLARAK bunları kullanıyor) — boşta kalan alanlar Material3'ün
+                // mor ağırlıklı temel (baseline) paletinden geliyordu. Web'in
+                // .fab-post-btn'i de zaten var(--primary)/var(--bg) kullanıyor,
+                // burada AYNI marka rengine açıkça sabitlendi.
+                FloatingActionButton(
+                    onClick = { navController.navigate("createPost") },
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                ) {
                     Icon(Icons.Filled.Add, contentDescription = "Yeni Gönderi")
                 }
             }

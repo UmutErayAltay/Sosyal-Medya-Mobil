@@ -41,6 +41,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Block
@@ -66,6 +67,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.ScrollableTabRow
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -147,6 +149,11 @@ fun ProfileScreen(
     onNavigateToPostDetail: (String) -> Unit,
     onNavigateToSettings: () -> Unit,
     onNavigateToHashtag: (String) -> Unit,
+    // 2026-08-22 (kullanıcı isteği: "başkasının profili boş görünüyor" — web'in
+    // profile.html'deki "Mesaj gönder" butonunun karşılığı) — VARSAYILAN
+    // DEĞERLİ, onNavigateToHighlights ile AYNI gerekçe (mevcut çağrı yerleri/
+    // testler kırılmadan derlenir).
+    onNavigateToConversation: (String) -> Unit = {},
     // Faz 5 Dalga 4B — HighlightsScreen (Dalga 2C'de zaten hazırdı) ZATEN
     // "highlights/{userId}" route'unda duruyordu, SADECE ProfileScreen'den
     // bağlanmıyordu (bkz. AppNavHost.kt eski yorumu). Varsayılan {} ile mevcut
@@ -188,6 +195,7 @@ fun ProfileScreen(
             when (event) {
                 is ProfileEvent.SessionExpired -> onSessionExpired()
                 is ProfileEvent.ShowToast -> Toast.makeText(context, event.message, Toast.LENGTH_SHORT).show()
+                is ProfileEvent.ConversationReady -> onNavigateToConversation(event.conversationId)
             }
         }
     }
@@ -258,6 +266,7 @@ fun ProfileScreen(
                 archivedPosts = archivedPosts,
                 highlights = highlights,
                 onToggleFollow = viewModel::toggleFollow,
+                onMessageClick = viewModel::startConversation,
                 onNavigateToFollowers = { profile?.username?.let(onNavigateToFollowers) },
                 onNavigateToFollowing = { profile?.username?.let(onNavigateToFollowing) },
                 // HighlightsScreen KENDİSİ zaten tam grid+görüntüleme deneyimi
@@ -482,6 +491,7 @@ private fun ProfileContent(
     archivedPosts: List<Post>,
     highlights: List<Highlight>,
     onToggleFollow: () -> Unit,
+    onMessageClick: () -> Unit,
     onNavigateToFollowers: () -> Unit,
     onNavigateToFollowing: () -> Unit,
     onHighlightClick: () -> Unit,
@@ -553,6 +563,7 @@ private fun ProfileContent(
                 isPendingRequest = isPendingRequest,
                 isBlockedByMe = isBlockedByMe,
                 onToggleFollow = onToggleFollow,
+                onMessageClick = onMessageClick,
                 onNavigateToFollowers = onNavigateToFollowers,
                 onNavigateToFollowing = onNavigateToFollowing,
             )
@@ -587,15 +598,38 @@ private fun ProfileContent(
                 val selectedIndex = tabs.indexOf(selectedTab).coerceAtLeast(0)
                 // Madde 7 (kullanıcı raporu: "Gönderiler, Medya, Beğenilenler,
                 // Kaydedilenler, Arşiv" sekmeleri taşıyor/sıkışıyor) - sabit
-                // genişlikli TabRow YERİNE ScrollableTabRow: 5 uzun Türkçe etiket
-                // artık sıkışıp satır kaymasına yol açmadan yatay kaydırılabilir.
-                ScrollableTabRow(selectedTabIndex = selectedIndex, edgePadding = 16.dp) {
-                    tabs.forEach { tab ->
-                        Tab(
-                            selected = tab == selectedTab,
-                            onClick = { selectedTab = tab },
-                            text = { Text(tab.label) },
-                        )
+                // genişlikli TabRow YERİNE ScrollableTabRow: 5-6 uzun Türkçe
+                // etiket (kendi profilimiz) artık sıkışıp satır kaymasına yol
+                // açmadan yatay kaydırılabilir.
+                //
+                // 2026-08-22 (kullanıcı raporu: "gönderiler-medya-beğeniler
+                // sola yatık görünüyor") — başkasının profilinde SADECE 3 kısa
+                // sekme var (bkz. yukarıdaki tabs filtresi), bunlar ekran
+                // genişliğini doldurmadığı için ScrollableTabRow'un sol
+                // hizalı (edgePadding'den başlayan) davranışı sola YASLANMIŞ/
+                // dengesiz görünüyordu. Az sayıda kısa sekmede sabit genişlikli
+                // TabRow (eşit dağıtılmış, ortalı) kullanılır — SADECE tab
+                // sayısı azken (≤4), 5-6 sekmeli kendi profilimizde ScrollableTabRow
+                // AYNEN kalır.
+                if (tabs.size <= 4) {
+                    TabRow(selectedTabIndex = selectedIndex) {
+                        tabs.forEach { tab ->
+                            Tab(
+                                selected = tab == selectedTab,
+                                onClick = { selectedTab = tab },
+                                text = { Text(tab.label) },
+                            )
+                        }
+                    }
+                } else {
+                    ScrollableTabRow(selectedTabIndex = selectedIndex, edgePadding = 16.dp) {
+                        tabs.forEach { tab ->
+                            Tab(
+                                selected = tab == selectedTab,
+                                onClick = { selectedTab = tab },
+                                text = { Text(tab.label) },
+                            )
+                        }
                     }
                 }
             }
@@ -857,6 +891,7 @@ private fun ProfileHeader(
     isPendingRequest: Boolean,
     isBlockedByMe: Boolean,
     onToggleFollow: () -> Unit,
+    onMessageClick: () -> Unit,
     onNavigateToFollowers: () -> Unit,
     onNavigateToFollowing: () -> Unit,
 ) {
@@ -928,12 +963,41 @@ private fun ProfileHeader(
         }
 
         if (!isSelf) {
-            FollowActionButton(
-                isBlockedByMe = isBlockedByMe,
-                isFollowing = isFollowing,
-                isPendingRequest = isPendingRequest,
-                onToggleFollow = onToggleFollow,
-            )
+            // 2026-08-22 (kullanıcı raporu: "başkasının profili boş görünüyor")
+            // — web'in profile.html'deki "Takip Et" + "Mesaj gönder" yan yana
+            // düzeninin karşılığı: eskiden SADECE tam genişlikli FollowActionButton
+            // vardı, tek başına bu kadar geniş bir buton + altında boşluk
+            // "eksik/boş" bir izlenim veriyordu. Engellenmiş kullanıcıya mesaj
+            // GÖNDERİLEMEZ (backend zaten reddediyor, bkz. StartConversationResult
+            // "blocked" kodu) — bu yüzden isBlockedByMe'de Mesaj Gönder hiç
+            // gösterilmez, FollowActionButton (devre dışı "Engellendi" durumu)
+            // tek başına tam genişlik kalır.
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                FollowActionButton(
+                    isBlockedByMe = isBlockedByMe,
+                    isFollowing = isFollowing,
+                    isPendingRequest = isPendingRequest,
+                    onToggleFollow = onToggleFollow,
+                    modifier = Modifier.weight(1f),
+                )
+                if (!isBlockedByMe) {
+                    OutlinedButton(
+                        onClick = onMessageClick,
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(46.dp),
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Mesaj Gönder")
+                    }
+                }
+            }
         }
     }
 }
@@ -1013,6 +1077,11 @@ private fun FollowActionButton(
     isFollowing: Boolean,
     isPendingRequest: Boolean,
     onToggleFollow: () -> Unit,
+    // 2026-08-22: "Mesaj Gönder" butonuyla yan yana (Row + weight(1f)) durunca
+    // ARTIK tam genişlik/üst boşluk BU BİLEŞENİN kendi kararı DEĞİL, çağıran
+    // Row'un — o yüzden dıştan enjekte edilebiliyor (varsayılan eski tam
+    // genişlikli davranışı KORUYOR, tek başına kullanıldığında fark etmez).
+    modifier: Modifier = Modifier.fillMaxWidth(),
 ) {
     val scope = rememberCoroutineScope()
     val bounceScale = remember { Animatable(1f) }
@@ -1025,9 +1094,7 @@ private fun FollowActionButton(
         onToggleFollow()
     }
 
-    val buttonModifier = Modifier
-        .fillMaxWidth()
-        .padding(top = 16.dp)
+    val buttonModifier = modifier
         .height(46.dp)
         .scale(bounceScale.value)
 

@@ -16,6 +16,7 @@ import com.umuterayaltay.sosyal.nativeapp.repository.Post
 import com.umuterayaltay.sosyal.nativeapp.repository.ProfileResult
 import com.umuterayaltay.sosyal.nativeapp.repository.ReportResult
 import com.umuterayaltay.sosyal.nativeapp.repository.RepostResult
+import com.umuterayaltay.sosyal.nativeapp.repository.StartConversationResult
 import com.umuterayaltay.sosyal.nativeapp.repository.ToggleArchiveResult
 import com.umuterayaltay.sosyal.nativeapp.repository.ToggleBlockResult
 import com.umuterayaltay.sosyal.nativeapp.repository.ToggleBookmarkResult
@@ -38,6 +39,11 @@ sealed class ProfileEvent {
     data object SessionExpired : ProfileEvent()
     // FeedEvent.ShowToast ile AYNI gerekçe — repost/report sonucu GÖRÜNÜR bildirim ister.
     data class ShowToast(val message: String) : ProfileEvent()
+    // 2026-08-22 (kullanıcı isteği: "başkasının profili boş görünüyor" —
+    // web'in profile.html'deki "Mesaj gönder" butonunun native'de HİÇ
+    // karşılığı yoktu) — NewMessageViewModel.selectUser()'daki AYNI
+    // startConversation() çağrısı/sonuç deseni.
+    data class ConversationReady(val conversationId: String) : ProfileEvent()
 }
 
 /**
@@ -58,7 +64,13 @@ class ProfileViewModel(private val requestedUsername: String?) : ViewModel() {
     private val storiesRepository = ServiceLocator.storiesRepository
     private val repostsRepository = ServiceLocator.repostsRepository
     private val reportsRepository = ServiceLocator.reportsRepository
+    private val messagingRepository = ServiceLocator.messagingRepository
     private val tokenStore = ServiceLocator.tokenStore
+
+    // "Mesaj gönder" butonu çift tıklamayla iki ayrı konuşma başlatma isteği
+    // atmasın diye — FollowActionButton'daki AYNI "isteği tekrar gönderme"
+    // deseni (bkz. NewMessageViewModel._starting).
+    private var startingConversation = false
 
     private var resolvedUsername: String? = requestedUsername
 
@@ -276,6 +288,33 @@ class ProfileViewModel(private val requestedUsername: String?) : ViewModel() {
                     }
                 }
             }
+        }
+    }
+
+    /** ProfileHeader'daki "Mesaj Gönder" butonu — NewMessageViewModel.selectUser()
+     * ile AYNI startConversation() çağrısı/hata haritası, sadece sonuç bir
+     * event ile ProfileScreen'e taşınıp navigasyon oradan tetiklenir. */
+    fun startConversation() {
+        val username = resolvedUsername ?: return
+        if (startingConversation) return
+        startingConversation = true
+        viewModelScope.launch {
+            when (val result = messagingRepository.startConversation(username)) {
+                is StartConversationResult.Success -> _events.emit(ProfileEvent.ConversationReady(result.conversationId))
+                is StartConversationResult.Error -> {
+                    if (result.code == "unauthorized") {
+                        tokenStore.clearToken()
+                        _events.emit(ProfileEvent.SessionExpired)
+                    } else {
+                        _error.value = when (result.code) {
+                            "blocked" -> "Bu kullanıcıyla mesajlaşamazsınız"
+                            "not_found" -> "Kullanıcı bulunamadı"
+                            else -> "Konuşma başlatılamadı, lütfen tekrar deneyin"
+                        }
+                    }
+                }
+            }
+            startingConversation = false
         }
     }
 

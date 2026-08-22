@@ -348,6 +348,9 @@ fun AppNavHost(
                 // hazırdı, SADECE ProfileScreen'den bağlanmıyordu (bkz. aşağıdaki
                 // composable("highlights/{userId}") üzerindeki eski yorum).
                 onNavigateToHighlights = { userId -> navController.navigate("highlights/$userId") },
+                // 2026-08-22 (kullanıcı isteği: "başkasının profili boş
+                // görünüyor" — web'in "Mesaj gönder" butonunun karşılığı).
+                onNavigateToConversation = { conversationId -> navController.navigate("conversation/$conversationId") },
                 onNavigateBack = { navController.navigateUp() },
                 onSessionExpired = {
                     navController.navigate(ROUTE_LOGIN) {
