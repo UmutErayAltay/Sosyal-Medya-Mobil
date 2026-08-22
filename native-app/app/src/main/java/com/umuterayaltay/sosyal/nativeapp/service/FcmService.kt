@@ -66,10 +66,32 @@ class FcmService : FirebaseMessagingService() {
         val body = message.notification?.body ?: message.data["body"]
         val url = message.data["url"]
 
-        showNotification(title, body, url)
+        // 2026-08-21 (kullanıcı raporu: "sohbet açıkken o sohbetin bildirimi
+        // gelmesin") — backend'in mesaj bildirimleri için ürettiği `url`
+        // her zaman "/messages/<conversation_id>" (bkz. app/notifications.py
+        // _TARGET_BUILDERS["message"]) — App Links'teki consumeDeepLinkRoute()
+        // ile AYNI path-parse deseni burada REUSE edilir (backend'de ayrı bir
+        // yapılı alan İCAT EDİLMEDİ, mevcut url zaten yeterli bilgiyi taşıyor).
+        // Konuşma EKRANDA açıksa (ActiveConversationTracker) bildirim hiç
+        // GÖSTERİLMEZ — mesaj içeriği zaten Realtime/güvenlik-ağı poll'uyla
+        // (bkz. ConversationViewModel) doğrudan sohbete düşüyor.
+        val conversationId = messageConversationIdFromUrl(url)
+        if (conversationId != null && conversationId == ActiveConversationTracker.activeConversationId) {
+            return
+        }
+
+        showNotification(title, body, url, conversationId)
     }
 
-    private fun showNotification(title: String?, body: String?, url: String?) {
+    /** `url` "/messages/<id>" biçimindeyse `id`'yi döner, aksi halde null —
+     * mesaj-DIŞI bildirim türlerinde (like/comment/follow/vb.) url farklı bir
+     * yola gider, bunlar için stabil-ID/bastırma mantığı hiç UYGULANMAZ. */
+    private fun messageConversationIdFromUrl(url: String?): String? {
+        val segments = url?.trim('/')?.split('/') ?: return null
+        return if (segments.size >= 2 && segments[0] == "messages") segments[1] else null
+    }
+
+    private fun showNotification(title: String?, body: String?, url: String?, conversationId: String? = null) {
         ensureChannel()
 
         // Bildirime tıklanınca uygulamayı AÇAN basit bir PendingIntent —
@@ -110,8 +132,19 @@ class FcmService : FirebaseMessagingService() {
             return
         }
 
+        // Mesaj bildirimleri STABİL bir ID kullanır (bkz. ActiveConversationTracker
+        // yorumu) — aynı konuşmadan art arda gelen bildirimler AYNI sistem
+        // bildirimine düşer/üzerine yazar (ConversationScreen bunu bildiği
+        // ID ile iptal edebilsin diye). Diğer TÜM bildirim türleri (like/
+        // comment/follow/vb.) eski zaman-damgalı/rastgele ID'yi KORUR —
+        // her biri bağımsız, "aynı konuşma" gibi bir gruplama kavramı yok.
+        val notificationId = if (conversationId != null) {
+            ActiveConversationTracker.notificationIdFor(conversationId)
+        } else {
+            System.currentTimeMillis().toInt()
+        }
         val notificationManager = ContextCompat.getSystemService(this, NotificationManager::class.java)
-        notificationManager?.notify(System.currentTimeMillis().toInt(), notification)
+        notificationManager?.notify(notificationId, notification)
     }
 
     /** Android 8+/API 26 zorunlu — projede bildirim gösteren başka bir yer

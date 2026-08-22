@@ -18,6 +18,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.core.app.NotificationManagerCompat
 import androidx.compose.foundation.text.ClickableText
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
@@ -118,6 +119,7 @@ import com.umuterayaltay.sosyal.nativeapp.network.MessageDto
 import com.umuterayaltay.sosyal.nativeapp.network.MessageReactionDto
 import com.umuterayaltay.sosyal.nativeapp.network.MessageSearchResultDto
 import com.umuterayaltay.sosyal.nativeapp.network.StickerDto
+import com.umuterayaltay.sosyal.nativeapp.service.ActiveConversationTracker
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.ConversationEvent
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.ConversationViewModel
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.ConversationViewModelFactory
@@ -222,6 +224,28 @@ fun ConversationScreen(
     ),
 ) {
     val context = LocalContext.current
+
+    // 2026-08-21 (kullanıcı raporu: "sohbet açıkken o sohbetin bildirimi
+    // gelmesin ve sohbete girince o sohbetin bildirimleri okundu olsun") —
+    // ekrana girince ActiveConversationTracker güncellenir (FcmService yeni
+    // gelen push'u bu konuşma için BASTIRIR, bkz. o dosya) VE varsa bu
+    // konuşmanın ÖNCEDEN gösterilmiş bildirimi iptal edilir (stabil ID, bkz.
+    // ActiveConversationTracker.notificationIdFor). Ekrandan ÇIKINCA (geri
+    // tuşu/başka sohbete geçiş) tracker temizlenir — SADECE hâlâ BU
+    // conversationId'yi taşıyorsa (RealtimeConnectionManager.disconnect()'teki
+    // AYNI "hızlı A'dan B'ye geçiş" yarış-durumu koruması: A'nın dispose'u
+    // B ZATEN aktifken gelirse B'nin tracker'ını YANLIŞLIKLA silmesin).
+    DisposableEffect(conversationId) {
+        ActiveConversationTracker.activeConversationId = conversationId
+        NotificationManagerCompat.from(context)
+            .cancel(ActiveConversationTracker.notificationIdFor(conversationId))
+        onDispose {
+            if (ActiveConversationTracker.activeConversationId == conversationId) {
+                ActiveConversationTracker.activeConversationId = null
+            }
+        }
+    }
+
     val coroutineScope = rememberCoroutineScope()
     val messages by viewModel.messages.collectAsState()
     val loading by viewModel.loading.collectAsState()

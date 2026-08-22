@@ -46,6 +46,21 @@ sealed class ConversationEvent {
 
 private const val POLL_INTERVAL_MS = 5000L
 
+// 2026-08-21 (kullanıcı raporu: "sohbet açıkken bir mesaj sohbete düşmüyor
+// ama bildirimi geliyor") — Realtime KANALI "SUBSCRIBED"/"CONNECTED" görünmeye
+// devam edip GERÇEKTE bir INSERT'i teslim etmemiş olabilir (bkz.
+// RealtimeConnectionManager.watchConnectionHealth() yorumu — SADECE bağlantı/
+// kanal DURUMUNU izliyor, gerçek mesaj akışını DEĞİL, bu yüzden böyle bir
+// sessiz teslim kaybını YAKALAYAMAZ ve onFailure()/polling'e hiç düşülmez).
+// Kök nedeni bu ortamda canlı bir Supabase platform tanısıyla KANITLANAMADI
+// — bu yüzden kesin teşhis yerine PRAGMATİK bir güvenlik ağı: Realtime
+// BAŞARILI kurulduğunda BİLE, startPolling()'in 5sn'lik AGRESİF döngüsünden
+// çok daha seyrek (bkz. startSafetyNetPolling()), arka planda ayrıca bir
+// pollNewest() döngüsü çalışır — Realtime birincil kanal olarak KALIR, bu
+// SADECE en kötü ihtimalde (sessiz teslim kaybı) mesajın er ya da geç
+// (en fazla bu aralık kadar gecikmeyle) sohbete düşmesini garanti eder.
+private const val SAFETY_NET_POLL_INTERVAL_MS = 15_000L
+
 /**
  * Tek bir konuşma ekranı için ViewModel — ProfileViewModel'deki gibi constructor
  * parametreli (conversationId), bu yüzden [ConversationViewModelFactory] gerekir.
@@ -225,15 +240,43 @@ class ConversationViewModel(private val conversationId: String) : ViewModel() {
         connectRealtimeOrPoll()
     }
 
+    // startSafetyNetPolling()'in Job'ı — onFailure() sonradan tetiklenirse
+    // (Realtime KURULUP SONRA koparsa) startPolling()'in kendi 5sn'lik
+    // döngüsüyle GEREKSİZ yere çakışmasın diye iptal edilir (bkz. SAFETY_NET_POLL_INTERVAL_MS
+    // yorumu — appendFreshMessages() idempotent olduğu için çakışsa da
+    // ZARARSIZ olurdu, ama iptal etmek temiz).
+    private var safetyNetPollJob: Job? = null
+
     /** Bkz. sınıf yorumu — ÖNCE Realtime dener, başarısız olursa (kurulumda
-     * VEYA sonradan) [onFailure] üzerinden startPolling()'e düşer. */
+     * VEYA sonradan) [onFailure] üzerinden startPolling()'e düşer. Realtime
+     * BAŞARIYLA kurulursa da SAFETY_NET_POLL_INTERVAL_MS yorumundaki
+     * gerekçeyle startSafetyNetPolling() AYRICA başlatılır. */
     private fun connectRealtimeOrPoll() {
         viewModelScope.launch {
+            var connectSucceeded = true
             ServiceLocator.realtimeConnectionManager.connect(
                 conversationId = conversationId,
                 onNewMessage = { message -> appendFreshMessages(listOf(message)) },
-                onFailure = { startPolling() },
+                onFailure = {
+                    connectSucceeded = false
+                    safetyNetPollJob?.cancel()
+                    startPolling()
+                },
             )
+            // connect() suspend bir fonksiyon — kurulum aşamasında BAŞARISIZ
+            // olduysa onFailure yukarıda ZATEN çağrılmış (connectSucceeded=false)
+            // olur, bu satıra o durumda da gelinir (connect() erken return eder,
+            // exception fırlatmaz) — bu yüzden burada AYRICA kontrol şart.
+            if (connectSucceeded) startSafetyNetPolling()
+        }
+    }
+
+    private fun startSafetyNetPolling() {
+        safetyNetPollJob = viewModelScope.launch {
+            while (true) {
+                delay(SAFETY_NET_POLL_INTERVAL_MS)
+                pollNewest()
+            }
         }
     }
 
