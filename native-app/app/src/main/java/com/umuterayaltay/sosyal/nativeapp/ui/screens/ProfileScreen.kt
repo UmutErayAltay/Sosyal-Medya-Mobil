@@ -247,11 +247,21 @@ fun ProfileScreen(
     // `hasAncestorStatusBarInset` parametresiyle KOŞULLU hale getirmek
     // (aşağıdaki çağrı yerinde) daha güvenilir çıktı, bkz. o composable'ın
     // güncellenmiş yorumu.
+    //
+    // 2026-08-22 (kullanıcı raporu, 2. tur: "profil resmi o üst kısmın altında
+    // kalıyor") — SADECE bar'ın KENDİ konumunu düzeltmek yetmedi, içeriğin
+    // (ProfileHeader/avatar dahil) üst boşluğu da AYNI koşula göre
+    // hesaplanmalı (bkz. rememberTopBarContentPadding() güncellenmiş yorumu).
+    // Bu değer aşağıda FullScreenCenter/DeactivatedProfileContent/ProfileContent
+    // çağrılarının HEPSİNE aktarılır — tek bir yerde unutmak (ör. sadece
+    // ProfileContent'e geçip DeactivatedProfileContent'i atlamak) AYNI bug'ı
+    // O DAL için geri getirirdi.
+    val hasAncestorStatusBarInset = onNavigateBack == null
     Box(modifier = Modifier.fillMaxSize()) {
         when {
-            loading && profile == null -> FullScreenCenter { CircularProgressIndicator() }
+            loading && profile == null -> FullScreenCenter(hasAncestorStatusBarInset) { CircularProgressIndicator() }
 
-            error != null && profile == null -> FullScreenCenter {
+            error != null && profile == null -> FullScreenCenter(hasAncestorStatusBarInset) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Icon(
                         imageVector = Icons.Filled.ErrorOutline,
@@ -271,12 +281,13 @@ fun ProfileScreen(
                 }
             }
 
-            profile == null -> FullScreenCenter { Text("Profil bulunamadı.") }
+            profile == null -> FullScreenCenter(hasAncestorStatusBarInset) { Text("Profil bulunamadı.") }
 
-            isDeactivated -> DeactivatedProfileContent(profile!!)
+            isDeactivated -> DeactivatedProfileContent(profile!!, hasAncestorStatusBarInset)
 
             else -> ProfileContent(
                 listState = listState,
+                hasAncestorStatusBarInset = hasAncestorStatusBarInset,
                 profile = profile!!,
                 stats = stats,
                 isSelf = isSelf,
@@ -470,11 +481,11 @@ fun ProfileScreen(
 // Madde 1 (navbar üst-binme fix): TOP_BAR_HEIGHT yerine status bar inset'ini
 // de içeren rememberTopBarContentPadding() kullanılıyor (bkz. HideableTopBar.kt).
 @Composable
-private fun FullScreenCenter(content: @Composable () -> Unit) {
+private fun FullScreenCenter(hasAncestorStatusBarInset: Boolean = true, content: @Composable () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .padding(top = rememberTopBarContentPadding())
+            .padding(top = rememberTopBarContentPadding(hasAncestorStatusBarInset))
             .padding(32.dp),
         contentAlignment = Alignment.Center,
     ) {
@@ -483,8 +494,8 @@ private fun FullScreenCenter(content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun DeactivatedProfileContent(profile: ProfileDto) {
-    FullScreenCenter {
+private fun DeactivatedProfileContent(profile: ProfileDto, hasAncestorStatusBarInset: Boolean = true) {
+    FullScreenCenter(hasAncestorStatusBarInset) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             ProfileAvatar(profile.avatarUrl, size = 80.dp)
             Text(
@@ -539,6 +550,7 @@ private fun ProfileAvatar(avatarUrl: String?, size: Dp = 64.dp) {
 @Composable
 private fun ProfileContent(
     listState: LazyListState,
+    hasAncestorStatusBarInset: Boolean,
     profile: ProfileDto,
     stats: ProfileStatsDto?,
     isSelf: Boolean,
@@ -613,7 +625,7 @@ private fun ProfileContent(
         // kullanılıyor (bkz. HideableTopBar.kt) — ProfileContent kendisi de
         // @Composable olduğu için parametre eklemeye gerek kalmadan DOĞRUDAN
         // çağrılabiliyor.
-        contentPadding = PaddingValues(top = rememberTopBarContentPadding(), bottom = 24.dp),
+        contentPadding = PaddingValues(top = rememberTopBarContentPadding(hasAncestorStatusBarInset), bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {

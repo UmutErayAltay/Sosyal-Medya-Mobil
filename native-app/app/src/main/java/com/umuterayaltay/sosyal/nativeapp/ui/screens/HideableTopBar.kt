@@ -295,6 +295,23 @@ fun TopBarSurface(content: @Composable () -> Unit) {
  * eklemesi ÇİFT SAYIM olurdu (content, bar'ın GERÇEKTE kapladığından FAZLA
  * boşluk bırakırdı). Bu yüzden artık SADECE `TOP_BAR_HEIGHT` (56dp) — bar'ın
  * LOCAL koordinat uzayındaki GERÇEK yüksekliği — döndürülüyor.
+ *
+ * 2026-08-22 (kullanıcı raporu: "profil resmi o üst kısmın altında kalıyor")
+ * — [OverlayTopBar]'a `hasAncestorStatusBarInset = false` verilen tek yer
+ * (ProfileScreen'in "profile/{username}" push route'u) İÇİN bu fonksiyon da
+ * AYNI parametreyi almalı: o durumda ata Scaffold status bar'ı HİÇ
+ * tüketmediğinden, bar'ın GERÇEKTE kapladığı toplam yükseklik
+ * `TOP_BAR_HEIGHT + statusBarHeight`dir (Spacer + gerçek bar üst üste, ikisi
+ * de content'in local koordinat uzayında). Bunu unutup SADECE
+ * [OverlayTopBar]'ı düzeltmek (ilk deneme, bu turun başında) bar'ı doğru
+ * yere koydu ama content'in üst boşluğunu ESKİ (kısa) değerde bıraktı —
+ * profil fotoğrafı gibi üstteki içerik bar'ın ALT KISMININ (status bar
+ * payının) arkasında kaldı.
  */
 @Composable
-fun rememberTopBarContentPadding(): Dp = TOP_BAR_HEIGHT
+fun rememberTopBarContentPadding(hasAncestorStatusBarInset: Boolean = true): Dp {
+    if (hasAncestorStatusBarInset) return TOP_BAR_HEIGHT
+    val density = LocalDensity.current
+    val statusBarHeight = with(density) { WindowInsets.statusBars.getTop(density).toDp() }
+    return TOP_BAR_HEIGHT + statusBarHeight
+}
