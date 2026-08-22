@@ -17,6 +17,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -43,6 +44,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.Check
@@ -53,8 +55,11 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.material.icons.filled.PersonRemove
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -180,6 +185,7 @@ fun ProfileScreen(
     val isPendingRequest by viewModel.isPendingRequest.collectAsState()
     val isPrivate by viewModel.isPrivate.collectAsState()
     val isBlockedByMe by viewModel.isBlockedByMe.collectAsState()
+    val isCloseFriend by viewModel.isCloseFriend.collectAsState()
     val isMuted by viewModel.isMuted.collectAsState()
     val isDeactivated by viewModel.isDeactivated.collectAsState()
     val stats by viewModel.stats.collectAsState()
@@ -188,6 +194,9 @@ fun ProfileScreen(
 
     var showBlockMenu by remember { mutableStateOf(false) }
     var showBlockConfirmDialog by remember { mutableStateOf(false) }
+    // 2026-08-22 (kullanıcı isteği: "takipten çıkmadan önce uyarı gelsin
+    // onaylama olsun") — showBlockConfirmDialog ile AYNI desen.
+    var showUnfollowConfirmDialog by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
     LaunchedEffect(Unit) {
@@ -223,7 +232,24 @@ fun ProfileScreen(
     // Scaffold'un topBar slotu TAMAMEN KALDIRILDI, bar artık bir Box overlay
     // katmanı (OverlayTopBar), içerik TOP_BAR_HEIGHT kadar SABİT üst boşluk
     // bırakır (bar'ın görünürlüğü bu boşluğu ETKİLEMEZ).
-    Box(modifier = Modifier.fillMaxSize()) {
+    //
+    // 2026-08-22 (kullanıcı raporu: "geri butonu ve yanındaki isim bildirim
+    // panelinin arkasında kalıyor") — kök neden, [OverlayTopBar]'ın kendi
+    // `-statusBarHeight` telafi offset'inin (bkz. o composable'ın yorumu)
+    // "bu ekranın Box'ı zaten bir Scaffold tarafından status bar kadar aşağı
+    // itilmiş" VARSAYIMINA dayanması. Bu varsayım SADECE alt-navigasyondaki
+    // "Profil" sekmesinde (MainScaffold'un Scaffold'u status bar'ı ZATEN
+    // tüketiyor) doğru — ProfileScreen'in AYRI bir kullanımı olan
+    // "profile/{username}" PUSH route'unda (AppNavHost'ta HİÇBİR Scaffold'a
+    // SARILMADAN doğrudan composable) hiçbir şey status bar'ı önceden
+    // tüketmiyor, bu yüzden OverlayTopBar'ın telafisi FAZLADAN bir
+    // statusBarHeight çıkarıp geri butonu/başlığı gerçek status bar
+    // bölgesine (ekranın GÖRÜNMEYEN kısmına) itiyordu. Bu PUSH route'un TEK
+    // ayırt edici sinyali `onNavigateBack != null` (KOK "Profil" sekmesi bunu
+    // hiç geçmiyor, bkz. MainScaffold.kt çağrı yeri yorumu) — SADECE o
+    // durumda `statusBarsPadding()` ile aynı telafi burada da sağlanıyor.
+    val statusBarPaddingModifier = if (onNavigateBack != null) Modifier.statusBarsPadding() else Modifier
+    Box(modifier = Modifier.fillMaxSize().then(statusBarPaddingModifier)) {
         when {
             loading && profile == null -> FullScreenCenter { CircularProgressIndicator() }
 
@@ -260,12 +286,15 @@ fun ProfileScreen(
                 isPendingRequest = isPendingRequest,
                 isPrivate = isPrivate,
                 isBlockedByMe = isBlockedByMe,
+                isCloseFriend = isCloseFriend,
                 posts = posts,
                 likedPosts = likedPosts,
                 bookmarkedPosts = bookmarkedPosts,
                 archivedPosts = archivedPosts,
                 highlights = highlights,
                 onToggleFollow = viewModel::toggleFollow,
+                onRequestUnfollow = { showUnfollowConfirmDialog = true },
+                onToggleCloseFriend = viewModel::toggleCloseFriend,
                 onMessageClick = viewModel::startConversation,
                 onNavigateToFollowers = { profile?.username?.let(onNavigateToFollowers) },
                 onNavigateToFollowing = { profile?.username?.let(onNavigateToFollowing) },
@@ -401,6 +430,36 @@ fun ProfileScreen(
             },
         )
     }
+
+    if (showUnfollowConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showUnfollowConfirmDialog = false },
+            icon = { Icon(Icons.Filled.PersonRemove, contentDescription = null) },
+            title = { Text("Takipten çık") },
+            text = {
+                Text(
+                    "${profile?.username?.let { "$it kullanıcısını" } ?: "Bu kullanıcıyı"} " +
+                        "takipten çıkmak istediğine emin misin?",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showUnfollowConfirmDialog = false
+                        viewModel.toggleFollow()
+                    },
+                ) {
+                    Text("Takipten Çık", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showUnfollowConfirmDialog = false }) {
+                    Text("Vazgeç")
+                }
+            },
+        )
+    }
 }
 
 // Madde 6: padding parametresi Scaffold ile birlikte KALDIRILDI - artık
@@ -485,12 +544,15 @@ private fun ProfileContent(
     isPendingRequest: Boolean,
     isPrivate: Boolean,
     isBlockedByMe: Boolean,
+    isCloseFriend: Boolean,
     posts: List<Post>,
     likedPosts: List<Post>,
     bookmarkedPosts: List<Post>,
     archivedPosts: List<Post>,
     highlights: List<Highlight>,
     onToggleFollow: () -> Unit,
+    onRequestUnfollow: () -> Unit,
+    onToggleCloseFriend: () -> Unit,
     onMessageClick: () -> Unit,
     onNavigateToFollowers: () -> Unit,
     onNavigateToFollowing: () -> Unit,
@@ -562,7 +624,10 @@ private fun ProfileContent(
                 isFollowing = isFollowing,
                 isPendingRequest = isPendingRequest,
                 isBlockedByMe = isBlockedByMe,
+                isCloseFriend = isCloseFriend,
                 onToggleFollow = onToggleFollow,
+                onRequestUnfollow = onRequestUnfollow,
+                onToggleCloseFriend = onToggleCloseFriend,
                 onMessageClick = onMessageClick,
                 onNavigateToFollowers = onNavigateToFollowers,
                 onNavigateToFollowing = onNavigateToFollowing,
@@ -890,7 +955,10 @@ private fun ProfileHeader(
     isFollowing: Boolean,
     isPendingRequest: Boolean,
     isBlockedByMe: Boolean,
+    isCloseFriend: Boolean,
     onToggleFollow: () -> Unit,
+    onRequestUnfollow: () -> Unit,
+    onToggleCloseFriend: () -> Unit,
     onMessageClick: () -> Unit,
     onNavigateToFollowers: () -> Unit,
     onNavigateToFollowing: () -> Unit,
@@ -982,7 +1050,10 @@ private fun ProfileHeader(
                     isBlockedByMe = isBlockedByMe,
                     isFollowing = isFollowing,
                     isPendingRequest = isPendingRequest,
+                    isCloseFriend = isCloseFriend,
                     onToggleFollow = onToggleFollow,
+                    onRequestUnfollow = onRequestUnfollow,
+                    onToggleCloseFriend = onToggleCloseFriend,
                     modifier = Modifier.weight(1f),
                 )
                 if (!isBlockedByMe) {
@@ -1076,7 +1147,19 @@ private fun FollowActionButton(
     isBlockedByMe: Boolean,
     isFollowing: Boolean,
     isPendingRequest: Boolean,
+    // 2026-08-22 (kullanıcı isteği: "takip ediliyor kısmında tıklayınca
+    // takipten çık, yakın arkadaşlara ekle falan olsun") — web'in
+    // profile.html'deki "Takip ▾" açılır menüsünün (takipten çık + yakın
+    // arkadaşlara ekle/çıkar) native karşılığı.
+    isCloseFriend: Boolean,
     onToggleFollow: () -> Unit,
+    // Eskiden isFollowing durumunda DOĞRUDAN onToggleFollow (tek dokunuşla
+    // takipten çıkma) çağrılıyordu — kullanıcı raporu: "takipten çıkmadan önce
+    // uyarı gelsin" — artık SADECE menüden "Takipten Çık" seçilince bu
+    // çağrılır (gerçek toggleFollow() ProfileScreen'deki onay diyaloğu
+    // ONAYLANINCA tetiklenir, bkz. ProfileScreen showUnfollowConfirmDialog).
+    onRequestUnfollow: () -> Unit,
+    onToggleCloseFriend: () -> Unit,
     // 2026-08-22: "Mesaj Gönder" butonuyla yan yana (Row + weight(1f)) durunca
     // ARTIK tam genişlik/üst boşluk BU BİLEŞENİN kendi kararı DEĞİL, çağıran
     // Row'un — o yüzden dıştan enjekte edilebiliyor (varsayılan eski tam
@@ -1085,6 +1168,7 @@ private fun FollowActionButton(
 ) {
     val scope = rememberCoroutineScope()
     val bounceScale = remember { Animatable(1f) }
+    var showFollowingMenu by remember { mutableStateOf(false) }
 
     val onBouncedClick: () -> Unit = {
         scope.launch {
@@ -1105,10 +1189,42 @@ private fun FollowActionButton(
             Text("Engellendi")
         }
 
-        isFollowing -> OutlinedButton(onClick = onBouncedClick, modifier = buttonModifier) {
-            Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(8.dp))
-            Text("Takip Ediliyor")
+        isFollowing -> Box(modifier = modifier) {
+            OutlinedButton(
+                onClick = { showFollowingMenu = true },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(46.dp)
+                    .scale(bounceScale.value),
+            ) {
+                Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Takip Ediliyor")
+                Icon(Icons.Filled.ArrowDropDown, contentDescription = null, modifier = Modifier.size(18.dp))
+            }
+            DropdownMenu(expanded = showFollowingMenu, onDismissRequest = { showFollowingMenu = false }) {
+                DropdownMenuItem(
+                    text = { Text(if (isCloseFriend) "Yakın Arkadaşlardan Çıkar" else "Yakın Arkadaşlara Ekle") },
+                    leadingIcon = {
+                        Icon(
+                            if (isCloseFriend) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+                            contentDescription = null,
+                        )
+                    },
+                    onClick = {
+                        showFollowingMenu = false
+                        onToggleCloseFriend()
+                    },
+                )
+                DropdownMenuItem(
+                    text = { Text("Takipten Çık") },
+                    leadingIcon = { Icon(Icons.Filled.PersonRemove, contentDescription = null) },
+                    onClick = {
+                        showFollowingMenu = false
+                        onRequestUnfollow()
+                    },
+                )
+            }
         }
 
         isPendingRequest -> OutlinedButton(onClick = onBouncedClick, modifier = buttonModifier) {

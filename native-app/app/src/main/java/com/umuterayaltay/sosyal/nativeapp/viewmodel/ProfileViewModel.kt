@@ -16,6 +16,7 @@ import com.umuterayaltay.sosyal.nativeapp.repository.Post
 import com.umuterayaltay.sosyal.nativeapp.repository.ProfileResult
 import com.umuterayaltay.sosyal.nativeapp.repository.ReportResult
 import com.umuterayaltay.sosyal.nativeapp.repository.RepostResult
+import com.umuterayaltay.sosyal.nativeapp.repository.SimpleActionResult
 import com.umuterayaltay.sosyal.nativeapp.repository.StartConversationResult
 import com.umuterayaltay.sosyal.nativeapp.repository.ToggleArchiveResult
 import com.umuterayaltay.sosyal.nativeapp.repository.ToggleBlockResult
@@ -65,6 +66,7 @@ class ProfileViewModel(private val requestedUsername: String?) : ViewModel() {
     private val repostsRepository = ServiceLocator.repostsRepository
     private val reportsRepository = ServiceLocator.reportsRepository
     private val messagingRepository = ServiceLocator.messagingRepository
+    private val settingsRepository = ServiceLocator.settingsRepository
     private val tokenStore = ServiceLocator.tokenStore
 
     // "Mesaj gönder" butonu çift tıklamayla iki ayrı konuşma başlatma isteği
@@ -131,6 +133,13 @@ class ProfileViewModel(private val requestedUsername: String?) : ViewModel() {
     private val _isMuted = MutableStateFlow(false)
     val isMuted: StateFlow<Boolean> = _isMuted.asStateFlow()
 
+    // 2026-08-22 (kullanıcı isteği: "takip ediliyor kısmında ... yakın
+    // arkadaşlara ekle falan olsun") — `body.isCloseFriend` (ProfileResponse'ta
+    // ZATEN parse ediliyordu, bkz. ApiModels.kt) isMuted ile AYNI gerekçeyle
+    // buraya kadar hiç OKUNMUYORDU.
+    private val _isCloseFriend = MutableStateFlow(false)
+    val isCloseFriend: StateFlow<Boolean> = _isCloseFriend.asStateFlow()
+
     private val _isDeactivated = MutableStateFlow(false)
     val isDeactivated: StateFlow<Boolean> = _isDeactivated.asStateFlow()
 
@@ -186,6 +195,7 @@ class ProfileViewModel(private val requestedUsername: String?) : ViewModel() {
                     _isPrivate.value = body.isPrivate
                     _isBlockedByMe.value = body.isBlockedByMe
                     _isMuted.value = body.isMuted
+                    _isCloseFriend.value = body.isCloseFriend
                     _stats.value = body.stats
                     // SADECE kendi profilimizde anlamlı (bkz. _collections yorumu) —
                     // başkasının profilinde gereksiz bir istek atılmasın.
@@ -315,6 +325,35 @@ class ProfileViewModel(private val requestedUsername: String?) : ViewModel() {
                 }
             }
             startingConversation = false
+        }
+    }
+
+    /** ProfileHeader'daki "Takip Ediliyor" menüsünün "Yakın Arkadaşlara Ekle"/
+     * "Yakın Arkadaşlardan Çıkar" seçeneği — CloseFriendsViewModel'in
+     * addCloseFriend()/removeCloseFriend() kullanımıyla AYNI repository
+     * çağrıları, SADECE burada tam liste yerine TEK bir boolean güncellenir.
+     * toggleUserMute() ile AYNI gerekçeyle onay diyaloğu YOK (geri dönüşü
+     * kolay, düşük riskli bir aksiyon). */
+    fun toggleCloseFriend() {
+        val targetId = profile.value?.id ?: return
+        val wasCloseFriend = _isCloseFriend.value
+        viewModelScope.launch {
+            val result = if (wasCloseFriend) {
+                settingsRepository.removeCloseFriend(targetId)
+            } else {
+                settingsRepository.addCloseFriend(targetId)
+            }
+            when (result) {
+                is SimpleActionResult.Success -> _isCloseFriend.value = !wasCloseFriend
+                is SimpleActionResult.Error -> {
+                    if (result.code == "unauthorized") {
+                        tokenStore.clearToken()
+                        _events.emit(ProfileEvent.SessionExpired)
+                    } else {
+                        _events.emit(ProfileEvent.ShowToast("İşlem başarısız, lütfen tekrar deneyin"))
+                    }
+                }
+            }
         }
     }
 

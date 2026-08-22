@@ -1,6 +1,10 @@
 package com.umuterayaltay.sosyal.nativeapp.viewmodel
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Matrix
+import android.media.ExifInterface
 import android.media.MediaRecorder
 import android.net.Uri
 import android.os.Build
@@ -36,6 +40,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Job
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.time.Instant
 import java.util.UUID
@@ -121,6 +127,12 @@ class ConversationViewModel(private val conversationId: String) : ViewModel() {
         // sabit çıktı formatı var.
         private const val AUDIO_MIME_TYPE = "audio/mp4"
         private const val AUDIO_FILE_EXTENSION = ".m4a"
+
+        // Backend'in app/storage_helper.py::MAX_FILE_SIZE'ı (5 MB) — biraz PAY
+        // bırakılarak (4 MB) aşağıda sıkıştırma bu eşiğin altına düşürmeyi
+        // hedefler (tam 5 MB'a kadar sıkıştırıp backend'in KENDİ >5MB kontrolüne
+        // yine takılma riskini azaltmak için).
+        private const val MAX_IMAGE_UPLOAD_BYTES = 4 * 1024 * 1024
     }
 
     private val messagingRepository = ServiceLocator.messagingRepository
@@ -664,7 +676,24 @@ class ConversationViewModel(private val conversationId: String) : ViewModel() {
                 imageFileName = "upload$imageExt"
                 try {
                     withContext(Dispatchers.IO) {
-                        imageBytes = context.contentResolver.openInputStream(imageUri)?.use { it.readBytes() }
+                        val rawBytes = context.contentResolver.openInputStream(imageUri)?.use { it.readBytes() }
+                        // 2026-08-22 (kullanıcı raporu: "kamerayla çekilen fotoğraf
+                        // gönderiliyor gibi oluyor ama geri geliyor, göndermiyor") —
+                        // kök neden izin DEĞİL, boyuttu: backend'in upload_image()'ı
+                        // (app/storage_helper.py MAX_FILE_SIZE=5MB) tam çözünürlüklü
+                        // kamera JPEG'lerini (genelde 8-15MB) SESSİZCE "upload_failed"
+                        // ile reddediyordu — galeriden seçilen (genelde zaten küçük/
+                        // sıkıştırılmış) görsellerde bu hiç görülmüyordu. GIF hariç
+                        // (animasyon kaybolur) 5MB sınırının altına düşürülene kadar
+                        // JPEG kalitesi/boyutu kademeli azaltılır.
+                        if (rawBytes != null && rawBytes.size > MAX_IMAGE_UPLOAD_BYTES && imageMimeType != "image/gif") {
+                            val (compressed, compressedMime) = compressImageForUpload(rawBytes)
+                            imageBytes = compressed
+                            imageMimeType = compressedMime
+                            imageFileName = "upload${IMAGE_MIME_TO_EXTENSION[compressedMime] ?: ".jpg"}"
+                        } else {
+                            imageBytes = rawBytes
+                        }
                     }
                 } catch (e: Exception) {
                     removeOptimisticMessage(tempId)
@@ -726,6 +755,58 @@ class ConversationViewModel(private val conversationId: String) : ViewModel() {
                 }
             }
         }
+    }
+
+    /** [MAX_IMAGE_UPLOAD_BYTES]'ı aşan bir görseli EXIF yönünü koruyarak JPEG'e
+     * kademeli kalite/boyut düşürmesiyle sıkıştırır — tam çözünürlüklü kamera
+     * fotoğrafları (8-15 MB) backend'in 5 MB sınırına SESSİZCE takılıp mesajı
+     * geri getiriyordu (bkz. send()'teki çağrı yeri yorumu). Çağıran taraf zaten
+     * `Dispatchers.IO`'da (bkz. send()) — burada AYRICA withContext YOK. */
+    private fun compressImageForUpload(original: ByteArray): Pair<ByteArray, String> {
+        val exifOrientation = try {
+            ExifInterface(ByteArrayInputStream(original))
+                .getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
+        } catch (e: Exception) {
+            ExifInterface.ORIENTATION_NORMAL
+        }
+        val decoded = BitmapFactory.decodeByteArray(original, 0, original.size) ?: return original to "image/jpeg"
+        val rotationDegrees = when (exifOrientation) {
+            ExifInterface.ORIENTATION_ROTATE_90 -> 90f
+            ExifInterface.ORIENTATION_ROTATE_180 -> 180f
+            ExifInterface.ORIENTATION_ROTATE_270 -> 270f
+            else -> 0f
+        }
+        var bitmap = if (rotationDegrees != 0f) {
+            val matrix = Matrix().apply { postRotate(rotationDegrees) }
+            Bitmap.createBitmap(decoded, 0, 0, decoded.width, decoded.height, matrix, true)
+        } else {
+            decoded
+        }
+
+        // 1) Önce KALİTE kademeli düşürülür (boyut/keskinlik korunur).
+        var quality = 90
+        var encoded = ByteArrayOutputStream().apply { bitmap.compress(Bitmap.CompressFormat.JPEG, quality, this) }.toByteArray()
+        while (encoded.size > MAX_IMAGE_UPLOAD_BYTES && quality > 30) {
+            quality -= 15
+            encoded = ByteArrayOutputStream().apply { bitmap.compress(Bitmap.CompressFormat.JPEG, quality, this) }.toByteArray()
+        }
+
+        // 2) Kalite tek başına yetmediyse (ör. çok yüksek çözünürlük) boyut da
+        // kademeli küçültülür — %75'in altına düşülmez (görünürlük bozulmasın).
+        var scale = 1f
+        while (encoded.size > MAX_IMAGE_UPLOAD_BYTES && scale > 0.4f) {
+            scale -= 0.15f
+            val scaledBitmap = Bitmap.createScaledBitmap(
+                bitmap,
+                (bitmap.width * scale).toInt().coerceAtLeast(1),
+                (bitmap.height * scale).toInt().coerceAtLeast(1),
+                true,
+            )
+            encoded = ByteArrayOutputStream().apply { scaledBitmap.compress(Bitmap.CompressFormat.JPEG, 80, this) }.toByteArray()
+            bitmap = scaledBitmap
+        }
+
+        return encoded to "image/jpeg"
     }
 
     /** Geçici (local-) satırı sunucunun döndürdüğü GERÇEK mesajla, listedeki
