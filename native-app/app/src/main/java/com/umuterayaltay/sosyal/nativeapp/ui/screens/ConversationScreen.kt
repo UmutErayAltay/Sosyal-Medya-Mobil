@@ -2,6 +2,7 @@ package com.umuterayaltay.sosyal.nativeapp.ui.screens
 
 import android.Manifest
 import android.content.ActivityNotFoundException
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -9,7 +10,9 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.MutableTransitionState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.slideInVertically
@@ -19,7 +22,10 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.core.app.NotificationManagerCompat
+import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -31,6 +37,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -46,6 +53,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AddPhotoAlternate
+import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Gif
 import androidx.compose.material.icons.filled.Mic
@@ -55,6 +63,7 @@ import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.automirrored.filled.Reply
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Call
@@ -93,13 +102,19 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -125,6 +140,9 @@ import com.umuterayaltay.sosyal.nativeapp.viewmodel.ConversationViewModel
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.ConversationViewModelFactory
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.math.abs
+import kotlin.math.roundToInt
+import java.io.File
 
 // Madde 9 (kullanıcı raporu: chatte paylaşılan post'a tıklanmıyor) — backend'in
 // (app/api_v1/messaging.py api_share_post() / app/messaging/sending.py)
@@ -706,6 +724,7 @@ fun ConversationScreen(
                                 isMine = myUserId != null && message.senderId == myUserId,
                                 onLongPress = { viewModel.selectMessage(message) },
                                 onPostClick = onNavigateToPostDetail,
+                                onSwipeReply = { viewModel.setReplyingTo(it) },
                             )
                         } else {
                             MessageBubble(
@@ -713,6 +732,7 @@ fun ConversationScreen(
                                 isMine = myUserId != null && message.senderId == myUserId,
                                 onLongPress = { viewModel.selectMessage(message) },
                                 onPostClick = onNavigateToPostDetail,
+                                onSwipeReply = { viewModel.setReplyingTo(it) },
                             )
                         }
                     }
@@ -881,6 +901,7 @@ private fun AnimatedMessageBubble(
     isMine: Boolean,
     onLongPress: () -> Unit,
     onPostClick: (String) -> Unit,
+    onSwipeReply: (MessageDto) -> Unit = {},
 ) {
     val visibleState = remember(message.id) { MutableTransitionState(false) }
     LaunchedEffect(message.id) { visibleState.targetState = true }
@@ -893,6 +914,7 @@ private fun AnimatedMessageBubble(
             isMine = isMine,
             onLongPress = onLongPress,
             onPostClick = onPostClick,
+            onSwipeReply = onSwipeReply,
         )
     }
 }
@@ -906,6 +928,9 @@ private fun MessageBubble(
     // Madde 9: VARSAYILAN DEĞERLİ ({}) - diğer opsiyonel callback'lerle AYNI
     // gerekçe (bkz. ConversationScreen fonksiyon imzası yorumu).
     onPostClick: (String) -> Unit = {},
+    // 2026-08-21 (kullanıcı isteği: "mesajı sağa veya sola çekince Instagram/
+    // WhatsApp'taki gibi yanıtlama olsun") — VARSAYILAN DEĞERLİ, AYNI gerekçe.
+    onSwipeReply: (MessageDto) -> Unit = {},
 ) {
     // Madde 3 (Instagram tarzı görsel kart) — SADECE ID DEĞİL, kartın ihtiyaç
     // duyduğu not/alıntı/yazar da TEK seferde ayrıştırılır (bkz. yukarıdaki
@@ -938,10 +963,56 @@ private fun MessageBubble(
     var showFullscreenImage by remember { mutableStateOf(false) }
     var showFullscreenVideo by remember { mutableStateOf(false) }
 
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = if (isMine) Arrangement.End else Arrangement.Start,
-    ) {
+    // 2026-08-21 (kullanıcı isteği: "mesajı sağa veya sola çekince Instagram/
+    // WhatsApp'taki gibi yanıtlama olsun") — offset `message.id`'ye göre
+    // `remember`lanıyor: LazyColumn bu composable slot'unu FARKLI bir mesaj
+    // için yeniden kullandığında (recycle), önceki mesajdan kalan bir kaydırma
+    // konumu YENİ mesaja SIZMASIN diye (bkz. Compose item-recycling davranışı).
+    val density = LocalDensity.current
+    val triggerPx = with(density) { 40.dp.toPx() }
+    val maxSwipePx = with(density) { 56.dp.toPx() }
+    val swipeOffsetX = remember(message.id) { Animatable(0f) }
+    val swipeScope = rememberCoroutineScope()
+    val haptics = LocalHapticFeedback.current
+    val swipeProgress = (abs(swipeOffsetX.value) / triggerPx).coerceIn(0f, 1f)
+
+    Box(modifier = Modifier.fillMaxWidth()) {
+        if (swipeOffsetX.value != 0f) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.Reply,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = swipeProgress),
+                modifier = Modifier
+                    .align(if (swipeOffsetX.value > 0f) Alignment.CenterStart else Alignment.CenterEnd)
+                    .padding(horizontal = 12.dp)
+                    .scale(0.6f + 0.4f * swipeProgress),
+            )
+        }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .offset { IntOffset(swipeOffsetX.value.roundToInt(), 0) }
+                // `Orientation.Horizontal` SADECE yatay sürüklemeyi yakalar —
+                // LazyColumn'un dikey kaydırması bu yüzden ETKİLENMEZ (Compose'un
+                // eksen-kilitli draggable/scroll bileşimi standart davranışı).
+                .draggable(
+                    orientation = Orientation.Horizontal,
+                    state = rememberDraggableState { delta ->
+                        swipeScope.launch {
+                            swipeOffsetX.snapTo((swipeOffsetX.value + delta).coerceIn(-maxSwipePx, maxSwipePx))
+                        }
+                    },
+                    onDragStopped = {
+                        val triggered = abs(swipeOffsetX.value) >= triggerPx
+                        if (triggered) {
+                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                            onSwipeReply(message)
+                        }
+                        swipeOffsetX.animateTo(0f, animationSpec = spring())
+                    },
+                ),
+            horizontalArrangement = if (isMine) Arrangement.End else Arrangement.Start,
+        ) {
         Column(horizontalAlignment = if (isMine) Alignment.End else Alignment.Start) {
             Card(
                 modifier = Modifier
@@ -1234,6 +1305,7 @@ private fun MessageBubble(
             }
         }
     }
+    }
 
     if (showFullscreenImage && !message.imageUrl.isNullOrBlank()) {
         FullscreenImageViewer(imageUrl = message.imageUrl, onDismiss = { showFullscreenImage = false })
@@ -1367,20 +1439,44 @@ private fun ConversationInputBar(
     onStopRecordingAndSend: () -> Unit,
     onCancelRecording: () -> Unit,
 ) {
-    // CreatePostScreen'deki AYNI Photo Picker deseni — seçilen Uri ViewModel'e
-    // (ConversationViewModel.selectedImageUri) bildirilir, bu composable
-    // KENDİ local state'ini TUTMAZ.
-    val imagePickerLauncher = rememberLauncherForActivityResult(
+    // 2026-08-22 (kullanıcı isteği: "resim ve videoyu tek butona atayalım
+    // direkt galeriye girsin") — eskiden görsel/video AYRI iki buton+filtre
+    // idi (ImageOnly/VideoOnly), şimdi TEK Photo Picker ImageAndVideo
+    // filtresiyle açılıyor, seçilen Uri'nin MIME tipine bakılarak
+    // onImageSelected/onVideoSelected'dan doğru olanı çağrılıyor (ViewModel
+    // ikisini birbirini temizleyecek şekilde ZATEN yönetiyordu, davranış
+    // AYNEN korunuyor).
+    val context = LocalContext.current
+    val galleryPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia(),
-    ) { uri -> onImageSelected(uri) }
+    ) { uri ->
+        if (uri != null) {
+            val isVideo = context.contentResolver.getType(uri)?.startsWith("video/") == true
+            if (isVideo) onVideoSelected(uri) else onImageSelected(uri)
+        }
+    }
 
-    // 2026-08-08: video gönderme — AYNI Photo Picker, VideoOnly filtresiyle.
-    // Görsel ile video AYNI anda seçilemez (ViewModel.onImageSelected/
-    // onVideoSelected birbirini temizler) — tek seferde tek ek dosya, UI'da
-    // KARIŞIKLIK yaratmasın diye.
-    val videoPickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickVisualMedia(),
-    ) { uri -> onVideoSelected(uri) }
+    // 2026-08-22 (kullanıcı isteği: "kamera ekleyelim fotoğraf çekip sohbete
+    // gönderebilelim") — StoryCreateScreen'in TAM CameraX önizlemesi YERİNE
+    // sistem kamera uygulamasını ACTION_IMAGE_CAPTURE ile açan hafif
+    // TakePicture() sözleşmesi: sohbette hızlı tek-kare çekim için yeterli,
+    // ayrı bir önizleme ekranı İCAT EDİLMEDİ. CAMERA izni zaten manifest'te
+    // var (görüntülü arama/hikaye kamerası) — izin verilmemişse burada AYRICA
+    // istenir (audioPermissionLauncher'daki "tam gerektiği an iste" deseniyle
+    // AYNI).
+    var pendingCameraUri by remember { mutableStateOf<Uri?>(null) }
+    val cameraLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicture(),
+    ) { success -> if (success) onImageSelected(pendingCameraUri) }
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted) {
+            val uri = uriForChatCameraFile(context)
+            pendingCameraUri = uri
+            cameraLauncher.launch(uri)
+        }
+    }
 
     // GIF/Sticker seçici (Faz 5 Dalga 3B) — görsel-ekle butonunun AKSİNE
     // önizleme YOK, MediaPickerSheet'te seçim yapılır yapılmaz sheet kapanır
@@ -1555,27 +1651,33 @@ private fun ConversationInputBar(
             ) {
                 IconButton(
                     onClick = {
-                        imagePickerLauncher.launch(
-                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                        galleryPickerLauncher.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo),
                         )
                     },
                 ) {
                     Icon(
                         Icons.Filled.AddPhotoAlternate,
-                        contentDescription = "Görsel ekle",
+                        contentDescription = "Galeriden görsel veya video ekle",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 IconButton(
                     onClick = {
-                        videoPickerLauncher.launch(
-                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly),
-                        )
+                        if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
+                            PackageManager.PERMISSION_GRANTED
+                        ) {
+                            val uri = uriForChatCameraFile(context)
+                            pendingCameraUri = uri
+                            cameraLauncher.launch(uri)
+                        } else {
+                            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                        }
                     },
                 ) {
                     Icon(
-                        Icons.Filled.Videocam,
-                        contentDescription = "Video ekle",
+                        Icons.Filled.CameraAlt,
+                        contentDescription = "Fotoğraf çek",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
@@ -1781,4 +1883,14 @@ private fun CenteredMessage(padding: PaddingValues, content: @Composable () -> U
     ) {
         content()
     }
+}
+
+/** context.cacheDir/chat_media/ altına sistem kamera uygulamasının yazacağı
+ * geçici dosya — StoryCreateScreen.kt'nin createStoryMediaFile()/
+ * uriForStoryFile() ile AYNI desen, res/xml/file_paths.xml'deki
+ * cache-path("chat_media") ile eşleşiyor. */
+private fun uriForChatCameraFile(context: Context): Uri {
+    val dir = File(context.cacheDir, "chat_media").apply { mkdirs() }
+    val file = File(dir, "chat_${System.currentTimeMillis()}.jpg")
+    return FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
 }

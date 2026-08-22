@@ -18,4 +18,8 @@
          dosya varsa FileProvider hâlâ Uri üretebilsin diye) KORUNDU. -->
     <cache-path name="updates" path="updates/" />
     <files-path name="updates" path="updates/" />
+    <!-- 2026-08-22: sohbet ekranında kamera butonu (ConversationScreen.kt
+         createChatCameraFile()) — sistem kamera uygulamasının fotoğrafı
+         yazacağı Uri, story_media ile AYNI gerekçeyle ayrı bir alt dizin. -->
+    <cache-path name="chat_media" path="chat_media/" />
 </paths>

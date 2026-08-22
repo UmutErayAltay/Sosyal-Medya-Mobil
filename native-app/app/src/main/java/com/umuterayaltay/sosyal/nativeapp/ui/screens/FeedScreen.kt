@@ -72,7 +72,6 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 fun FeedScreen(
     onSessionExpired: () -> Unit,
     onNavigateToPostDetail: (String) -> Unit,
-    onNewPostClick: () -> Unit,
     onNotificationsClick: () -> Unit,
     onTrendingClick: () -> Unit,
     onNavigateToHashtag: (String) -> Unit,
@@ -464,9 +463,12 @@ fun FeedScreen(
                         IconButton(onClick = onTrendingClick) {
                             Icon(Icons.Filled.Tag, contentDescription = "Gündem")
                         }
-                        IconButton(onClick = onNewPostClick) {
-                            Icon(Icons.Filled.Add, contentDescription = "Yeni Gönderi")
-                        }
+                        // 2026-08-22 (kullanıcı isteği: "post paylaşma olarak üst
+                        // barda + olmasındansa webde olduğu gibi sağ altta bir
+                        // simge olsun") — "Yeni Gönderi" butonu buradan KALDIRILDI,
+                        // MainScaffold.kt'nin Scaffold'una alt nav barın HEMEN
+                        // ÜSTÜNDE bir FloatingActionButton olarak taşındı (web'in
+                        // feed.html'deki .fab-post-btn'i ile AYNI konum/gerekçe).
                     },
                     windowInsets = WindowInsets(0, 0, 0, 0),
                     colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),

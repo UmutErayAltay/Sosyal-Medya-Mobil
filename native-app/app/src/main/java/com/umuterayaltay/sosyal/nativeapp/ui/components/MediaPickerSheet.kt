@@ -1,5 +1,8 @@
 package com.umuterayaltay.sosyal.nativeapp.ui.components
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -10,12 +13,17 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
@@ -29,19 +37,23 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.umuterayaltay.sosyal.nativeapp.ServiceLocator
 import com.umuterayaltay.sosyal.nativeapp.network.GifDto
 import com.umuterayaltay.sosyal.nativeapp.network.StickerDto
+import com.umuterayaltay.sosyal.nativeapp.repository.CreateStickerResult
 import com.umuterayaltay.sosyal.nativeapp.repository.GifSearchResult
 import com.umuterayaltay.sosyal.nativeapp.repository.StickersResult
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /**
  * GIF + Sticker seçici — mesaj/yorum/post composer'larından paylaşılan TEK
@@ -178,10 +190,17 @@ private fun GifTab(onGifSelected: (String) -> Unit) {
 
 @Composable
 private fun StickerTab(onStickerSelected: (StickerDto) -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val stickersRepository = ServiceLocator.stickersRepository
     var stickers by remember { mutableStateOf<List<StickerDto>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var errorMsg by remember { mutableStateOf<String?>(null) }
+    // 2026-08-22 (kullanıcı isteği: "çıkartma gönderme kısmında + olsun
+    // sticker ekleyebilelim") — StickersRepository.createSticker() Dalga 1C'de
+    // yazılmış ama HİÇBİR UI'dan çağrılmıyordu (bkz. dosya başı yorumu: "Dalga
+    // 3'te başka bir ajan ekleyecek"), burada TÜKETİLİYOR.
+    var uploading by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         loading = true
@@ -190,6 +209,29 @@ private fun StickerTab(onStickerSelected: (StickerDto) -> Unit) {
             is StickersResult.Error -> errorMsg = "Çıkartmalar yüklenemedi"
         }
         loading = false
+    }
+
+    val addStickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia(),
+    ) { uri ->
+        if (uri != null) {
+            uploading = true
+            scope.launch {
+                val mimeType = context.contentResolver.getType(uri)
+                val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                if (bytes != null) {
+                    when (val result = stickersRepository.createSticker(bytes, mimeType)) {
+                        is CreateStickerResult.Success -> {
+                            stickers = listOf(
+                                StickerDto(id = result.id, imageUrl = result.imageUrl, mineCreated = true),
+                            ) + stickers
+                        }
+                        is CreateStickerResult.Error -> errorMsg = "Çıkartma eklenemedi"
+                    }
+                }
+                uploading = false
+            }
+        }
     }
 
     Box(
@@ -201,23 +243,50 @@ private fun StickerTab(onStickerSelected: (StickerDto) -> Unit) {
         when {
             loading -> CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
             errorMsg != null -> CenteredHint(errorMsg ?: "")
-            stickers.isEmpty() -> CenteredHint("Henüz çıkartman yok")
             else -> LazyVerticalGrid(
                 columns = GridCells.Fixed(4),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                items(stickers) { sticker ->
-                    AsyncImage(
-                        model = sticker.imageUrl,
-                        contentDescription = null,
-                        contentScale = ContentScale.Fit,
+                item {
+                    Box(
                         modifier = Modifier
                             .aspectRatio(1f)
                             .clip(RoundedCornerShape(8.dp))
                             .background(MaterialTheme.colorScheme.surfaceVariant)
-                            .clickable { onStickerSelected(sticker) },
-                    )
+                            .clickable(enabled = !uploading) {
+                                addStickerLauncher.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                                )
+                            },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        if (uploading) {
+                            CircularProgressIndicator(modifier = Modifier.size(20.dp))
+                        } else {
+                            Icon(
+                                Icons.Filled.Add,
+                                contentDescription = "Yeni çıkartma ekle",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+                if (stickers.isEmpty()) {
+                    item(span = { GridItemSpan(maxLineSpan) }) { CenteredHint("Henüz çıkartman yok") }
+                } else {
+                    items(stickers) { sticker ->
+                        AsyncImage(
+                            model = sticker.imageUrl,
+                            contentDescription = null,
+                            contentScale = ContentScale.Fit,
+                            modifier = Modifier
+                                .aspectRatio(1f)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(MaterialTheme.colorScheme.surfaceVariant)
+                                .clickable { onStickerSelected(sticker) },
+                        )
+                    }
                 }
             }
         }

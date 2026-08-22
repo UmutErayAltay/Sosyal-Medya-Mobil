@@ -7,11 +7,13 @@ import androidx.compose.animation.core.spring
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.SmartDisplay
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -99,6 +101,22 @@ fun MainScaffold(navController: NavHostController, onSessionExpired: () -> Unit)
     }.collectAsState()
 
     Scaffold(
+        // 2026-08-22 (kullanıcı isteği: "post paylaşma olarak üst barda +
+        // olmasındansa webde olduğu gibi sağ altta bir simge olsun, profil-
+        // mesajlar kısmının hemen üstüne") — web'in feed.html'deki
+        // .fab-post-btn'i (sabit sağ-alt, 24dp kenar boşluğu) ile AYNI
+        // konum/gerekçe. Scaffold'un floatingActionButton'ı, bottomBar
+        // TANIMLIYKEN otomatik olarak barın HEMEN ÜSTÜNE oturur (Material3'ün
+        // varsayılan davranışı, elle bir offset/padding HESAPLANMADI). SADECE
+        // Feed sekmesinde gösterilir — web'de de bu buton sadece feed.html'de
+        // var, diğer sekmelerde (Discover/Reels/Messages/Profile) YOK.
+        floatingActionButton = {
+            if (selectedTab == MainTab.Feed) {
+                FloatingActionButton(onClick = { navController.navigate("createPost") }) {
+                    Icon(Icons.Filled.Add, contentDescription = "Yeni Gönderi")
+                }
+            }
+        },
         bottomBar = {
             // Görsel cila: seçili sekmenin ikon/etiket rengi + arka plan
             // göstergesi marka renklerinden (colorScheme.primary/secondaryContainer)
@@ -173,7 +191,6 @@ fun MainScaffold(navController: NavHostController, onSessionExpired: () -> Unit)
                 MainTab.Feed -> FeedScreen(
                     onSessionExpired = onSessionExpired,
                     onNavigateToPostDetail = { postId -> navController.navigate("postDetail/$postId") },
-                    onNewPostClick = { navController.navigate("createPost") },
                     onNotificationsClick = { navController.navigate("notifications") },
                     onTrendingClick = { navController.navigate("trending") },
                     onNavigateToHashtag = { tag -> navController.navigate("hashtag/$tag") },

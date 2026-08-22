@@ -30,6 +30,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Person
@@ -139,6 +140,14 @@ fun StoryViewerScreen(
     var showSaveHighlightDialog by remember { mutableStateOf(false) }
     var highlightTitle by remember { mutableStateOf("") }
     var highlightChanged by remember { mutableStateOf(false) }
+    // 2026-08-22 (kullanıcı isteği: "storylere yanıt verince/emoji ile
+    // reaksiyon verince Instagram'daki gibi olsun, ekranda emoji uçuşsun") —
+    // `triggerKey` her defasında System.currentTimeMillis() ile TAZELENIYOR:
+    // AYNI emojiye/yanıta üst üste basılsa bile remember(triggerKey) sayesinde
+    // animasyon HER SEFERİNDE baştan oynar (sadece emoji'yi key yaparsak ikinci
+    // aynı-emoji tıklaması görmezden gelinirdi).
+    var floatingEmoji by remember { mutableStateOf<Pair<String, Long>?>(null) }
+    var replySentAt by remember { mutableStateOf(0L) }
     // 2026-08-11 (kullanıcı isteği: "hikayeyi kim izledi listesi").
     var showViewersSheet by remember { mutableStateOf(false) }
 
@@ -377,9 +386,14 @@ fun StoryViewerScreen(
                                 viewModel.replyToStory(replyText)
                                 replyText = ""
                                 showReplyField = false
+                                replySentAt = System.currentTimeMillis()
                             }
                         },
-                        onReact = { emoji -> viewModel.reactToStory(emoji) },
+                        onReact = { emoji ->
+                            viewModel.reactToStory(emoji)
+                            floatingEmoji = emoji to System.currentTimeMillis()
+                            replySentAt = System.currentTimeMillis()
+                        },
                         // Madde 8 (kullanıcı raporu: yanıt yazarken süre durmuyor) —
                         // basılı-tutma gesture'ıyla AYNI `paused` değişkeni, reply
                         // alanı odaklanınca/odağı kaybedince de güncellenir.
@@ -428,6 +442,20 @@ fun StoryViewerScreen(
                             Icon(Icons.Filled.Bookmark, contentDescription = "Öne çıkanlara kaydet", tint = Color.White)
                         }
                     }
+                }
+
+                floatingEmoji?.let { (emoji, key) ->
+                    FloatingReactionEmoji(
+                        emoji = emoji,
+                        triggerKey = key,
+                        modifier = Modifier.align(Alignment.BottomCenter),
+                    )
+                }
+                if (replySentAt > 0L) {
+                    ReplySentBadge(
+                        triggerKey = replySentAt,
+                        modifier = Modifier.align(Alignment.BottomCenter),
+                    )
                 }
 
                 if (showSaveHighlightDialog) {
@@ -835,6 +863,71 @@ private fun StoryFooter(
                 }
             }
         }
+    }
+}
+
+/**
+ * 2026-08-22 (kullanıcı isteği: "storylere reaksiyon verince Instagram'daki
+ * gibi ekranda o ifadeye göre emojiler belirsin") — tıklanan reaksiyon
+ * emojisi footer'ın üzerinden yukarı doğru büyüyüp solarak süzülür.
+ * `progress` tek bir 0→1 Animatable: translationY, alpha ve ölçek AYNI
+ * ilerlemeden türetilir (üç ayrı animasyonu senkronize etmek yerine).
+ */
+@Composable
+private fun FloatingReactionEmoji(emoji: String, triggerKey: Long, modifier: Modifier = Modifier) {
+    val progress = remember(triggerKey) { Animatable(0f) }
+    LaunchedEffect(triggerKey) {
+        progress.snapTo(0f)
+        progress.animateTo(1f, animationSpec = tween(1200, easing = LinearEasing))
+    }
+    Box(modifier = modifier.padding(bottom = 110.dp), contentAlignment = Alignment.Center) {
+        Text(
+            text = emoji,
+            style = MaterialTheme.typography.displayMedium,
+            modifier = Modifier.graphicsLayer {
+                translationY = -progress.value * 300f
+                alpha = 1f - progress.value
+                val scale = 1f + progress.value * 0.4f
+                scaleX = scale
+                scaleY = scale
+            },
+        )
+    }
+}
+
+/**
+ * Instagram'ın metin yanıtı/reaksiyon gönderiminde gösterdiği kısa "Gönderildi"
+ * onayının karşılığı — [onSendReply]/[onReact] BAŞARILI çağrısından sonra
+ * kısa süreliğine belirir, ~1,3 sn sonra kendiliğinden solarak kaybolur.
+ */
+@Composable
+private fun ReplySentBadge(triggerKey: Long, modifier: Modifier = Modifier) {
+    val alpha = remember(triggerKey) { Animatable(1f) }
+    LaunchedEffect(triggerKey) {
+        alpha.snapTo(1f)
+        delay(900)
+        alpha.animateTo(0f, animationSpec = tween(400))
+    }
+    Row(
+        modifier = modifier
+            .padding(bottom = 90.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(Color.White.copy(alpha = 0.15f * alpha.value))
+            .padding(horizontal = 14.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            Icons.Filled.Check,
+            contentDescription = null,
+            tint = Color.White.copy(alpha = alpha.value),
+            modifier = Modifier.size(16.dp),
+        )
+        Text(
+            text = "Gönderildi",
+            color = Color.White.copy(alpha = alpha.value),
+            style = MaterialTheme.typography.labelMedium,
+            modifier = Modifier.padding(start = 4.dp),
+        )
     }
 }
 
