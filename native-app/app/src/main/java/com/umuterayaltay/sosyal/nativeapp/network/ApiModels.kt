@@ -1204,6 +1204,10 @@ data class StoryDto(
     // klasik (düz beyaz yazı, arka plansız); "pill_light"/"pill_dark" = renkli
     // pilli arka plan. Backend SADECE bu iki değeri veya null kabul eder.
     @SerializedName("caption_style") val captionStyle: String? = null,
+    // 2026-08-22 (kullanıcı isteği: "yazının kendi rengi seçilebilsin") —
+    // captionStyle'dan BAĞIMSIZ, background_color ile AYNI serbest hex,
+    // sabit bir liste YOK (backend zorlamıyor).
+    @SerializedName("caption_color") val captionColor: String? = null,
     val poll: PollDto? = null,
     // 2026-08-10 (kullanıcı raporu: "2.ye tıklayınca öncekini siliyor") —
     // İLK sürüm (2026-08-09) TEKİL overlay_image_url/position_x/position_y/

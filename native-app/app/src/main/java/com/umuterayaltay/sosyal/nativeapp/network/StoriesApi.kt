@@ -28,6 +28,15 @@ interface StoriesApi {
     @GET("stories/user/{userId}")
     suspend fun getUserStories(@Path("userId") userId: String): Response<UserStoriesResponse>
 
+    // 2026-08-22 (kullanıcı isteği: "storyler 24 saat sonra siliniyor ama
+    // paylaşan kişi arşivinde görsün") — çağıranın KENDİ süresi dolmuş
+    // hikayeleri, user_id parametresi YOK (her zaman kendi arşivi).
+    // Response şekli getUserStories ile AYNI ({"stories":[...]}), sadece
+    // username/avatar_url/is_mine alanları YOK — UserStoriesResponse'un
+    // hepsi varsayılan değerli olduğu için AYNI DTO güvenle reuse edilir.
+    @GET("stories/archive")
+    suspend fun getStoryArchive(): Response<UserStoriesResponse>
+
     @Multipart
     @POST("stories")
     suspend fun createStory(
@@ -42,6 +51,11 @@ interface StoriesApi {
         // null/absent = klasik (backend zaten böyle davranıyor), "pill_light"/
         // "pill_dark" dışındaki değerleri backend fail-open null'a düşürür.
         @Part("caption_style") captionStyle: RequestBody?,
+        // 2026-08-22 (kullanıcı isteği: "yazının kendi rengi seçilebilsin") —
+        // captionStyle'dan BAĞIMSIZ, background_color ile AYNI serbest hex
+        // regex'i (bkz. app/api_v1/stories.py) — sabit bir liste YOK, native
+        // UI'da 9 renk sunuluyor ama backend bunu zorlamıyor.
+        @Part("caption_color") captionColor: RequestBody?,
         @Part("poll_option_1") pollOption1: RequestBody?,
         @Part("poll_option_2") pollOption2: RequestBody?,
         @Part("poll_option_3") pollOption3: RequestBody?,

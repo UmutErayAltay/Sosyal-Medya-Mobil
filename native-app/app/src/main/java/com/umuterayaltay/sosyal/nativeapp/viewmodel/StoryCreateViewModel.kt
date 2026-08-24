@@ -146,6 +146,15 @@ class StoryCreateViewModel : ViewModel() {
     private val _captionStyle = MutableStateFlow<String?>(null)
     val captionStyle: StateFlow<String?> = _captionStyle.asStateFlow()
 
+    // 2026-08-22 (kullanıcı isteği: "yazıyı yazarken alt kısımda 9 farklı
+    // renk çıkabilir, yazının kendi rengi seçilebilsin") — captionStyle'dan
+    // (pill_light/pill_dark, arka plan hapının rengi) TAMAMEN BAĞIMSIZ bir
+    // kavram: yazının KENDİ rengi. null = varsayılan (beyaz). Backend
+    // background_color ile AYNI serbest hex regex'i kabul ediyor (bkz.
+    // STORY_TEXT_COLOR_SWATCHES, sabit 9 renk sadece native UI'da).
+    private val _captionColor = MutableStateFlow<String?>(null)
+    val captionColor: StateFlow<String?> = _captionColor.asStateFlow()
+
     private val _pollPositionX = MutableStateFlow(0.5f)
     val pollPositionX: StateFlow<Float> = _pollPositionX.asStateFlow()
 
@@ -206,6 +215,12 @@ class StoryCreateViewModel : ViewModel() {
             "pill_light" -> "pill_dark"
             else -> null
         }
+    }
+
+    /** Metin rengi paletindeki bir renge dokununca — tekrar aynı renge
+     * dokununca (toggle) null'a (varsayılan beyaz) döner. */
+    fun onCaptionColorChange(hex: String) {
+        _captionColor.value = if (_captionColor.value == hex) null else hex
     }
 
     /** Canvas'taki anket widget'ı sürüklenince/pinch ile ölçeklenince çağrılır. */
@@ -383,6 +398,7 @@ class StoryCreateViewModel : ViewModel() {
                     captionPositionX = if (text.isNotEmpty()) _captionPositionX.value else null,
                     captionPositionY = if (text.isNotEmpty()) _captionPositionY.value else null,
                     captionStyle = if (text.isNotEmpty()) _captionStyle.value else null,
+                    captionColor = if (text.isNotEmpty()) _captionColor.value else null,
                     pollOptions = filledOptions,
                     pollPositionX = if (hasPoll) _pollPositionX.value else null,
                     pollPositionY = if (hasPoll) _pollPositionY.value else null,

@@ -43,8 +43,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -192,6 +194,7 @@ fun StoryCreateScreen(
     val captionPositionX by viewModel.captionPositionX.collectAsState()
     val captionPositionY by viewModel.captionPositionY.collectAsState()
     val captionStyle by viewModel.captionStyle.collectAsState()
+    val captionColor by viewModel.captionColor.collectAsState()
     val pollPositionX by viewModel.pollPositionX.collectAsState()
     val pollPositionY by viewModel.pollPositionY.collectAsState()
     val pollScale by viewModel.pollScale.collectAsState()
@@ -278,6 +281,7 @@ fun StoryCreateScreen(
             captionPositionX = captionPositionX,
             captionPositionY = captionPositionY,
             captionStyle = captionStyle,
+            captionColor = captionColor,
             pollPositionX = pollPositionX,
             pollPositionY = pollPositionY,
             pollScale = pollScale,
@@ -290,6 +294,7 @@ fun StoryCreateScreen(
             onBackgroundColorChange = viewModel::onBackgroundColorChange,
             onCaptionPositionChange = viewModel::onCaptionPositionChange,
             onCaptionStyleCycle = viewModel::onCaptionStyleCycle,
+            onCaptionColorChange = viewModel::onCaptionColorChange,
             onPollPositionChange = viewModel::onPollPositionChange,
             onPollScaleChange = viewModel::onPollScaleChange,
             onAddOverlayClick = { showMediaPicker = true },
@@ -779,6 +784,16 @@ private val STORY_BACKGROUND_SWATCHES = listOf(
     "#7c5cbf", "#e74c3c", "#27ae60", "#2980b9", "#f39c12", "#1a1a2e",
 )
 
+// 2026-08-22 (kullanıcı isteği: "yazıyı yazarken alt kısımda 9 farklı renk
+// çıkabilir, yazının kendi rengi seçilebilsin") — arka plan paletinden
+// TAMAMEN BAĞIMSIZ, yazının KENDİ rengi için 9 seçenek (beyaz/siyah + 7 canlı
+// renk — arka plan paletinde beyaz/siyah YOKTU çünkü arka plan için anlamsız,
+// yazı rengi için ise en sık kullanılan iki ekstrem BİLEREK dahil edildi).
+private val STORY_TEXT_COLOR_SWATCHES = listOf(
+    "#ffffff", "#000000", "#e74c3c", "#e67e22", "#f1c40f",
+    "#27ae60", "#2980b9", "#9b59b6", "#ff6fa5",
+)
+
 /**
  * Form adımı — Instagram tarzı TAM EKRAN canvas editörüne dönüştürüldü
  * (kullanıcı isteği, 2. tur: "fotoğrafı çektik ya da galeriden seçtik,
@@ -819,6 +834,8 @@ private fun StoryFormStep(
     captionPositionY: Float,
     // 2026-08-11 (kullanıcı isteği: "metin stili/rengi seçenekleri").
     captionStyle: String?,
+    // 2026-08-22 (kullanıcı isteği: "yazının kendi rengi seçilebilsin").
+    captionColor: String?,
     pollPositionX: Float,
     pollPositionY: Float,
     pollScale: Float,
@@ -831,6 +848,7 @@ private fun StoryFormStep(
     onBackgroundColorChange: (String?) -> Unit,
     onCaptionPositionChange: (Float, Float) -> Unit,
     onCaptionStyleCycle: () -> Unit,
+    onCaptionColorChange: (String) -> Unit,
     onPollPositionChange: (Float, Float) -> Unit,
     onPollScaleChange: (Float) -> Unit,
     onAddOverlayClick: () -> Unit,
@@ -921,6 +939,7 @@ private fun StoryFormStep(
                     StoryCaptionText(
                         text = caption,
                         captionStyle = captionStyle,
+                        captionColor = captionColor,
                         modifier = Modifier.clickable(enabled = !submitting) { showTextEditor = true },
                     )
                 }
@@ -1177,6 +1196,8 @@ private fun StoryFormStep(
             initialValue = caption,
             captionStyle = captionStyle,
             onStyleCycle = onCaptionStyleCycle,
+            captionColor = captionColor,
+            onColorSelected = onCaptionColorChange,
             onDone = { text ->
                 onCaptionChange(text.trim())
                 showTextEditor = false
@@ -1297,6 +1318,10 @@ private fun StoryTextEditorOverlay(
     initialValue: String,
     captionStyle: String?,
     onStyleCycle: () -> Unit,
+    // 2026-08-22 (kullanıcı isteği: "yazının kendi rengi seçilebilsin") —
+    // captionStyle'dan (pill arka planı) BAĞIMSIZ, null = varsayılan.
+    captionColor: String?,
+    onColorSelected: (String) -> Unit,
     onDone: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -1310,10 +1335,19 @@ private fun StoryTextEditorOverlay(
     // burada TEKRARLANIYOR (BasicTextField kendi decorationBox'ı olduğu
     // için StoryCaptionText'in Text() tabanlı gövdesi DOĞRUDAN reuse
     // edilemiyor — sadece renk/arka plan MANTIĞI aynı, iki YERDE yaşıyor).
-    val (textColor, fieldBackground) = when (captionStyle) {
-        "pill_light" -> Color.Black to Color.White.copy(alpha = 0.9f)
-        "pill_dark" -> Color.White to Color.Black.copy(alpha = 0.75f)
-        else -> Color.White to Color.Transparent
+    //
+    // 2026-08-22: fieldBackground (pill'in arka planı) SADECE captionStyle'a
+    // bağlı kalıyor — captionColor SADECE metnin kendi rengini override
+    // eder, ikisi BAĞIMSIZ eksenler (bir pill arka planının üstünde farklı
+    // renk yazı yazılabilmeli).
+    val fieldBackground = when (captionStyle) {
+        "pill_light" -> Color.White.copy(alpha = 0.9f)
+        "pill_dark" -> Color.Black.copy(alpha = 0.75f)
+        else -> Color.Transparent
+    }
+    val textColor = captionColor?.let(::parseHexColor) ?: when (captionStyle) {
+        "pill_light" -> Color.Black
+        else -> Color.White
     }
 
     Box(
@@ -1380,6 +1414,40 @@ private fun StoryTextEditorOverlay(
                 }
             },
         )
+
+        // 2026-08-22 (kullanıcı isteği: "yazıyı yazarken alt kısımda 9
+        // farklı renk çıkabilir") — Instagram'ın metin editöründeki alt
+        // renk şeridiyle AYNI konum. Ekran dar olursa taşmasın diye
+        // yatay kaydırılabilir.
+        Row(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
+                .padding(bottom = 24.dp)
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                ) {},
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            STORY_TEXT_COLOR_SWATCHES.forEach { hex ->
+                val isSelected = captionColor == hex
+                Box(
+                    modifier = Modifier
+                        .size(32.dp)
+                        .clip(CircleShape)
+                        .background(parseHexColor(hex) ?: Color.Gray)
+                        .border(
+                            width = if (isSelected) 3.dp else 1.dp,
+                            color = if (isSelected) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.5f),
+                            shape = CircleShape,
+                        )
+                        .clickable { onColorSelected(hex) },
+                )
+            }
+        }
     }
 }
 

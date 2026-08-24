@@ -14,6 +14,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -27,6 +28,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
@@ -47,6 +49,8 @@ import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.HourglassEmpty
 import androidx.compose.material.icons.filled.Inbox
@@ -59,7 +63,9 @@ import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.PersonRemove
+import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -69,8 +75,11 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.ScrollableTabRow
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
@@ -89,6 +98,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -104,9 +114,15 @@ import com.umuterayaltay.sosyal.nativeapp.network.ProfileDto
 import com.umuterayaltay.sosyal.nativeapp.network.ProfileStatsDto
 import com.umuterayaltay.sosyal.nativeapp.network.StickerDto
 import com.umuterayaltay.sosyal.nativeapp.repository.CreateStickerResult
+import com.umuterayaltay.sosyal.nativeapp.repository.DeleteStoryResult
 import com.umuterayaltay.sosyal.nativeapp.repository.Highlight
 import com.umuterayaltay.sosyal.nativeapp.repository.Post
+import com.umuterayaltay.sosyal.nativeapp.repository.SaveHighlightResult
 import com.umuterayaltay.sosyal.nativeapp.repository.StickersResult
+import com.umuterayaltay.sosyal.nativeapp.repository.Story
+import com.umuterayaltay.sosyal.nativeapp.repository.StoryArchiveResult
+import com.umuterayaltay.sosyal.nativeapp.ui.components.FullscreenImageViewer
+import com.umuterayaltay.sosyal.nativeapp.ui.components.FullscreenVideoViewer
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.ProfileEvent
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.ProfileViewModel
 import com.umuterayaltay.sosyal.nativeapp.viewmodel.ProfileViewModelFactory
@@ -126,6 +142,11 @@ private enum class ProfileTab(val label: String) {
     // StickersRepository ZATEN vardı, SADECE bu sekme eksikti.
     Stickers("Çıkartmalarım"),
     Archived("Arşiv"),
+    // 2026-08-22 (kullanıcı isteği: "storyler 24 saat sonra siliniyor ama
+    // paylaşan kişi arşivinde görsün") — Stickers ile AYNI özel-durum
+    // deseni (generic post grid'i YERİNE ayrı bir composable), SADECE
+    // isSelf'te (aşağıdaki tabs filtresi).
+    StoryArchive("Hikaye Arşivim"),
 }
 
 /**
@@ -604,7 +625,8 @@ private fun ProfileContent(
             ProfileTab.entries.toList()
         } else {
             ProfileTab.entries.filterNot {
-                it == ProfileTab.Archived || it == ProfileTab.Saved || it == ProfileTab.Stickers
+                it == ProfileTab.Archived || it == ProfileTab.Saved || it == ProfileTab.Stickers ||
+                    it == ProfileTab.StoryArchive
             }
         }
     }
@@ -722,6 +744,14 @@ private fun ProfileContent(
                 return@LazyColumn
             }
 
+            if (selectedTab == ProfileTab.StoryArchive) {
+                // Stickers ile AYNI özel-durum deseni — 24 saat sonra
+                // silinmeyen (bkz. backend _cleanup_expired_stories() no-op
+                // değişikliği), sahibinin kendi arşivinde gördüğü hikayeler.
+                item { ProfileStoryArchiveContent() }
+                return@LazyColumn
+            }
+
             val currentPosts = when (selectedTab) {
                 ProfileTab.Posts -> posts
                 ProfileTab.Media -> mediaPosts
@@ -729,6 +759,7 @@ private fun ProfileContent(
                 ProfileTab.Saved -> bookmarkedPosts
                 ProfileTab.Archived -> archivedPosts
                 ProfileTab.Stickers -> emptyList() // yukarıda erken dönüldü, buraya HİÇ ulaşılmaz
+                ProfileTab.StoryArchive -> emptyList() // yukarıda erken dönüldü, buraya HİÇ ulaşılmaz
             }
 
             if (currentPosts.isEmpty()) {
@@ -954,6 +985,274 @@ private fun ProfileStickersContent(isSelf: Boolean) {
             },
             dismissButton = {
                 TextButton(onClick = { removeTarget = null }) { Text("Vazgeç") }
+            },
+        )
+    }
+}
+
+/**
+ * 2026-08-22 (kullanıcı isteği: "storyler 24 saat sonra siliniyor ama
+ * paylaşan kişi arşivinde görsün, istediği zaman öne çıkarsın, silsin") —
+ * ProfileStickersContent'in AYNI ServiceLocator-doğrudan deseni (ayrı bir
+ * ViewModel İCAT EDİLMEDİ). Backend artık süresi dolmuş hikayeleri
+ * SİLMİYOR (bkz. app/stories.py::_cleanup_expired_stories() no-op
+ * değişikliği), `GET stories/archive` sahibinin kendi arşivini döner.
+ *
+ * Etkileşim: TIKLAMA tam ekran önizleme açar (görsel/video için mevcut
+ * FullscreenImageViewer/FullscreenVideoViewer REUSE edilir; metin-only
+ * hikayede basit bir yerinde önizleme). BASILI TUTMA (uzun basma) "Öne
+ * Çıkar"/"Sil" seçeneklerini gösteren bir ModalBottomSheet açar —
+ * MessageActionsSheet'teki AYNI "tıklama=görüntüle, uzun basma=aksiyon
+ * menüsü" ayrımı.
+ */
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
+@Composable
+private fun ProfileStoryArchiveContent() {
+    val storiesRepository = remember { ServiceLocator.storiesRepository }
+    var stories by remember { mutableStateOf<List<Story>>(emptyList()) }
+    var loading by remember { mutableStateOf(true) }
+    var errorMsg by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+
+    var previewTarget by remember { mutableStateOf<Story?>(null) }
+    var actionTarget by remember { mutableStateOf<Story?>(null) }
+    val actionSheetState = rememberModalBottomSheetState()
+    var highlightTarget by remember { mutableStateOf<Story?>(null) }
+    var highlightTitle by remember { mutableStateOf("") }
+    var deleteTarget by remember { mutableStateOf<Story?>(null) }
+    var busy by remember { mutableStateOf(false) }
+
+    suspend fun reload() {
+        loading = true
+        when (val result = storiesRepository.getStoryArchive()) {
+            is StoryArchiveResult.Success -> {
+                stories = result.stories
+                errorMsg = null
+            }
+            is StoryArchiveResult.Error -> errorMsg = "Arşiv yüklenemedi"
+        }
+        loading = false
+    }
+
+    LaunchedEffect(Unit) { reload() }
+
+    Column(modifier = Modifier
+        .fillMaxWidth()
+        .padding(horizontal = 16.dp)) {
+        Text("Hikaye Arşivim", style = MaterialTheme.typography.titleMedium)
+
+        when {
+            loading -> Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(96.dp),
+                contentAlignment = Alignment.Center,
+            ) { CircularProgressIndicator() }
+            errorMsg != null -> Text(
+                text = errorMsg ?: "",
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(vertical = 24.dp),
+            )
+            stories.isEmpty() -> Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 32.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = "Süresi dolmuş hikayen yok",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                )
+            }
+            else -> {
+                val columns = 4
+                val cellSize = 80.dp
+                val spacing = 8.dp
+                val rows = (stories.size + columns - 1) / columns
+                val gridHeight = (cellSize * rows) + (spacing * (rows - 1).coerceAtLeast(0))
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(columns),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp)
+                        .height(gridHeight),
+                    userScrollEnabled = false,
+                    verticalArrangement = Arrangement.spacedBy(spacing),
+                    horizontalArrangement = Arrangement.spacedBy(spacing),
+                ) {
+                    gridItems(stories, key = { it.id }) { story ->
+                        Box(
+                            modifier = Modifier
+                                .size(cellSize)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(parseHexColor(story.backgroundColor) ?: MaterialTheme.colorScheme.surfaceVariant)
+                                .combinedClickable(
+                                    onClick = { previewTarget = story },
+                                    onLongClick = { actionTarget = story },
+                                ),
+                        ) {
+                            when {
+                                !story.imageUrl.isNullOrBlank() -> AsyncImage(
+                                    model = story.imageUrl,
+                                    contentDescription = null,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize(),
+                                )
+                                !story.videoUrl.isNullOrBlank() -> Icon(
+                                    Icons.Filled.PlayCircle,
+                                    contentDescription = "Video",
+                                    tint = Color.White,
+                                    modifier = Modifier.align(Alignment.Center).size(28.dp),
+                                )
+                                !story.caption.isNullOrBlank() -> Text(
+                                    text = story.caption,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = parseHexColor(story.captionColor) ?: Color.White,
+                                    maxLines = 3,
+                                    overflow = TextOverflow.Ellipsis,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier
+                                        .align(Alignment.Center)
+                                        .padding(6.dp),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    previewTarget?.let { story ->
+        when {
+            !story.imageUrl.isNullOrBlank() -> FullscreenImageViewer(
+                imageUrl = story.imageUrl,
+                onDismiss = { previewTarget = null },
+            )
+            !story.videoUrl.isNullOrBlank() -> FullscreenVideoViewer(
+                videoUrl = story.videoUrl,
+                onDismiss = { previewTarget = null },
+            )
+            else -> Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(parseHexColor(story.backgroundColor) ?: Color.Black)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = { previewTarget = null },
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (!story.caption.isNullOrBlank()) {
+                    StoryCaptionText(
+                        text = story.caption,
+                        captionStyle = story.captionStyle,
+                        captionColor = story.captionColor,
+                    )
+                }
+                IconButton(
+                    onClick = { previewTarget = null },
+                    modifier = Modifier.align(Alignment.TopStart).statusBarsPadding().padding(8.dp),
+                ) {
+                    Icon(Icons.Filled.Close, contentDescription = "Kapat", tint = Color.White)
+                }
+            }
+        }
+    }
+
+    if (actionTarget != null) {
+        ModalBottomSheet(
+            sheetState = actionSheetState,
+            onDismissRequest = { actionTarget = null },
+        ) {
+            Column(modifier = Modifier.padding(bottom = 24.dp)) {
+                DropdownMenuItem(
+                    text = { Text("Öne Çıkanlara Ekle") },
+                    leadingIcon = { Icon(Icons.Filled.Star, contentDescription = null) },
+                    onClick = {
+                        highlightTarget = actionTarget
+                        highlightTitle = ""
+                        actionTarget = null
+                    },
+                )
+                DropdownMenuItem(
+                    text = { Text("Sil", color = MaterialTheme.colorScheme.error) },
+                    leadingIcon = { Icon(Icons.Filled.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
+                    onClick = {
+                        deleteTarget = actionTarget
+                        actionTarget = null
+                    },
+                )
+            }
+        }
+    }
+
+    highlightTarget?.let { story ->
+        AlertDialog(
+            onDismissRequest = { if (!busy) highlightTarget = null },
+            title = { Text("Öne çıkanlara ekle") },
+            text = {
+                OutlinedTextField(
+                    value = highlightTitle,
+                    onValueChange = { highlightTitle = it },
+                    label = { Text("Başlık") },
+                    singleLine = true,
+                    enabled = !busy,
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = highlightTitle.isNotBlank() && !busy,
+                    onClick = {
+                        busy = true
+                        scope.launch {
+                            when (storiesRepository.saveHighlight(story.id, newTitle = highlightTitle)) {
+                                is SaveHighlightResult.Success -> {
+                                    highlightTarget = null
+                                    // Öne çıkarılan hikaye arşivde KALIR — kullanıcı
+                                    // isterse AYRICA silebilir (iki aksiyon BAĞIMSIZ,
+                                    // öne çıkarma otomatik silme ANLAMINA GELMİYOR).
+                                }
+                                is SaveHighlightResult.Error -> errorMsg = "Öne çıkarılamadı, lütfen tekrar dene"
+                            }
+                            busy = false
+                        }
+                    },
+                ) { Text("Kaydet") }
+            },
+            dismissButton = {
+                TextButton(enabled = !busy, onClick = { highlightTarget = null }) { Text("Vazgeç") }
+            },
+        )
+    }
+
+    deleteTarget?.let { story ->
+        AlertDialog(
+            onDismissRequest = { if (!busy) deleteTarget = null },
+            title = { Text("Hikayeyi sil") },
+            text = { Text("Bu hikayeyi kalıcı olarak silmek istediğine emin misin? Bu işlem geri alınamaz.") },
+            confirmButton = {
+                TextButton(
+                    enabled = !busy,
+                    onClick = {
+                        busy = true
+                        scope.launch {
+                            when (storiesRepository.deleteStory(story.id)) {
+                                is DeleteStoryResult.Success -> {
+                                    stories = stories.filterNot { it.id == story.id }
+                                    deleteTarget = null
+                                }
+                                is DeleteStoryResult.Error -> errorMsg = "Silinemedi, lütfen tekrar dene"
+                            }
+                            busy = false
+                        }
+                    },
+                ) { Text("Sil", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(enabled = !busy, onClick = { deleteTarget = null }) { Text("Vazgeç") }
             },
         )
     }

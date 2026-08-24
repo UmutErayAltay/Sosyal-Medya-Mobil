@@ -327,6 +327,7 @@ fun StoryViewerScreen(
                         StoryCaptionText(
                             text = story.caption,
                             captionStyle = story.captionStyle,
+                            captionColor = story.captionColor,
                             modifier = Modifier
                                 .align(Alignment.TopStart)
                                 .graphicsLayer {
@@ -984,11 +985,21 @@ internal fun parseHexColor(hex: String?): Color? {
  * stil string'i gönderse bile çökme/yanlış render YOK).
  */
 @Composable
-internal fun StoryCaptionText(text: String, captionStyle: String?, modifier: Modifier = Modifier) {
+internal fun StoryCaptionText(
+    text: String,
+    captionStyle: String?,
+    // 2026-08-22 (kullanıcı isteği: "yazının kendi rengi seçilebilsin") —
+    // captionStyle'ın (pill arka planı) belirlediği VARSAYILAN yazı rengini
+    // override eder, null ise eski davranış (pill_light->siyah, aksi
+    // halde beyaz) AYNEN korunur.
+    captionColor: String? = null,
+    modifier: Modifier = Modifier,
+) {
+    val overrideColor = captionColor?.let(::parseHexColor)
     when (captionStyle) {
         "pill_light" -> Text(
             text = text,
-            color = Color.Black,
+            color = overrideColor ?: Color.Black,
             style = MaterialTheme.typography.headlineSmall,
             modifier = modifier
                 .background(Color.White.copy(alpha = 0.9f), RoundedCornerShape(50))
@@ -996,7 +1007,7 @@ internal fun StoryCaptionText(text: String, captionStyle: String?, modifier: Mod
         )
         "pill_dark" -> Text(
             text = text,
-            color = Color.White,
+            color = overrideColor ?: Color.White,
             style = MaterialTheme.typography.headlineSmall,
             modifier = modifier
                 .background(Color.Black.copy(alpha = 0.75f), RoundedCornerShape(50))
@@ -1004,7 +1015,7 @@ internal fun StoryCaptionText(text: String, captionStyle: String?, modifier: Mod
         )
         else -> Text(
             text = text,
-            color = Color.White,
+            color = overrideColor ?: Color.White,
             style = MaterialTheme.typography.headlineSmall,
             modifier = modifier.padding(horizontal = 20.dp, vertical = 8.dp),
         )

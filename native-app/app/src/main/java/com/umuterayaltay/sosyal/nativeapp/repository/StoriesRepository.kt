@@ -48,6 +48,9 @@ data class Story(
     // 2026-08-11 (kullanıcı isteği: "metin stili/rengi seçenekleri") — null =
     // klasik, "pill_light"/"pill_dark" = renkli pilli arka plan.
     val captionStyle: String?,
+    // 2026-08-22 (kullanıcı isteği: "yazının kendi rengi seçilebilsin") —
+    // captionStyle'dan BAĞIMSIZ, null = varsayılan (beyaz).
+    val captionColor: String?,
     val poll: Poll?,
     // 2026-08-10 (kullanıcı raporu: "2.ye tıklayınca öncekini siliyor") —
     // TEKİL overlayImageUrl/Position/Scale YERİNE liste (bkz. ApiModels.kt
@@ -166,6 +169,7 @@ private fun StoryDto.toDomain() = Story(
     captionPositionX = captionPositionX ?: 0.5,
     captionPositionY = captionPositionY ?: 0.75,
     captionStyle = captionStyle,
+    captionColor = captionColor,
     overlayElements = (overlayElements ?: emptyList()).mapNotNull { it.toDomainOrNull() },
     poll = poll?.let { p ->
         Poll(
@@ -210,6 +214,14 @@ sealed class StoryBarResult {
 sealed class UserStoriesResult {
     data class Success(val data: UserStories) : UserStoriesResult()
     data class Error(val code: String?) : UserStoriesResult()
+}
+
+// 2026-08-22 (kullanıcı isteği: "storyler 24 saat sonra siliniyor ama
+// paylaşan kişi arşivinde görsün") — UserStoriesResult'tan AYRI: username/
+// avatarUrl/isMine hiç yok, sadece story listesi.
+sealed class StoryArchiveResult {
+    data class Success(val stories: List<Story>) : StoryArchiveResult()
+    data class Error(val code: String?) : StoryArchiveResult()
 }
 
 sealed class StoryViewersResult {
@@ -315,6 +327,26 @@ class StoriesRepository(
         }
     }
 
+    /** Çağıranın KENDİ süresi dolmuş (arşivlenmiş) hikayeleri — user_id
+     * parametresi YOK, backend her zaman `me`'ye göre filtreliyor. Yan etki
+     * YOK (getUserStories'in AKSİNE story_views upsert edilmiyor — arşivde
+     * kendi hikayeni görmek "izlemek" sayılmaz). */
+    suspend fun getStoryArchive(): StoryArchiveResult = withContext(Dispatchers.IO) {
+        try {
+            val response = storiesApi.getStoryArchive()
+            val body = response.body()
+            if (response.isSuccessful && body != null && body.error == null) {
+                StoryArchiveResult.Success((body.stories ?: emptyList()).map { it.toDomain() })
+            } else {
+                StoryArchiveResult.Error(body?.error ?: RetrofitClient.parseErrorCode(response))
+            }
+        } catch (e: IOException) {
+            StoryArchiveResult.Error("network_error")
+        } catch (e: Exception) {
+            StoryArchiveResult.Error("unknown_error")
+        }
+    }
+
     /** 2026-08-11 (kullanıcı isteği: "hikayeyi kim izledi listesi") — SADECE
      * kendi hikayen için anlamlı, backend başkasının hikayesi için 403 döner
      * (bkz. app/api_v1/stories.py). En yeni izleyen ÖNCE (backend sıralıyor). */
@@ -365,6 +397,10 @@ class StoriesRepository(
         captionPositionY: Float?,
         // 2026-08-11 (kullanıcı isteği: "metin stili/rengi seçenekleri").
         captionStyle: String?,
+        // 2026-08-22 (kullanıcı isteği: "yazının kendi rengi seçilebilsin") —
+        // captionStyle'dan BAĞIMSIZ, backend background_color ile AYNI
+        // serbest hex regex'ini kabul ediyor.
+        captionColor: String? = null,
         pollOptions: List<String>,
         pollPositionX: Float?,
         pollPositionY: Float?,
@@ -423,6 +459,7 @@ class StoriesRepository(
                 captionPositionX = textOrNull(captionPositionX?.toString()),
                 captionPositionY = textOrNull(captionPositionY?.toString()),
                 captionStyle = textOrNull(captionStyle),
+                captionColor = textOrNull(captionColor),
                 pollOption1 = opt(0),
                 pollOption2 = opt(1),
                 pollOption3 = opt(2),
