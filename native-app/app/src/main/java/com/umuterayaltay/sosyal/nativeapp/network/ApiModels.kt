@@ -957,6 +957,9 @@ data class PollDto(
     @SerializedName("position_x") val positionX: Double? = null,
     @SerializedName("position_y") val positionY: Double? = null,
     val scale: Double? = null,
+    // Çoklu metin katmanı + döndürme özelliğiyle eklendi (sql/migration_
+    // story_overlay_rotation.sql) — post anketinde her zaman null/0 gelir.
+    val rotation: Double? = null,
 )
 
 /** POST /polls/{id}/vote yanıtı — `poll` sarmalayıcısı YOK, alanlar düz gelir
@@ -1220,26 +1223,40 @@ data class StoryDto(
 /**
  * Hikaye üzerine sürüklenmiş TEK bir öğe — bkz. StoryDto.overlayElements
  * yorumu. Post/caption/poll'dan FARKLI olarak birden fazla eş zamanlı
- * olabilir (en fazla 3, backend api_create_story() sınırı).
+ * olabilir (en fazla `StoryCreateViewModel.MAX_OVERLAY_ELEMENTS` (10),
+ * backend `parse_overlay_elements()` sınırı — çoklu metin katmanı özelliğiyle
+ * 3'ten 10'a çıkarıldı).
  *
  * 2026-08-11 (kullanıcı isteği: "@bahsetme ve #hashtag sticker'ı") — backend
- * artık `type` alanına göre AYRIŞAN 3 şekli kabul/döndürüyor (image/mention/
- * hashtag). Bu proje Gson için polimorfik bir TypeAdapterFactory KURMADIĞI
- * için (CommentStickerDto gibi diğer "opsiyonel alanlı düz DTO" örnekleriyle
- * TUTARLI) DÜZ bir DTO — tipe göre HANGİ alanların dolu olacağı değişir,
- * domain katmanındaki `toDomain()` bunu sealed class'a (StoryOverlayElement)
- * çevirir. `type` YOKSA ama `url` VARSA backend geriye dönük uyumluluk için
- * bunu "image" sayıyor (bkz. app/api_v1/stories.py), native tarafı da AYNI
- * fallback'i uyguluyor.
+ * `type` alanına göre AYRIŞAN şekiller kabul/döndürüyor (image/mention/
+ * hashtag). Çoklu metin katmanı özelliğiyle (eskiden StoryDto'da AYRI tekil
+ * caption/captionStyle/captionColor/captionPosition alanları vardı — artık
+ * BURADA "text" tipi bir eleman olarak taşınıyor, bkz. app/stories.py::
+ * parse_overlay_elements docstring'i) `text`/`style`/`color` eklendi;
+ * `rotation` (derece, `%360` normalize) TÜM tiplere eklendi. Bu proje Gson
+ * için polimorfik bir TypeAdapterFactory KURMADIĞI için (CommentStickerDto
+ * gibi diğer "opsiyonel alanlı düz DTO" örnekleriyle TUTARLI) DÜZ bir DTO —
+ * tipe göre HANGİ alanların dolu olacağı değişir, domain katmanındaki
+ * `toDomain()` bunu sealed class'a (StoryOverlayElement) çevirir. Gson
+ * bilinmeyen bir `type` değerini veya eksik alanı sessizce null/varsayılan
+ * bırakır (bkz. StoriesRepository.kt `toDomainOrNull()` `else -> null` dalı)
+ * — eski bir APK, `type:"text"` içeren bir hikayeyi KIRILMADAN işler, o
+ * elemanı sadece yok sayar. `type` YOKSA ama `url` VARSA backend geriye
+ * dönük uyumluluk için bunu "image" sayıyor, native tarafı da AYNI fallback'i
+ * uyguluyor.
  */
 data class StoryOverlayElementDto(
     val type: String? = null,
     val url: String? = null,
     val username: String? = null,
     val tag: String? = null,
+    val text: String? = null,
+    val style: String? = null,
+    val color: String? = null,
     @SerializedName("position_x") val positionX: Double = 0.5,
     @SerializedName("position_y") val positionY: Double = 0.5,
     val scale: Double = 1.0,
+    val rotation: Double = 0.0,
 )
 
 /** GET /stories/{id}/viewers satırı — 2026-08-11 (kullanıcı isteği: "hikayeyi

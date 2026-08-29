@@ -63,15 +63,21 @@ interface StoriesApi {
         @Part("poll_position_x") pollPositionX: RequestBody?,
         @Part("poll_position_y") pollPositionY: RequestBody?,
         @Part("poll_scale") pollScale: RequestBody?,
+        // Çoklu metin katmanı + döndürme özelliğiyle eklendi — anketin
+        // overlay elemanlarıyla AYNI iki-parmak pinch+rotate jesti (derece,
+        // backend %360 normalize eder).
+        @Part("poll_rotation") pollRotation: RequestBody?,
         // 2026-08-10 (kullanıcı raporu: "2.ye tıklayınca öncekini siliyor")
         // — İLK sürüm (2026-08-09) TEKİL overlay_image_url/position_x/
         // position_y/scale alanlarıydı, çoklu GIF/sticker'ı DESTEKLEMİYORDU.
         // Backend'de o alanlar için henüz gerçek veri yokken temiz
         // değiştirme yapıldı: artık TEK bir `overlay_elements` alanı, JSON-
-        // KODLANMIŞ bir dizi string'i (her eleman {url,position_x,position_y,
-        // scale}) — dosya DEĞİL, düz metin (gif_url'in post paylaşımındaki
-        // AYNI muamelesi). Backend en fazla 3 elemanı kabul ediyor, fazlası
-        // sessizce atılıyor (upload_images max_count deseniyle AYNI).
+        // KODLANMIŞ bir dizi string'i (her eleman {type,...,position_x,
+        // position_y, scale,rotation}) — dosya DEĞİL, düz metin (gif_url'in
+        // post paylaşımındaki AYNI muamelesi). Çoklu metin katmanı
+        // özelliğiyle `type:"text"` eklendi (bkz. StoryOverlayElementDto
+        // yorumu), backend en fazla 10 elemanı kabul ediyor (eskiden 3'tü),
+        // fazlası sessizce atılıyor (upload_images max_count deseniyle AYNI).
         @Part("overlay_elements") overlayElements: RequestBody?,
     ): Response<CreateStoryResponse>
 

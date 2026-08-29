@@ -31,6 +31,10 @@ data class Poll(
     val positionX: Double? = null,
     val positionY: Double? = null,
     val scale: Double? = null,
+    // Çoklu metin katmanı + döndürme özelliğiyle eklendi — hikaye
+    // overlay elemanlarıyla AYNI iki-parmak pinch+rotate jesti (derece,
+    // %360 normalize). Post anketinde her zaman null.
+    val rotation: Double? = null,
 )
 
 /** RepostOfDto'nun sadeleştirilmiş domain karşılığı — Faz 5 sonrası eksik

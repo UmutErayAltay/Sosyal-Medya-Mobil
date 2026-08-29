@@ -64,17 +64,36 @@ data class Story(
  * (ÖNCEDEN sadece GIF/sticker görseli, `Image` alt tipi bu ESKİ tekil
  * DTO'nun karşılığı). Görüntüleyici Mention/Hashtag'i TIKLANABİLİR
  * kılabilsin diye (profile/hashtag sayfasına git) ayrı alt tipler.
+ *
+ * Çoklu metin katmanı özelliğiyle (kullanıcı raporu: "storye metin
+ * eklediğimizde sadece 1 tane ekliyor") `Text` alt tipi eklendi — eskiden
+ * `Story.caption`/`captionStyle`/`captionColor`/`captionPosition*` TEK bir
+ * tekil alan setiydi, artık metin de GIF/sticker/mention/hashtag gibi
+ * ÇOKLU ve bağımsız sürüklenebilir bir eleman. `rotation` (derece, `%360`
+ * normalize) TÜM alt tiplere eklendi (iki-parmak pinch+rotate jesti).
  */
 sealed class StoryOverlayElement {
     abstract val positionX: Double
     abstract val positionY: Double
     abstract val scale: Double
+    abstract val rotation: Double
+
+    data class Text(
+        val text: String,
+        val style: String?,
+        val color: String?,
+        override val positionX: Double,
+        override val positionY: Double,
+        override val scale: Double,
+        override val rotation: Double,
+    ) : StoryOverlayElement()
 
     data class Image(
         val url: String,
         override val positionX: Double,
         override val positionY: Double,
         override val scale: Double,
+        override val rotation: Double,
     ) : StoryOverlayElement()
 
     data class Mention(
@@ -82,6 +101,7 @@ sealed class StoryOverlayElement {
         override val positionX: Double,
         override val positionY: Double,
         override val scale: Double,
+        override val rotation: Double,
     ) : StoryOverlayElement()
 
     data class Hashtag(
@@ -89,6 +109,7 @@ sealed class StoryOverlayElement {
         override val positionX: Double,
         override val positionY: Double,
         override val scale: Double,
+        override val rotation: Double,
     ) : StoryOverlayElement()
 }
 
@@ -144,14 +165,17 @@ private fun StoryBarItemDto.toDomain() = StoryBarItem(
 private fun StoryOverlayElementDto.toDomainOrNull(): StoryOverlayElement? {
     val effectiveType = type ?: if (!url.isNullOrBlank()) "image" else null
     return when (effectiveType) {
+        "text" -> text?.takeIf { it.isNotBlank() }?.let {
+            StoryOverlayElement.Text(it, style, color, positionX, positionY, scale, rotation)
+        }
         "image" -> url?.takeIf { it.isNotBlank() }?.let {
-            StoryOverlayElement.Image(it, positionX, positionY, scale)
+            StoryOverlayElement.Image(it, positionX, positionY, scale, rotation)
         }
         "mention" -> username?.takeIf { it.isNotBlank() }?.let {
-            StoryOverlayElement.Mention(it, positionX, positionY, scale)
+            StoryOverlayElement.Mention(it, positionX, positionY, scale, rotation)
         }
         "hashtag" -> tag?.takeIf { it.isNotBlank() }?.let {
-            StoryOverlayElement.Hashtag(it, positionX, positionY, scale)
+            StoryOverlayElement.Hashtag(it, positionX, positionY, scale, rotation)
         }
         else -> null
     }
@@ -182,6 +206,7 @@ private fun StoryDto.toDomain() = Story(
             positionX = p.positionX,
             positionY = p.positionY,
             scale = p.scale,
+            rotation = p.rotation,
         )
     },
 )
@@ -405,6 +430,9 @@ class StoriesRepository(
         pollPositionX: Float?,
         pollPositionY: Float?,
         pollScale: Float?,
+        // Çoklu metin katmanı + döndürme özelliğiyle eklendi — anketin
+        // overlay elemanlarıyla AYNI iki-parmak pinch+rotate jesti.
+        pollRotation: Float? = null,
         // 2026-08-10 (kullanıcı raporu: "2.ye tıklayınca öncekini siliyor")
         // — TEKİL overlayImageUrl/Position/Scale parametreleri YERİNE liste
         // (bkz. ApiModels.kt StoryOverlayElementDto yorumu).
@@ -424,26 +452,35 @@ class StoriesRepository(
             }
             val opt = { index: Int -> textOrNull(pollOptions.getOrNull(index)) }
 
-            // Backend en fazla 3 elemanı kabul ediyor (bkz. app/api_v1/stories.py) —
-            // fazlası zaten sessizce atılıyor, burada AYRICA bir ön-kontrol
-            // YAPILMIYOR (tek doğruluk kaynağı backend). StoryOverlayElementDto
-            // REUSE edilir (JSON key adları @SerializedName ile ZATEN backend
-            // sözleşmesiyle eşleşiyor) — hem-yazma-hem-okuma için AYRI bir
-            // "request" DTO'su İCAT EDİLMEDİ.
+            // Backend en fazla MAX_OVERLAY_ELEMENTS (10) elemanı kabul ediyor
+            // (bkz. app/stories.py::parse_overlay_elements) — fazlası zaten
+            // sessizce atılıyor, burada AYRICA bir ön-kontrol YAPILMIYOR (tek
+            // doğruluk kaynağı backend). StoryOverlayElementDto REUSE edilir
+            // (JSON key adları @SerializedName ile ZATEN backend sözleşmesiyle
+            // eşleşiyor) — hem-yazma-hem-okuma için AYRI bir "request" DTO'su
+            // İCAT EDİLMEDİ.
             val overlayElementsJson = overlayElements.takeIf { it.isNotEmpty() }?.let { elements ->
                 val dtos = elements.map { element ->
                     when (element) {
+                        is StoryOverlayElement.Text -> StoryOverlayElementDto(
+                            type = "text", text = element.text, style = element.style, color = element.color,
+                            positionX = element.positionX, positionY = element.positionY,
+                            scale = element.scale, rotation = element.rotation,
+                        )
                         is StoryOverlayElement.Image -> StoryOverlayElementDto(
                             type = "image", url = element.url,
-                            positionX = element.positionX, positionY = element.positionY, scale = element.scale,
+                            positionX = element.positionX, positionY = element.positionY,
+                            scale = element.scale, rotation = element.rotation,
                         )
                         is StoryOverlayElement.Mention -> StoryOverlayElementDto(
                             type = "mention", username = element.username,
-                            positionX = element.positionX, positionY = element.positionY, scale = element.scale,
+                            positionX = element.positionX, positionY = element.positionY,
+                            scale = element.scale, rotation = element.rotation,
                         )
                         is StoryOverlayElement.Hashtag -> StoryOverlayElementDto(
                             type = "hashtag", tag = element.tag,
-                            positionX = element.positionX, positionY = element.positionY, scale = element.scale,
+                            positionX = element.positionX, positionY = element.positionY,
+                            scale = element.scale, rotation = element.rotation,
                         )
                     }
                 }
@@ -467,6 +504,7 @@ class StoriesRepository(
                 pollPositionX = textOrNull(pollPositionX?.toString()),
                 pollPositionY = textOrNull(pollPositionY?.toString()),
                 pollScale = textOrNull(pollScale?.toString()),
+                pollRotation = textOrNull(pollRotation?.toString()),
                 overlayElements = overlayElementsJson,
             )
             val body: CreateStoryResponse? = response.body()

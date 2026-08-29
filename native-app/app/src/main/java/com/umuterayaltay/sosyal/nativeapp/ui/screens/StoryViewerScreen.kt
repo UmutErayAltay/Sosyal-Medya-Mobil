@@ -51,6 +51,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -303,6 +304,7 @@ fun StoryViewerScreen(
                         val posX = (story.poll.positionX ?: 0.5).toFloat()
                         val posY = (story.poll.positionY ?: 0.75).toFloat()
                         val scale = (story.poll.scale ?: 1.0).toFloat()
+                        val rotation = (story.poll.rotation ?: 0.0).toFloat()
                         Box(
                             modifier = Modifier
                                 .align(Alignment.TopStart)
@@ -311,6 +313,7 @@ fun StoryViewerScreen(
                                     translationY = posY * canvasHeightPx - size.height / 2f
                                     scaleX = scale
                                     scaleY = scale
+                                    rotationZ = rotation
                                 }
                                 .padding(horizontal = 24.dp),
                         ) {
@@ -321,7 +324,14 @@ fun StoryViewerScreen(
                         }
                     }
 
-                    if (!story.caption.isNullOrBlank()) {
+                    // Çoklu metin katmanı özelliğiyle metin artık `overlayElements`
+                    // içinde bir "text" elemanı olarak taşınıyor (aşağıdaki
+                    // forEach) — eski tekil `caption` yolu SADECE göç etmemiş
+                    // eski satırlar için render edilir, aksi halde metin ÇİFT
+                    // görünürdü (bkz. app/stories.py::parse_overlay_elements
+                    // "çift render kuralı" yorumu).
+                    val hasTextOverlay = story.overlayElements.any { it is StoryOverlayElement.Text }
+                    if (!hasTextOverlay && !story.caption.isNullOrBlank()) {
                         val posX = story.captionPositionX.toFloat()
                         val posY = story.captionPositionY.toFloat()
                         StoryCaptionText(
@@ -338,40 +348,52 @@ fun StoryViewerScreen(
                     }
 
                     // 2026-08-10 (kullanıcı raporu: "2.ye tıklayınca öncekini
-                    // siliyor") — TEKİL overlay yerine LİSTE (en fazla 3, bkz.
+                    // siliyor") — TEKİL overlay yerine LİSTE (en fazla 10, bkz.
                     // ApiModels.kt StoryOverlayElementDto yorumu), caption/
-                    // poll ile AYNI normalize konum + ölçek deseni.
-                    story.overlayElements.forEach { element ->
-                        val posX = element.positionX.toFloat()
-                        val posY = element.positionY.toFloat()
-                        val scale = element.scale.toFloat()
-                        val positionModifier = Modifier
-                            .align(Alignment.TopStart)
-                            .graphicsLayer {
-                                translationX = posX * canvasWidthPx - size.width / 2f
-                                translationY = posY * canvasHeightPx - size.height / 2f
-                                scaleX = scale
-                                scaleY = scale
+                    // poll ile AYNI normalize konum + ölçek + döndürme deseni.
+                    story.overlayElements.forEachIndexed { index, element ->
+                        key(index) {
+                            val posX = element.positionX.toFloat()
+                            val posY = element.positionY.toFloat()
+                            val scale = element.scale.toFloat()
+                            val rotation = element.rotation.toFloat()
+                            val positionModifier = Modifier
+                                .align(Alignment.TopStart)
+                                .graphicsLayer {
+                                    translationX = posX * canvasWidthPx - size.width / 2f
+                                    translationY = posY * canvasHeightPx - size.height / 2f
+                                    scaleX = scale
+                                    scaleY = scale
+                                    rotationZ = rotation
+                                }
+                            // 2026-08-11 (kullanıcı isteği: "@bahsetme ve #hashtag
+                            // sticker'ı") — mention/hashtag TIKLANABİLİR (profile/
+                            // hashtag sayfasına gider, PostCard'daki AYNI davranış),
+                            // GIF/sticker (Image) VE metin (Text) tıklamaya tepki
+                            // VERMEZ — dekoratif, tam ekran dokun-ilerlet
+                            // bölgelerinin (TapZone) ÜSTÜNDE olduğu için
+                            // tıklanabilir olsalardı hikaye ilerletme ölürdü.
+                            when (element) {
+                                is StoryOverlayElement.Text -> StoryCaptionText(
+                                    text = element.text,
+                                    captionStyle = element.style,
+                                    captionColor = element.color,
+                                    modifier = positionModifier,
+                                )
+                                is StoryOverlayElement.Image -> AsyncImage(
+                                    model = element.url,
+                                    contentDescription = null,
+                                    modifier = positionModifier.size(120.dp),
+                                )
+                                is StoryOverlayElement.Mention -> StoryStickerPill(
+                                    text = "@${element.username}",
+                                    modifier = positionModifier.clickable { onNavigateToProfile(element.username) },
+                                )
+                                is StoryOverlayElement.Hashtag -> StoryStickerPill(
+                                    text = "#${element.tag}",
+                                    modifier = positionModifier.clickable { onNavigateToHashtag(element.tag) },
+                                )
                             }
-                        // 2026-08-11 (kullanıcı isteği: "@bahsetme ve #hashtag
-                        // sticker'ı") — mention/hashtag TIKLANABİLİR (profile/
-                        // hashtag sayfasına gider, PostCard'daki AYNI davranış),
-                        // GIF/sticker (Image) tıklamaya tepki VERMEZ (zaten
-                        // sadece dekoratif bir görsel).
-                        when (element) {
-                            is StoryOverlayElement.Image -> AsyncImage(
-                                model = element.url,
-                                contentDescription = null,
-                                modifier = positionModifier.size(120.dp),
-                            )
-                            is StoryOverlayElement.Mention -> StoryStickerPill(
-                                text = "@${element.username}",
-                                modifier = positionModifier.clickable { onNavigateToProfile(element.username) },
-                            )
-                            is StoryOverlayElement.Hashtag -> StoryStickerPill(
-                                text = "#${element.tag}",
-                                modifier = positionModifier.clickable { onNavigateToHashtag(element.tag) },
-                            )
                         }
                     }
                 }

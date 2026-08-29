@@ -158,23 +158,25 @@ private const val LONG_PRESS_THRESHOLD_MS = 250L
 private const val MAX_VIDEO_RECORD_MS = 15_000L
 
 /**
- * "Yeni Hikaye" ekranı — app/api_v1/stories.py api_create_story() sözleşmesiyle
- * AYNI BİLİNÇLİ SINIR (bkz. StoryCreateViewModel): caption + (TEK opsiyonel
- * görsel VEYA TEK opsiyonel video, mutually exclusive) + opsiyonel anket (0-4
- * seçenek) + görünürlük.
+ * "Yeni Hikaye" ekranı — app/stories.py::parse_overlay_elements() sözleşmesiyle
+ * AYNI BİLİNÇLİ SINIR (bkz. StoryCreateViewModel): overlayElements (metin
+ * dahil, çoklu) + (TEK opsiyonel görsel VEYA TEK opsiyonel video, mutually
+ * exclusive) + opsiyonel anket (0-4 seçenek) + görünürlük.
  *
  * Instagram tarzı iki adımlı akış (kullanıcı talimatıyla form-tabanlı eski
  * halinden dönüştürüldü — bkz. görev notu):
  *   1) Kamera adımı (StoryCameraStep) — ekran AÇILIR AÇILMAZ canlı kamera,
  *      kısa dokunuş=foto, basılı tutma=video (ilerleme halkasıyla), sol altta
  *      galeri kısayolu. "Yazıyla Paylaş" ile medya olmadan da devam edilebilir
- *      (backend caption/anket-only hikayeyi zaten destekliyor, bu yetenek
+ *      (backend metin/anket-only hikayeyi zaten destekliyor, bu yetenek
  *      kaybolmasın diye eklendi — YENİ bir ViewModel state İCAT EDİLMEDİ,
  *      sadece bu ekrana özel yerel bir UI bayrağı).
- *   2) Form adımı (StoryFormStep) — MEVCUT caption/görünürlük/anket editörü,
- *      medya seçildikten (kamera VEYA galeri) veya "Yazıyla Paylaş" sonrası
- *      gösterilir. StoryCreateViewModel'in submit/caption/visibility/poll
- *      mantığına DOKUNULMADI.
+ *   2) Form adımı (StoryFormStep) — MEVCUT görünürlük/anket editörü + ÇOKLU
+ *      metin/GIF/mention/hashtag katmanı, medya seçildikten (kamera VEYA
+ *      galeri) veya "Yazıyla Paylaş" sonrası gösterilir. StoryCreateViewModel'in
+ *      submit/visibility/poll mantığına DOKUNULMADI — SADECE tekil caption
+ *      state'i, çoklu overlayElements listesine taşındı (kullanıcı raporu:
+ *      "storye metin eklediğimizde sadece 1 tane ekliyor").
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -185,19 +187,15 @@ fun StoryCreateScreen(
     viewModel: StoryCreateViewModel = viewModel(),
 ) {
     val context = LocalContext.current
-    val caption by viewModel.caption.collectAsState()
     val visibility by viewModel.visibility.collectAsState()
     val selectedImageUri by viewModel.selectedImageUri.collectAsState()
     val selectedVideoUri by viewModel.selectedVideoUri.collectAsState()
     val backgroundColor by viewModel.backgroundColor.collectAsState()
     val pollOptions by viewModel.pollOptions.collectAsState()
-    val captionPositionX by viewModel.captionPositionX.collectAsState()
-    val captionPositionY by viewModel.captionPositionY.collectAsState()
-    val captionStyle by viewModel.captionStyle.collectAsState()
-    val captionColor by viewModel.captionColor.collectAsState()
     val pollPositionX by viewModel.pollPositionX.collectAsState()
     val pollPositionY by viewModel.pollPositionY.collectAsState()
     val pollScale by viewModel.pollScale.collectAsState()
+    val pollRotation by viewModel.pollRotation.collectAsState()
     val overlayElements by viewModel.overlayElements.collectAsState()
     val submitting by viewModel.submitting.collectAsState()
     val error by viewModel.error.collectAsState()
@@ -267,42 +265,47 @@ fun StoryCreateScreen(
     val showForm = hasSelectedMedia || showTextOnlyForm
 
     val filledPollOptionCount = pollOptions.count { it.isNotBlank() }
-    val canSubmit = (caption.isNotBlank() || selectedImageUri != null || selectedVideoUri != null ||
+    // Boş bir metin katmanı (kullanıcı "Aa"ya basıp hiçbir şey yazmadan
+    // kapattıysa, henüz canlıyken silinmediyse) TEK BAŞINA paylaşıma
+    // yetmemeli — diğer tüm eleman tipleri (GIF/mention/hashtag) varlıklarıyla
+    // zaten yeterli.
+    val hasSubmittableOverlay = overlayElements.any { element ->
+        element !is StoryOverlayElementState.Text || element.text.isNotBlank()
+    }
+    val canSubmit = (hasSubmittableOverlay || selectedImageUri != null || selectedVideoUri != null ||
         filledPollOptionCount >= 2) && !submitting
 
     if (showForm) {
         StoryFormStep(
-            caption = caption,
             visibility = visibility,
             selectedImageUri = selectedImageUri,
             selectedVideoUri = selectedVideoUri,
             backgroundColor = backgroundColor,
             pollOptions = pollOptions,
-            captionPositionX = captionPositionX,
-            captionPositionY = captionPositionY,
-            captionStyle = captionStyle,
-            captionColor = captionColor,
             pollPositionX = pollPositionX,
             pollPositionY = pollPositionY,
             pollScale = pollScale,
+            pollRotation = pollRotation,
             overlayElements = overlayElements,
             submitting = submitting,
             error = error,
             canSubmit = canSubmit,
-            onCaptionChange = viewModel::onCaptionChange,
             onVisibilityChange = viewModel::onVisibilityChange,
             onBackgroundColorChange = viewModel::onBackgroundColorChange,
-            onCaptionPositionChange = viewModel::onCaptionPositionChange,
-            onCaptionStyleCycle = viewModel::onCaptionStyleCycle,
-            onCaptionColorChange = viewModel::onCaptionColorChange,
             onPollPositionChange = viewModel::onPollPositionChange,
             onPollScaleChange = viewModel::onPollScaleChange,
+            onPollRotationChange = viewModel::onPollRotationChange,
             onAddOverlayClick = { showMediaPicker = true },
+            onAddTextElement = viewModel::onTextElementAdded,
+            onTextContentChange = viewModel::onTextContentChange,
+            onTextStyleCycle = viewModel::onTextStyleCycle,
+            onTextColorChange = viewModel::onTextColorChange,
             onMentionSelected = viewModel::onMentionSelected,
             onHashtagAdded = viewModel::onHashtagAdded,
             onRemoveOverlayImage = viewModel::onOverlayImageRemoved,
             onOverlayImagePositionChange = viewModel::onOverlayImagePositionChange,
             onOverlayImageScaleChange = viewModel::onOverlayImageScaleChange,
+            onOverlayRotationChange = viewModel::onOverlayRotationChange,
             onRemoveImage = {
                 viewModel.onImageSelected(null)
                 showTextOnlyForm = false
@@ -818,46 +821,50 @@ private val STORY_TEXT_COLOR_SWATCHES = listOf(
  * Metnin GERÇEK İÇERİĞİ artık her zaman görünen bir TextField'da DEĞİL,
  * "Aa" araç butonuna dokununca açılan [StoryTextEditorOverlay]'de
  * yazılıyor — Instagram'ın "canvas üzerinde direkt yaz" hissine daha
- * yakın (tam ekran klavye + ortalanmış büyük yazı alanı), ama backend
- * sözleşmesi AYNI kaldı (tek caption alanı).
+ * yakın (tam ekran klavye + ortalanmış büyük yazı alanı).
+ *
+ * Kullanıcı raporu ("storye metin eklediğimizde sadece 1 tane ekliyor,
+ * tekrar tıklayınca öncekini düzenliyor") sonrası: metin artık AYRI bir
+ * tekil `caption` state'i DEĞİL, `overlayElements` listesinin bir `Text`
+ * elemanı — "Aa" butonu HER dokunuşta [onAddTextElement] ile YENİ bir katman
+ * ekler, canvas'taki mevcut bir yazıya dokunmak ise SADECE o katmanı
+ * düzenlemeye açar (`editingTextElementId` yerel state'i bunu ayırt eder).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun StoryFormStep(
-    caption: String,
     visibility: String,
     selectedImageUri: Uri?,
     selectedVideoUri: Uri?,
     backgroundColor: String?,
     pollOptions: List<String>,
-    captionPositionX: Float,
-    captionPositionY: Float,
-    // 2026-08-11 (kullanıcı isteği: "metin stili/rengi seçenekleri").
-    captionStyle: String?,
-    // 2026-08-22 (kullanıcı isteği: "yazının kendi rengi seçilebilsin").
-    captionColor: String?,
     pollPositionX: Float,
     pollPositionY: Float,
     pollScale: Float,
+    pollRotation: Float,
     overlayElements: List<StoryOverlayElementState>,
     submitting: Boolean,
     error: String?,
     canSubmit: Boolean,
-    onCaptionChange: (String) -> Unit,
     onVisibilityChange: (String) -> Unit,
     onBackgroundColorChange: (String?) -> Unit,
-    onCaptionPositionChange: (Float, Float) -> Unit,
-    onCaptionStyleCycle: () -> Unit,
-    onCaptionColorChange: (String) -> Unit,
     onPollPositionChange: (Float, Float) -> Unit,
     onPollScaleChange: (Float) -> Unit,
+    onPollRotationChange: (Float) -> Unit,
     onAddOverlayClick: () -> Unit,
+    // Kullanıcı raporu: "sadece 1 tane ekliyor" — dönen id, YENİ eklenen
+    // katmanı doğrudan düzenleyiciye bağlamak için (limit doluysa null).
+    onAddTextElement: () -> String?,
+    onTextContentChange: (String, String) -> Unit,
+    onTextStyleCycle: (String) -> Unit,
+    onTextColorChange: (String, String) -> Unit,
     // 2026-08-11 (kullanıcı isteği: "@bahsetme ve #hashtag sticker'ı").
     onMentionSelected: (String) -> Unit,
     onHashtagAdded: (String) -> Unit,
     onRemoveOverlayImage: (String) -> Unit,
     onOverlayImagePositionChange: (String, Float, Float) -> Unit,
     onOverlayImageScaleChange: (String, Float) -> Unit,
+    onOverlayRotationChange: (String, Float) -> Unit,
     onRemoveImage: () -> Unit,
     onRemoveVideo: () -> Unit,
     onAddPollOption: () -> Unit,
@@ -869,12 +876,38 @@ private fun StoryFormStep(
     val hasMedia = selectedImageUri != null || selectedVideoUri != null
     val hasPoll = pollOptions.count { it.isNotBlank() } >= 2
     var showTextEditor by remember { mutableStateOf(false) }
+    // Düzenlenmekte olan metin katmanının id'si — "Aa" butonu YENİ bir
+    // katman ekleyip bunu buraya yazar, canvas'taki mevcut bir yazıya
+    // dokunmak ise VAR OLAN id'yi buraya yazar (bkz. fonksiyon doc'u).
+    var editingTextElementId by remember { mutableStateOf<String?>(null) }
     var showPollEditor by remember { mutableStateOf(false) }
     val pollEditorSheetState = rememberModalBottomSheetState()
     // 2026-08-11 (kullanıcı isteği: "@bahsetme ve #hashtag sticker'ı").
     var showMentionSheet by remember { mutableStateOf(false) }
     val mentionSheetState = rememberModalBottomSheetState()
     var showHashtagDialog by remember { mutableStateOf(false) }
+
+    // Düzenleyici açıkken canlı stil/renk önizlemesi ve "Tamam"daki
+    // initialValue için — element listeden id'ye göre bulunur, WYSIWYG
+    // (onTextStyleCycle/onTextColorChange doğrudan bu elemanı günceller).
+    val editingTextElement = remember(overlayElements, editingTextElementId) {
+        overlayElements.find { it.id == editingTextElementId } as? StoryOverlayElementState.Text
+    }
+
+    // Boş bırakılan bir metin katmanı (kullanıcı "Aa"ya basıp hiçbir şey
+    // yazmadan/silerek kapattıysa) canvas'ta görünmez ama YER KAPLAR ve
+    // limite dahil olur — editör kapanırken sessizce temizlenir.
+    fun closeTextEditorRemovingIfBlank() {
+        val id = editingTextElementId
+        if (id != null) {
+            val current = overlayElements.find { it.id == id }
+            if (current is StoryOverlayElementState.Text && current.text.isBlank()) {
+                onRemoveOverlayImage(id)
+            }
+        }
+        showTextEditor = false
+        editingTextElementId = null
+    }
 
     Box(
         modifier = Modifier
@@ -921,30 +954,6 @@ private fun StoryFormStep(
                 }
             }
 
-            if (caption.isNotBlank()) {
-                DraggableStoryElement(
-                    positionX = captionPositionX,
-                    positionY = captionPositionY,
-                    scale = 1f,
-                    scalable = false,
-                    canvasWidthPx = canvasWidthPx,
-                    canvasHeightPx = canvasHeightPx,
-                    onPositionChange = onCaptionPositionChange,
-                    onScaleChange = {},
-                ) {
-                    // StoryViewerScreen.kt'deki AYNI composable — WYSIWYG
-                    // (editördeki önizleme, GERÇEK viewer'ın kullandığı stil
-                    // renderer'ıyla AYNI kod yolundan geçmezse ikisi
-                    // birbirinden SAPABİLİRDİ, bkz. o composable'ın yorumu).
-                    StoryCaptionText(
-                        text = caption,
-                        captionStyle = captionStyle,
-                        captionColor = captionColor,
-                        modifier = Modifier.clickable(enabled = !submitting) { showTextEditor = true },
-                    )
-                }
-            }
-
             if (hasPoll) {
                 // Gerçek paylaşılacak görünümle AYNI önizleme — StoryViewerScreen'in
                 // KULLANDIĞI PollWidget REUSE edilir, sahte bir kutu İCAT EDİLMEDİ
@@ -964,11 +973,13 @@ private fun StoryFormStep(
                     positionX = pollPositionX,
                     positionY = pollPositionY,
                     scale = pollScale,
+                    rotation = pollRotation,
                     scalable = true,
                     canvasWidthPx = canvasWidthPx,
                     canvasHeightPx = canvasHeightPx,
                     onPositionChange = onPollPositionChange,
                     onScaleChange = onPollScaleChange,
+                    onRotationChange = onPollRotationChange,
                 ) {
                     Box(
                         modifier = Modifier
@@ -993,19 +1004,37 @@ private fun StoryFormStep(
                         positionX = element.positionX,
                         positionY = element.positionY,
                         scale = element.scale,
-                        scalable = true,
+                        rotation = element.rotation,
+                        // Boş bir text katmanı (henüz yazılmamış/silinmiş)
+                        // görünmez ve döndürülemez olmalı — sürüklenebilir
+                        // kalması yeter, gerçek içerik gelene kadar canvas'ta
+                        // "hayalet" bir tutamaç göstermek kafa karıştırıcı.
+                        scalable = element !is StoryOverlayElementState.Text,
                         canvasWidthPx = canvasWidthPx,
                         canvasHeightPx = canvasHeightPx,
                         onPositionChange = { x, y -> onOverlayImagePositionChange(element.id, x, y) },
                         onScaleChange = { scale -> onOverlayImageScaleChange(element.id, scale) },
+                        onRotationChange = { rotation -> onOverlayRotationChange(element.id, rotation) },
                     ) {
                         Box {
                             // 2026-08-11 (kullanıcı isteği: "@bahsetme ve
                             // #hashtag sticker'ı") — GIF/sticker (Image)
                             // AsyncImage, mention/hashtag ise StoryStickerPill
                             // (StoryViewerScreen.kt'deki AYNI paylaşılan
-                            // composable, WYSIWYG önizleme).
+                            // composable, WYSIWYG önizleme). Text — kullanıcı
+                            // raporu ("sadece 1 tane ekliyor") sonrası ÇOKLU
+                            // ve bağımsız hale gelen metin katmanı; dokununca
+                            // BU katmanın düzenleyicisi açılır (YENİ eklemez).
                             when (element) {
+                                is StoryOverlayElementState.Text -> StoryCaptionText(
+                                    text = element.text,
+                                    captionStyle = element.style,
+                                    captionColor = element.color,
+                                    modifier = Modifier.clickable(enabled = !submitting) {
+                                        editingTextElementId = element.id
+                                        showTextEditor = true
+                                    },
+                                )
                                 is StoryOverlayElementState.Image -> AsyncImage(
                                     model = element.url,
                                     contentDescription = null,
@@ -1111,17 +1140,27 @@ private fun StoryFormStep(
                 .padding(start = 16.dp),
             verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {
+            // ViewModel'in MAX_OVERLAY_ELEMENTS'iyle AYNI sınır (dördü de AYNI
+            // listeyi paylaşıyor — metin, GIF/sticker, mention, hashtag) —
+            // ulaşılınca DÖRDÜ DE devre dışı, aksi halde seçim yapılıp HİÇBİR
+            // ŞEY OLMAZDI (sessiz no-op, kafa karıştırıcı).
+            val canAddMoreOverlay = !submitting && overlayElements.size < 10
             StoryToolButton(
                 icon = Icons.Filled.TextFields,
                 contentDescription = "Yazı ekle",
-                enabled = !submitting,
-                onClick = { showTextEditor = true },
+                enabled = canAddMoreOverlay,
+                onClick = {
+                    // Kullanıcı raporu ("sadece 1 tane ekliyor, tekrar
+                    // tıklayınca öncekini düzenliyor") — HER dokunuş YENİ bir
+                    // katman ekler, var olan bir yazıya dokunmak (yukarıdaki
+                    // forEach'teki clickable) o katmanı düzenler.
+                    val newId = onAddTextElement()
+                    if (newId != null) {
+                        editingTextElementId = newId
+                        showTextEditor = true
+                    }
+                },
             )
-            // ViewModel'in MAX_OVERLAY_ELEMENTS'iyle AYNI sınır (üçü de AYNI
-            // listeyi paylaşıyor — GIF/sticker, mention, hashtag) — ulaşılınca
-            // ÜÇÜ DE devre dışı, aksi halde seçim yapılıp HİÇBİR ŞEY OLMAZDI
-            // (sessiz no-op, kafa karıştırıcı).
-            val canAddMoreOverlay = !submitting && overlayElements.size < 3
             StoryToolButton(
                 icon = Icons.Filled.Gif,
                 contentDescription = "GIF/Sticker ekle",
@@ -1191,18 +1230,24 @@ private fun StoryFormStep(
         }
     }
 
-    if (showTextEditor) {
+    if (showTextEditor && editingTextElementId != null) {
+        val id = editingTextElementId!!
         StoryTextEditorOverlay(
-            initialValue = caption,
-            captionStyle = captionStyle,
-            onStyleCycle = onCaptionStyleCycle,
-            captionColor = captionColor,
-            onColorSelected = onCaptionColorChange,
+            initialValue = editingTextElement?.text ?: "",
+            captionStyle = editingTextElement?.style,
+            onStyleCycle = { onTextStyleCycle(id) },
+            captionColor = editingTextElement?.color,
+            onColorSelected = { hex -> onTextColorChange(id, hex) },
             onDone = { text ->
-                onCaptionChange(text.trim())
+                if (text.isBlank()) {
+                    onRemoveOverlayImage(id)
+                } else {
+                    onTextContentChange(id, text.trim())
+                }
                 showTextEditor = false
+                editingTextElementId = null
             },
-            onDismiss = { showTextEditor = false },
+            onDismiss = { closeTextEditorRemovingIfBlank() },
         )
     }
 
@@ -1306,12 +1351,16 @@ private fun StoryBackgroundColorButton(
 }
 
 /**
- * Tam ekran metin girişi — "Aa" araç butonuna (veya canvas'taki mevcut
- * yazıya) dokununca açılır, Instagram'ın "canvas üzerinde direkt yaz"
- * hissine yakın (yarı saydam siyah zemin + ortalanmış büyük TextField,
- * klavye otomatik açılır). Backend sözleşmesi TEK bir caption alanı
- * olduğu için (web'de de aynı) burada da TEK bir metin kutusu var —
- * Instagram'daki gibi birden çok bağımsız metin katmanı İCAT EDİLMEDİ.
+ * Tam ekran metin girişi — "Aa" araç butonuna (YENİ bir katman açar) veya
+ * canvas'taki MEVCUT bir yazıya (o katmanı açar) dokununca açılır,
+ * Instagram'ın "canvas üzerinde direkt yaz" hissine yakın (yarı saydam siyah
+ * zemin + ortalanmış büyük TextField, klavye otomatik açılır). Kullanıcı
+ * raporu ("storye metin eklediğimizde sadece 1 tane ekliyor") sonrası: bu
+ * composable HANGİ katmanı düzenlediğini bilmez (tekil `initialValue`/
+ * `captionStyle`/`captionColor` + `onDone`/`onStyleCycle`/`onColorSelected`
+ * callback'leri alır) — id'ye göre hangi elemanın güncelleneceği çağıran
+ * `StoryFormStep`'teki `editingTextElementId` closure'ında karar verilir,
+ * yani artık ÇOKLU bağımsız metin katmanı destekleniyor.
  */
 @Composable
 private fun StoryTextEditorOverlay(
@@ -1636,32 +1685,49 @@ private fun StoryHashtagDialog(onAdd: (String) -> Unit, onDismiss: () -> Unit) {
 }
 
 /**
- * Canvas üzerinde sürüklenebilir (ve opsiyonel olarak pinch ile
- * ölçeklenebilir) bir öğe — caption VE anket önizlemesi TARAFINDAN
- * paylaşılan TEK bir uygulama (web'in storyPollDragState/storyCaptionDragState
- * İKİ AYRI ama BİREBİR AYNI kod bloğu olmasının AKSİNE, burada TEK yer).
- * `detectTransformGestures` TEK bir dokunuşta hem pan (sürükleme) hem zoom
- * (pinch) raporlar — FullscreenImageViewer.kt'deki AYNI kurulmuş desen.
- * `rememberUpdatedState` ZORUNLU: `pointerInput` anahtarları (canvasWidthPx/
- * canvasHeightPx/scalable) DEĞİŞMEDİĞİ sürece jest algılama coroutine'i
- * YENİDEN BAŞLAMAZ, yani positionX/positionY/scale'i DOĞRUDAN yakalayan bir
- * closure sürüklemenin ORTASINDA hep İLK değerlerde donmuş kalırdı.
+ * Canvas üzerinde sürüklenebilir (ve opsiyonel olarak pinch ile ölçeklenebilir
+ * VE iki-parmakla döndürülebilir) bir öğe — caption VE anket önizlemesi
+ * TARAFINDAN paylaşılan TEK bir uygulama (web'in storyPollDragState/
+ * storyCaptionDragState İKİ AYRI ama BİREBİR AYNI kod bloğu olmasının AKSİNE,
+ * burada TEK yer). `detectTransformGestures` TEK bir dokunuşta pan
+ * (sürükleme), zoom (pinch) VE rotation (iki-parmak döndürme) raporlar —
+ * FullscreenImageViewer.kt'deki AYNI kurulmuş desen, 4. parametre (rotation)
+ * eskiden `_` ile atılıyordu. `rememberUpdatedState` ZORUNLU: `pointerInput`
+ * anahtarları (canvasWidthPx/canvasHeightPx/scalable) DEĞİŞMEDİĞİ sürece jest
+ * algılama coroutine'i YENİDEN BAŞLAMAZ, yani positionX/positionY/scale/
+ * rotation'ı DOĞRUDAN yakalayan bir closure sürüklemenin ORTASINDA hep İLK
+ * değerlerde donmuş kalırdı.
+ *
+ * NOT (döndürme + sürükleme etkileşimi, gerçek cihazda doğrulanmadı): `pan`
+ * BUGÜN de (rotation=0 iken) hiç düzeltilmeden doğrudan canvas-uzayı deltası
+ * gibi uygulanıyor (`pan.x / canvasWidthPx`) — scale için de AYNI şekilde
+ * düzeltme YOK. Rotation eklenirken bu ESKİ deseni BOZMAMAK için pan aynen
+ * korundu; eğer gerçek cihazda döndürülmüş bir katmanı sürüklemek beklenenin
+ * TERS yönünde hareket ediyormuş gibi hissettirirse, düzeltme `pan`'i
+ * `rotationState.value` kadar geri döndürüp `scaleState.value` ile
+ * çarpmaktır (canvas uzayına çevirme) — bilerek buraya EKLENMEDİ, çünkü
+ * Compose'un pointerInput'a `pan`'i hangi uzayda (yerel mi canvas mı)
+ * ilettiği bu turda gerçek cihazda doğrulanamadı ve YANLIŞ yöne düzeltmek
+ * mevcut çalışan sürüklemeyi bozardı.
  */
 @Composable
 private fun DraggableStoryElement(
     positionX: Float,
     positionY: Float,
     scale: Float,
+    rotation: Float,
     scalable: Boolean,
     canvasWidthPx: Float,
     canvasHeightPx: Float,
     onPositionChange: (Float, Float) -> Unit,
     onScaleChange: (Float) -> Unit,
+    onRotationChange: (Float) -> Unit,
     content: @Composable () -> Unit,
 ) {
     val positionXState = rememberUpdatedState(positionX)
     val positionYState = rememberUpdatedState(positionY)
     val scaleState = rememberUpdatedState(scale)
+    val rotationState = rememberUpdatedState(rotation)
 
     Box(
         modifier = Modifier
@@ -1670,15 +1736,22 @@ private fun DraggableStoryElement(
                 translationY = positionY * canvasHeightPx - size.height / 2f
                 scaleX = scale
                 scaleY = scale
+                rotationZ = rotation
             }
             .pointerInput(canvasWidthPx, canvasHeightPx, scalable) {
                 if (canvasWidthPx <= 0f || canvasHeightPx <= 0f) return@pointerInput
-                detectTransformGestures { _, pan, zoom, _ ->
+                detectTransformGestures { _, pan, zoom, rotationDelta ->
                     val newX = (positionXState.value + pan.x / canvasWidthPx).coerceIn(0f, 1f)
                     val newY = (positionYState.value + pan.y / canvasHeightPx).coerceIn(0f, 1f)
                     onPositionChange(newX, newY)
                     if (scalable) {
                         onScaleChange(scaleState.value * zoom)
+                        // rotationDelta bu KARE için AÇI DEĞİŞİMİ (mutlak açı
+                        // DEĞİL) — zoom'un çarpımsal AYNI mantığı, toplamsal
+                        // uygulanır. Backend/serileştirme %360 normalize eder
+                        // (bkz. app/stories.py::parse_overlay_elements), burada
+                        // clamp GEREKMEZ.
+                        onRotationChange(rotationState.value + rotationDelta)
                     }
                 }
             },
