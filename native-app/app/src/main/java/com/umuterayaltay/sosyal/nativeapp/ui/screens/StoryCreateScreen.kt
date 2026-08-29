@@ -1005,11 +1005,18 @@ private fun StoryFormStep(
                         positionY = element.positionY,
                         scale = element.scale,
                         rotation = element.rotation,
-                        // Boş bir text katmanı (henüz yazılmamış/silinmiş)
-                        // görünmez ve döndürülemez olmalı — sürüklenebilir
-                        // kalması yeter, gerçek içerik gelene kadar canvas'ta
-                        // "hayalet" bir tutamaç göstermek kafa karıştırıcı.
-                        scalable = element !is StoryOverlayElementState.Text,
+                        // Kullanıcı raporu: "1'den fazla metin ekleme oldu
+                        // fakat döndürme çalışmıyor" — bu satır ÖNCEDEN
+                        // `element !is StoryOverlayElementState.Text` idi,
+                        // yani metin katmanlarında scale/rotation TAMAMEN
+                        // kapalıydı (DraggableStoryElement'te ikisi de AYNI
+                        // `scalable` bayrağına bağlı). Metin de GIF/sticker/
+                        // mention/hashtag gibi pinch+rotate edilebilmeli —
+                        // "boş katman'ın hayalet tutamacı" kaygısı asılsızdı
+                        // (yeni eklenen boş katman ZATEN tam ekran
+                        // StoryTextEditorOverlay ile kaplanıyor, canvas'a
+                        // dokunulamıyor).
+                        scalable = true,
                         canvasWidthPx = canvasWidthPx,
                         canvasHeightPx = canvasHeightPx,
                         onPositionChange = { x, y -> onOverlayImagePositionChange(element.id, x, y) },
