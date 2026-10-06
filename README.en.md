@@ -62,6 +62,8 @@ cd native-app
 
 The APK lands in `native-app/app/build/outputs/apk/debug/`.
 
+The release APK (`tools/release.ps1`) is built with `assembleRelease`. It is signed with the debug key and is not debuggable; scrolling performance is noticeably better than the debug build. Output: `native-app/app/build/outputs/apk/release/app-release.apk`.
+
 The backend address is hardcoded in `network/RetrofitClient.kt`
 (`https://sosyalmedyadeneme.onrender.com/api/v1/`) — edit that file to point at a
 different backend.

@@ -20,6 +20,7 @@ $DistDir    = Join-Path $NativeApp "dist"
 $HistoryDir = Join-Path $DistDir "history"
 
 $Tag             = "native-v0.1.0"
+# Ad BİLEREK "-debug" kalıyor: UpdateRepository.kt bu adı sabit arıyor; içerik artık release yapı (debug anahtarıyla imzalı).
 $ApkAssetName    = "sosyal-medya-native-debug.apk"
 $ManifestName    = "update-manifest.json"
 $KeepPatchCount  = 3
@@ -99,12 +100,12 @@ try {
     $env:JAVA_HOME = "C:\Program Files\Android\Android Studio\jbr"
     Push-Location $NativeApp
     try {
-        & ".\gradlew.bat" assembleDebug "-PreleaseAbi=arm64-v8a"
-        if ($LASTEXITCODE -ne 0) { throw "gradlew assembleDebug başarısız (kod $LASTEXITCODE)" }
+        & ".\gradlew.bat" assembleRelease "-PreleaseAbi=arm64-v8a"
+        if ($LASTEXITCODE -ne 0) { throw "gradlew assembleRelease başarısız (kod $LASTEXITCODE)" }
     } finally {
         Pop-Location
     }
-    $builtApk = Join-Path $NativeApp "app\build\outputs\apk\debug\app-debug.apk"
+    $builtApk = Join-Path $NativeApp "app\build\outputs\apk\release\app-release.apk"
     if (-not (Test-Path $builtApk)) { throw "Build çıktısı bulunamadı: $builtApk" }
 
     Write-Host "== 3. Yeni APK ==" -ForegroundColor Cyan

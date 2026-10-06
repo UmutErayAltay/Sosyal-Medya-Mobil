@@ -60,6 +60,8 @@ cd native-app
 
 APK çıktısı `native-app/app/build/outputs/apk/debug/` altında oluşur.
 
+Yayın APK'sı (`tools/release.ps1`) `assembleRelease` ile üretilir. Debug anahtarıyla imzalıdır ve debuggable değildir; kaydırma performansı debug yapıdan belirgin şekilde iyidir. Çıktı: `native-app/app/build/outputs/apk/release/app-release.apk`.
+
 Backend adresi `network/RetrofitClient.kt` içinde sabit tanımlıdır
 (`https://sosyalmedyadeneme.onrender.com/api/v1/`) — farklı bir backend'e
 bağlanmak için bu dosya düzenlenir.

@@ -46,6 +46,15 @@ android {
 
     buildTypes {
         release {
+            // Yayın APK'sı artık debug değil, release (debuggable=false) yapı:
+            // debuggable uygulamada ART, Compose/AndroidX baseline profile'larını
+            // uygulamıyor ve akış kaydırması belirgin takılıyordu. İmza BİLEREK
+            // debug anahtarı: telefondaki mevcut (debug imzalı) kurulumun üstüne
+            // güncelleme imza uyuşmazlığı olmadan kurulsun, uygulama içi
+            // güncelleyici (UpdateRepository) aynen çalışsın.
+            // Minify BİLEREK kapalı: proguard-rules.pro yok, Gson reflection
+            // kullanılıyor — keep kuralları yazılmadan açılırsa yayın bozulur.
+            signingConfig = signingConfigs.getByName("debug")
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
